@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cobweb2026 API 테스트</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 16px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.05rem; margin-top: 2rem; border-bottom: 1px solid #8884; padding-bottom: 4px; }
+  h3 { font-size: 0.9rem; margin: 1rem 0 4px; color: #999; }
+  section { margin-bottom: 1.5rem; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  input { flex: 1 1 160px; padding: 6px 8px; }
+  button { padding: 6px 14px; cursor: pointer; }
+  #status {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #8882;
+    font-size: 0.9rem;
+    word-break: break-all;
+  }
+  #log {
+    background: #8881;
+    padding: 10px 12px;
+    border-radius: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+  }
+  .log-entry { margin-bottom: 10px; border-bottom: 1px dashed #8884; padding-bottom: 8px; }
+  .ok { color: #2a8f4d; }
+  .err { color: #c94040; }
+  .hint { font-size: 0.85rem; color: #888; margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>cobweb2026 인증 API 테스트</h1>
+
+<section>
+  <h2>현재 상태</h2>
+  <div id="status">accessToken 없음 (로그인하지 않음)</div>
+</section>
+
+<section>
+  <h2>이메일 인증 (회원가입용)</h2>
+  <p class="hint">회원가입 전에 먼저 코드를 발송받아 인증해야 합니다. (유효시간 5분)</p>
+  <h3>1) 인증 코드 발송</h3>
+  <form id="joinSendForm">
+    <input name="email" type="email" placeholder="이메일" required>
+    <button type="submit">코드 발송</button>
+  </form>
+  <h3>2) 코드 확인</h3>
+  <form id="joinVerifyForm">
+    <input name="email" type="email" placeholder="이메일" required>
+    <input name="code" placeholder="인증 코드 8자리" maxlength="8" required>
+    <button type="submit">코드 확인</button>
+  </form>
+</section>
+
+<section>
+  <h2>소셜 로그인</h2>
+  <p class="hint">클릭하면 해당 제공자 로그인 화면으로 이동하고, 완료되면 이 페이지로 돌아와 자동 로그인됩니다.</p>
+  <button id="googleLoginBtn">Google로 로그인</button>
+  <button id="naverLoginBtn">Naver로 로그인</button>
+  <button id="githubLoginBtn">GitHub로 로그인</button>
+</section>
+
+<section>
+  <h2>회원가입 (/api/auth/signup)</h2>
+  <p class="hint">위에서 인증을 마친 이메일이어야 가입이 됩니다.</p>
+  <form id="signupForm">
+    <input name="username" placeholder="아이디" maxlength="16" required>
+    <input name="email" type="email" placeholder="이메일" required>
+    <input name="password" type="password" placeholder="비밀번호 (8자 이상)" required>
+    <button type="submit">회원가입</button>
+  </form>
+</section>
+
+<section>
+  <h2>로그인 (/api/auth/login)</h2>
+  <form id="loginForm">
+    <input name="username" placeholder="아이디" required>
+    <input name="password" type="password" placeholder="비밀번호" required>
+    <button type="submit">로그인</button>
+  </form>
+</section>
+
+<section>
+  <h2>토큰 재발급 / 로그아웃</h2>
+  <button id="reissueBtn">토큰 재발급 (/api/auth/reissue)</button>
+  <button id="logoutBtn">로그아웃 (/api/auth/logout)</button>
+  <p class="hint">재발급은 로그인 시 서버가 심어준 refreshToken 쿠키(httpOnly)를 그대로 사용합니다.</p>
+</section>
+
+<section>
+  <h2>비밀번호 재설정</h2>
+  <h3>1) 재설정 코드 발송</h3>
+  <form id="resetRequestForm">
+    <input name="email" type="email" placeholder="가입된 이메일" required>
+    <button type="submit">코드 발송</button>
+  </form>
+  <h3>2) 코드 확인 → resetToken 발급</h3>
+  <form id="resetVerifyForm">
+    <input name="email" type="email" placeholder="이메일" required>
+    <input name="code" placeholder="인증 코드 8자리" maxlength="8" required>
+    <button type="submit">코드 확인</button>
+  </form>
+  <h3>3) 새 비밀번호로 변경</h3>
+  <form id="resetConfirmForm">
+    <input name="resetToken" placeholder="resetToken (2단계 응답에서 자동 입력됨)" required>
+    <input name="newPassword" type="password" placeholder="새 비밀번호 (8자 이상)" required>
+    <button type="submit">비밀번호 변경</button>
+  </form>
+</section>
+
+<section>
+  <h2>요청 로그</h2>
+  <div id="log"></div>
+</section>
+
+<script>
+let accessToken = null;
+
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+
+function renderStatus() {
+  statusEl.textContent = accessToken
+    ? 'accessToken: ' + accessToken.slice(0, 24) + '...'
+    : 'accessToken 없음 (로그인하지 않음)';
+}
+
+function log(title, status, json) {
+  const ok = status >= 200 && status < 300;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML =
+    '<span class="' + (ok ? 'ok' : 'err') + '">[' + status + '] ' + title + '</span>\n' +
+    JSON.stringify(json, null, 2);
+  logEl.prepend(entry);
+}
+
+async function callApi(path, method, body, useAuth) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (useAuth && accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+
+  const res = await fetch(path, {
+    method,
+    headers,
+    credentials: 'same-origin',
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  let json = null;
+  try { json = await res.json(); } catch (e) { /* 본문 없음 */ }
+
+  log(method + ' ' + path, res.status, json);
+  return { status: res.status, json };
+}
+
+document.getElementById('joinSendForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await callApi('/api/email-verifications', 'POST', {
+    email: f.get('email'),
+    purpose: 'JOIN'
+  }, false);
+});
+
+document.getElementById('joinVerifyForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await callApi('/api/email-verifications/verify', 'POST', {
+    email: f.get('email'),
+    code: f.get('code'),
+    purpose: 'JOIN'
+  }, false);
+});
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await callApi('/api/auth/signup', 'POST', {
+    username: f.get('username'),
+    email: f.get('email'),
+    password: f.get('password')
+  }, false);
+});
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const { status, json } = await callApi('/api/auth/login', 'POST', {
+    username: f.get('username'),
+    password: f.get('password')
+  }, false);
+  if (status === 200 && json?.data?.accessToken) {
+    accessToken = json.data.accessToken;
+    renderStatus();
+  }
+});
+
+document.getElementById('reissueBtn').addEventListener('click', async () => {
+  const { status, json } = await callApi('/api/auth/reissue', 'POST', null, false);
+  if (status === 200 && json?.data?.accessToken) {
+    accessToken = json.data.accessToken;
+    renderStatus();
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  const { status } = await callApi('/api/auth/logout', 'POST', null, true);
+  if (status === 200) {
+    accessToken = null;
+    renderStatus();
+  }
+});
+
+document.getElementById('resetRequestForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await callApi('/api/auth/password-reset/request', 'POST', {
+    email: f.get('email')
+  }, false);
+});
+
+document.getElementById('resetVerifyForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const { status, json } = await callApi('/api/auth/password-reset/verify-code', 'POST', {
+    email: f.get('email'),
+    code: f.get('code')
+  }, false);
+  if (status === 200 && json?.data?.resetToken) {
+    document.querySelector('#resetConfirmForm input[name="resetToken"]').value = json.data.resetToken;
+  }
+});
+
+document.getElementById('resetConfirmForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await callApi('/api/auth/password-reset/confirm', 'POST', {
+    resetToken: f.get('resetToken'),
+    newPassword: f.get('newPassword')
+  }, false);
+});
+
+async function startOAuthLogin(provider) {
+  const { status, json } = await callApi('/api/auth/oauth/' + provider + '/authorize-url', 'GET', null, false);
+  if (status === 200 && json?.data?.authorizeUrl) {
+    location.href = json.data.authorizeUrl;
+  }
+}
+
+document.getElementById('googleLoginBtn').addEventListener('click', () => startOAuthLogin('google'));
+document.getElementById('naverLoginBtn').addEventListener('click', () => startOAuthLogin('naver'));
+document.getElementById('githubLoginBtn').addEventListener('click', () => startOAuthLogin('github'));
+
+// 소셜 로그인 콜백이 /index.html#accessToken=... 형태로 돌아왔을 때 자동으로 로그인 상태로 반영
+// fragment(# 뒤쪽)는 HTTP 요청과 Referer에 포함되지 않으므로 쿼리 파라미터보다 토큰 노출 범위가 작습니다.
+(() => {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const tokenFromOAuth = params.get('accessToken');
+  if (tokenFromOAuth) {
+    accessToken = tokenFromOAuth;
+    renderStatus();
+    log('OAuth 콜백', 200, { accessToken: tokenFromOAuth.slice(0, 24) + '...' });
+    history.replaceState({}, '', location.pathname);
+  }
+})();
+</script>
+</body>
+</html>
