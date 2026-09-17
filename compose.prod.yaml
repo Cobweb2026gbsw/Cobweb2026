@@ -1,0 +1,61 @@
+# 배포 대상 서버에서 실행하는 구성입니다. 실제 공개 배포는 이 파일 작성만으로 발생하지 않습니다.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: cobweb2026
+      MYSQL_USER: cobweb
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD required}
+    volumes: [mysql_data:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/cobweb2026?serverTimezone=UTC
+      DB_USERNAME: cobweb
+      FLYWAY_ENABLED: 'true'
+      JUDGE_ENABLED: 'false'
+      PUBLIC_BASE_URL: https://${SITE_DOMAIN:?SITE_DOMAIN required}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+  worker:
+    build: .
+    # Docker 소켓 권한은 전용 워커에만 부여합니다. 제출 컨테이너에는 절대 마운트하지 않습니다.
+    user: '0:0'
+    env_file: .env
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/cobweb2026?serverTimezone=UTC
+      DB_USERNAME: cobweb
+      FLYWAY_ENABLED: 'true'
+      JUDGE_ENABLED: 'true'
+      PUBLIC_BASE_URL: https://${SITE_DOMAIN:?SITE_DOMAIN required}
+      JUDGE_WORKSPACE: /tmp/cobweb-judge
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/cobweb-judge:/tmp/cobweb-judge
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+  proxy:
+    image: caddy:2
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN required}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [app]
+    restart: unless-stopped
+volumes:
+  mysql_data:
+  caddy_data:

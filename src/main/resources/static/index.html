@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cobweb · 문제 풀이</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+<header><a href="/" class="brand">Cobweb</a><nav>
+<button data-view="problems">문제</button><button data-view="submissions">내 제출</button>
+<button data-view="ranking">랭킹</button><button data-view="profile">프로필</button>
+<button data-view="author">문제 만들기</button><button data-view="auth" id="account">로그인</button>
+</nav></header>
+<main><p id="notice" role="status" aria-live="polite"></p>
+<section id="problems" class="view">
+<p class="eyebrow">한 문제씩, 더 깊이</p><h1>문제를 풀고<br>실력을 쌓아보세요.</h1>
+<form id="search"><label>제목 검색 <input name="q" placeholder="체인 레이저"></label><button>검색</button></form>
+<div id="problem-list" class="list"></div><button id="previous">이전</button><button id="next">다음</button>
+</section>
+<section id="problem" class="view" hidden>
+<button data-view="problems">← 문제 목록</button><h1 id="problem-title"></h1><p id="problem-meta"></p>
+<h2>문제 설명</h2><pre id="description" class="prose"></pre>
+<h2>입력</h2><pre id="input-description" class="prose"></pre>
+<h2>출력 / 함수 형식</h2><pre id="output-description" class="prose"></pre>
+<h2>제한 사항</h2><pre id="constraints" class="prose"></pre><h2>예제</h2><div id="examples"></div>
+<form id="submit"><label for="source">Python 풀이</label>
+<textarea id="source" name="source" rows="18" spellcheck="false" required placeholder="def sol(matrix, target):&#10;    return False"></textarea>
+<button>제출하고 채점하기</button></form><pre id="judge-result" aria-live="polite"></pre>
+</section>
+<section id="submissions" class="view" hidden><h1>내 제출</h1><div id="submission-list" class="list"></div></section>
+<section id="ranking" class="view" hidden><h1>랭킹</h1><p>해결한 문제 수, 적은 제출 수 순으로 정렬됩니다.</p><div id="rank-list" class="list"></div></section>
+<section id="profile" class="view" hidden><h1>내 프로필</h1><pre id="profile-info" class="prose"></pre>
+<form id="profile-form"><label>자기소개<textarea name="bio" maxlength="300"></textarea></label>
+<label>GitHub 주소<input name="githubUrl" type="url" placeholder="https://github.com/username"></label><button>저장</button></form>
+<button id="logout">로그아웃</button></section>
+<section id="auth" class="view" hidden><h1>계정</h1><div class="grid">
+<form id="login"><h2>로그인</h2><label>아이디<input name="username" autocomplete="username" required></label>
+<label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label><button>로그인</button>
+<p><button type="button" data-oauth="google">Google</button> <button type="button" data-oauth="naver">Naver</button> <button type="button" data-oauth="github">GitHub</button></p></form>
+<div><h2>회원가입</h2><form id="email-send"><label>이메일<input name="email" type="email" required></label><button>인증 코드 받기</button></form>
+<form id="email-verify"><label>이메일<input name="email" type="email" required></label><label>인증 코드<input name="code" required minlength="8" maxlength="8"></label><button>인증 확인</button></form>
+<form id="signup"><label>아이디<input name="username" required maxlength="16"></label><label>인증한 이메일<input name="email" type="email" required></label>
+<label>확인한 인증 코드<input name="verificationCode" required pattern="[0-9]{8}" minlength="8" maxlength="8" inputmode="numeric" autocomplete="one-time-code"></label>
+<label>비밀번호<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><button>가입하기</button></form></div>
+<div><h2>비밀번호 재설정</h2><form id="reset-request"><label>가입 이메일<input name="email" type="email" required></label><button>코드 받기</button></form>
+<form id="reset-verify"><label>이메일<input name="email" type="email" required></label><label>코드<input name="code" required></label><button>코드 확인</button></form>
+<form id="reset-confirm"><label>새 비밀번호<input name="newPassword" type="password" minlength="8" required></label><button>비밀번호 변경</button></form></div>
+</div></section>
+<section id="author" class="view" hidden><h1>문제 작성과 검수</h1>
+<p>새 문제는 비공개 초안으로 저장됩니다. 검수를 요청하면 운영자가 공개 여부를 결정합니다.</p>
+<form id="author-form">
+<label>문제 번호 (새 문제는 비워두세요)<input name="number" type="number" min="1000"></label>
+<label>제목<input name="title" maxlength="200" required></label>
+<label>본문<textarea name="description" required rows="6"></textarea></label>
+<label>입력 설명<textarea name="inputDescription" required></textarea></label>
+<label>출력 설명<textarea name="outputDescription" required></textarea></label>
+<label>제한 사항<textarea name="constraints"></textarea></label>
+<label>등급<select name="rankType"><option>INITIATE</option><option>SKILLED</option><option>ELITE</option><option>EXPERT</option><option>LEGEND</option><option>MYTHIC</option><option>ABSOLUTE</option></select></label>
+<label>세부 등급<input name="rankInt" type="number" min="1" max="5" value="5"></label>
+<label>시간 제한 (ms)<input name="timeLimitMs" type="number" min="100" max="10000" value="1000"></label>
+<label>메모리 제한 (MB)<input name="memoryLimitMb" type="number" min="64" max="512" value="256"></label>
+<label>실행 방식<select name="executionMode"><option value="STDIN">표준 입출력</option><option value="FUNCTION">sol(matrix, target) 함수</option></select></label>
+<label>예제 입력<textarea name="exampleInput"></textarea></label><label>예제 출력<textarea name="exampleOutput"></textarea></label>
+<label>비공개 채점 입력<textarea name="testInput" required></textarea></label><label>정답 출력<textarea name="testOutput" required></textarea></label>
+<button>초안 저장</button></form>
+<form id="review-request"><label>문제 번호<input name="number" type="number" min="1000" required></label><button>검수 요청</button></form>
+<form id="review"><h2>운영자 검수</h2><label>문제 번호<input name="number" type="number" min="1000" required></label>
+<label>처리<select name="status"><option value="PUBLISHED">공개 승인</option><option value="REJECTED">반려</option><option value="ARCHIVED">보관</option></select></label>
+<label>사유<input name="cause"></label><button>처리</button></form>
+</section>
+</main><footer>Cobweb · 알고리즘 문제 풀이</footer>
+</body></html>

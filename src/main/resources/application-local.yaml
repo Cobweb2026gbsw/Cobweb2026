@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3307/cobweb2026?serverTimezone=UTC
+    username: cobweb
+    password: ${DEV_DB_PASSWORD}
+  flyway:
+    enabled: true
+  jpa:
+    show-sql: false

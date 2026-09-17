@@ -1,0 +1,52 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+# ======
+# 로컬 전용 설정·비밀값·작업 기록·생성물 (소스/테스트/마이그레이션은 제외하지 않음)
+.env
+.env.*
+!.env.example
+.claude
+.ai
+.claude-flow
+/.local/
+/docs/security/CLAUDE_REVIEW_RAW.md
+.DS_Store
+/logs/
+*.log
+*.hprof

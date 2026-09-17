@@ -1,0 +1,59 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: cobweb2026
+  docker:
+    compose:
+      enabled: false  # 개발/운영 Compose는 명시적으로 실행하며 앱 기동 시 자동으로 시작하지 않음
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/cobweb2026?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    # 기존 DB를 자동으로 기준 처리하지 않습니다. 빈 DB는 V1부터, 기존 DB는 검토 후 수동 baseline합니다.
+    enabled: ${FLYWAY_ENABLED:false}
+    baseline-on-migrate: false
+
+judge:
+  enabled: ${JUDGE_ENABLED:false}
+  image: cobweb-python:local
+  workspace: ${JUDGE_WORKSPACE:/tmp/cobweb-judge}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1800000     # 30분 (ms)
+  refresh-token-expiration: 1209600000 # 14일 (ms)
+
+oauth:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID}
+    client-secret: ${GOOGLE_CLIENT_SECRET}
+    redirect-uri: ${PUBLIC_BASE_URL:http://localhost:8080}/api/auth/oauth/google/callback
+  naver:
+    client-id: ${NAVER_CLIENT_ID}
+    client-secret: ${NAVER_CLIENT_SECRET}
+    redirect-uri: ${PUBLIC_BASE_URL:http://localhost:8080}/api/auth/oauth/naver/callback
+  github:
+    client-id: ${GITHUB_CLIENT_ID}
+    client-secret: ${GITHUB_CLIENT_SECRET}
+    redirect-uri: ${PUBLIC_BASE_URL:http://localhost:8080}/api/auth/oauth/github/callback

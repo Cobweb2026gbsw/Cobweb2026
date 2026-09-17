@@ -1,0 +1,10 @@
+spring:
+  flyway:
+    enabled: true
+  jpa:
+    show-sql: false
+server:
+  forward-headers-strategy: none
+  shutdown: graceful
+  error:
+    include-message: never
