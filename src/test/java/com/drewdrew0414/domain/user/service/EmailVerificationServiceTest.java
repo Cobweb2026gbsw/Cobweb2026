@@ -5,6 +5,7 @@ import com.drewdrew0414.domain.user.entity.VerificationPurpose;
 import com.drewdrew0414.domain.user.exception.EmailNotVerifiedException;
 import com.drewdrew0414.domain.user.exception.TooManyVerificationRequestsException;
 import com.drewdrew0414.domain.user.repository.EmailVerificationRepository;
+import com.drewdrew0414.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,13 +32,35 @@ class EmailVerificationServiceTest {
     private EmailVerificationRepository emailVerificationRepository;
 
     @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private MailService mailService;
+
+    @Mock
+    private AuthRateLimitService authRateLimitService;
+
+    @Mock
+    private com.drewdrew0414.global.security.EmailCodeHash emailCodeHash;
 
     private EmailVerificationService emailVerificationService;
 
     @BeforeEach
     void setUp() {
-        emailVerificationService = new EmailVerificationService(emailVerificationRepository, mailService);
+        emailVerificationService = new EmailVerificationService(emailVerificationRepository, userRepository, mailService,
+                authRateLimitService, emailCodeHash);
+    }
+
+    @Test
+    void unknownPasswordResetEmailIsCountedWithoutCreatingCodeOrMail() {
+        String email = "missing@example.invalid";
+        when(userRepository.existsByEmail(email)).thenReturn(false);
+
+        emailVerificationService.sendCode(email, VerificationPurpose.PASSWORD_RESET);
+
+        verify(authRateLimitService).hit("mail-send-PASSWORD_RESET", email, 3, java.time.Duration.ofMinutes(10));
+        verify(emailVerificationRepository, never()).save(any());
+        verify(mailService, never()).sendVerificationCode(any(), any(), any());
     }
 
     @Test
@@ -56,7 +79,7 @@ class EmailVerificationServiceTest {
     @Test
     void consumeVerification_deletesAllRecordsAfterSuccessfulVerification() {
         EmailVerification verification = verifiedEmailVerification();
-        when(emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(
+        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
                 "user@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(verification));
 
         emailVerificationService.consumeVerification("user@example.com", VerificationPurpose.JOIN);
@@ -69,7 +92,7 @@ class EmailVerificationServiceTest {
     void consumeVerification_rejectsUnverifiedEmail() {
         EmailVerification verification = new EmailVerification(
                 "user@example.com", "12345678", VerificationPurpose.JOIN, LocalDateTime.now().plusMinutes(5));
-        when(emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(
+        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
                 "user@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(verification));
 
         assertThrows(EmailNotVerifiedException.class,
@@ -90,7 +113,7 @@ class EmailVerificationServiceTest {
         EmailVerification expired = new EmailVerification("expired@example.com", "12345678",
                 VerificationPurpose.JOIN, LocalDateTime.now().minusMinutes(1));
         expired.markAsVerified();
-        when(emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(
+        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
                 "expired@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(expired));
         assertThrows(EmailNotVerifiedException.class, () ->
                 emailVerificationService.consumeVerification("expired@example.com", VerificationPurpose.JOIN));

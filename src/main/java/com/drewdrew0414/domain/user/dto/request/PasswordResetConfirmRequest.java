@@ -11,6 +11,7 @@ import lombok.Getter;
 // 모든 필드의 getter를 자동 생성 (Lombok)
 public class PasswordResetConfirmRequest {
     @NotBlank(message = "재설정 토큰이 필요합니다.")
+    @Size(max = 36, message = "재설정 토큰 형식이 올바르지 않습니다.")
     // PasswordResetVerifyRequest 처리 응답(PasswordResetTokenResponse)에서 받은 값을 그대로 실어 보내야 함
     private String resetToken;
 

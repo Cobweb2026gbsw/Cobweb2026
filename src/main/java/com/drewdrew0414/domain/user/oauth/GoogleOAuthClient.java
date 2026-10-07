@@ -70,13 +70,15 @@ public class GoogleOAuthClient implements OAuthClient {
                 .body(TokenResponse.class); // JSON 응답 바디를 TokenResponse 레코드로 역직렬화
 
         UserInfoResponse userInfo = restClient.get()
-                .uri("https://www.googleapis.com/oauth2/v3/userinfo")
+                .uri("https://openidconnect.googleapis.com/v1/userinfo")
                 .header("Authorization", "Bearer " + token.accessToken())
                 // 방금 받은 access token으로 사용자 프로필 API 호출
                 .retrieve()
                 .body(UserInfoResponse.class);
 
-        return new OAuthUserInfo(Provider.GOOGLE, userInfo.sub(), userInfo.email(), userInfo.name());
+        // 프로필 이메일이 존재하는 것과 소유권 검증은 다릅니다. 미검증 이메일은 가입 근거로 사용하지 않습니다.
+        return new OAuthUserInfo(Provider.GOOGLE, userInfo.sub(),
+                Boolean.TRUE.equals(userInfo.emailVerified()) ? userInfo.email() : null, userInfo.name());
     }
 
     // 구글 토큰 응답 중 우리가 필요로 하는 access_token 하나만 뽑아 받는 record.
@@ -85,6 +87,7 @@ public class GoogleOAuthClient implements OAuthClient {
     }
 
     // 구글 userinfo 응답 중 우리가 쓰는 필드만 선언 -> 나머지 필드(picture 등)는 자동으로 무시됨
-    private record UserInfoResponse(String sub, String email, String name) {
+    private record UserInfoResponse(String sub, String email, String name,
+                                    @JsonProperty("email_verified") Boolean emailVerified) {
     }
 }

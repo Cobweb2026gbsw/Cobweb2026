@@ -18,17 +18,28 @@ public class SubmissionService {
 
     @Transactional
     public long submit(int number,String code,CustomUserDetails user) {
+        return submit(number,code,Language.PYTHON,user);
+    }
+    @Transactional
+    public long submit(int number,String code,Language language,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
         db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",uid);
         db.queryForList("SELECT id FROM problems WHERE problem_number=? FOR UPDATE",number);
         var p=problems.load(number,user);
+        language.requireMode((String)p.get("execution_mode"));
+        if ("FUNCTION".equals(p.get("execution_mode")) && language!=Language.PYTHON &&
+            !ProblemService.functionAbiCompatible(p))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"기존 함수형 테스트는 Python 제출만 지원합니다.");
+        if(db.queryForObject("SELECT COUNT(*) FROM problem_languages WHERE problem_id=? AND language=?",Integer.class,
+                p.get("id"),language.name())==0)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제에서 허용하지 않은 언어입니다.");
         if (!"PUBLISHED".equals(p.get("status")))
             throw new ResponseStatusException(HttpStatus.CONFLICT,"공개된 문제만 제출할 수 있습니다.");
         if (db.queryForObject("SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE",Long.class,p.get("id"))==0)
             throw new ResponseStatusException(HttpStatus.CONFLICT,"채점 데이터가 준비되지 않았습니다.");
         if (db.queryForObject("SELECT COUNT(*) FROM submissions WHERE user_id=? AND status IN ('QUEUED','RUNNING')",Long.class,uid)>=5)
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"진행 중인 제출은 최대 5개입니다.");
-        db.update("INSERT INTO submissions(user_id,problem_id,language,source_code) VALUES(?,?,'PYTHON',?)",uid,p.get("id"),code);
+        db.update("INSERT INTO submissions(user_id,problem_id,language,source_code) VALUES(?,?,?,?)",uid,p.get("id"),language.name(),code);
         long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
         db.update("UPDATE users SET submit_count=submit_count+1 WHERE id=?",uid);
         db.update("UPDATE problems SET submission_count=submission_count+1 WHERE id=?",p.get("id"));
@@ -37,13 +48,13 @@ public class SubmissionService {
     public List<Map<String,Object>> mine(CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
         return db.queryForList("""
-            SELECT s.id,p.problem_number,p.problem_title,s.status,s.score,s.execution_time_ms,s.submitted_at
+            SELECT s.id,p.problem_number,p.problem_title,s.language,s.status,s.score,s.execution_time_ms,s.submitted_at
             FROM submissions s JOIN problems p ON p.id=s.problem_id WHERE s.user_id=? ORDER BY s.id DESC LIMIT 50
             """,uid);
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        var rows=db.queryForList("SELECT id,user_id,status,score,execution_time_ms,submitted_at,judged_at FROM submissions WHERE id=?",id);
+        var rows=db.queryForList("SELECT id,user_id,language,status,score,execution_time_ms,submitted_at,judged_at FROM submissions WHERE id=?",id);
         if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
         if(((Number)result.get("user_id")).longValue()!=uid && !ProblemService.operator(user))

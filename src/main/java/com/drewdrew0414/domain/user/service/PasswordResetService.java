@@ -8,6 +8,7 @@ import com.drewdrew0414.domain.user.exception.UserNotFoundException;
 import com.drewdrew0414.domain.user.repository.PasswordResetRepository;
 import com.drewdrew0414.domain.user.repository.RefreshTokenRepository;
 import com.drewdrew0414.domain.user.repository.UserRepository;
+import com.drewdrew0414.global.security.TokenHash;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,10 +40,8 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    // 가입 여부 확인 + 코드 발송이 하나의 흐름으로 처리돼야 함
+    // 발송 서비스가 가입 여부를 숨기면서 미가입 주소도 같은 제한에 포함합니다.
     public void requestReset(String email) {
-        userRepository.findByEmail(email).orElseThrow(UserNotFoundException::new);
-        // 가입되지 않은 이메일로는 애초에 재설정 코드를 보낼 필요가 없음
         emailVerificationService.sendCode(email, VerificationPurpose.PASSWORD_RESET);
     }
 
@@ -54,19 +53,26 @@ public class PasswordResetService {
         // 인증 코드를 resetToken으로 교환한 순간 관련 인증 기록을 소비하여 같은 코드로 토큰을 반복 발급받지 못하게 함
         emailVerificationService.consumeVerification(email, VerificationPurpose.PASSWORD_RESET);
 
-        User user = userRepository.findByEmail(email).orElseThrow(UserNotFoundException::new);
+        // 확인과 발급도 사용자 행을 잠가 비밀번호 변경의 토큰 전체 무효화와 직렬화합니다.
+        User user = userRepository.findLockedByEmail(email).orElseThrow(UserNotFoundException::new);
 
         String resetToken = UUID.randomUUID().toString();
         // 추측 불가능한 무작위 문자열을 1회용 토큰으로 사용
         passwordResetRepository.save(
-                new PasswordReset(user.getId(), resetToken, LocalDateTime.now().plus(RESET_TOKEN_TTL)));
+                new PasswordReset(user.getId(), TokenHash.sha256(resetToken), LocalDateTime.now().plus(RESET_TOKEN_TTL)));
         return resetToken;
     }
 
     @Transactional
     // 비밀번호 변경 + 토큰 사용 처리가 함께 반영돼야 함 (하나만 성공하면 안 됨)
     public void confirmReset(String resetToken, String newPassword) {
-        PasswordReset passwordReset = passwordResetRepository.findByResetToken(resetToken)
+        String tokenHash = TokenHash.sha256(resetToken);
+        Long userId = passwordResetRepository.findUserIdByResetToken(tokenHash)
+                .orElseThrow(InvalidResetTokenException::new);
+
+        // 사용자 행을 먼저 잠그면 서로 다른 재설정 토큰의 동시 사용도 같은 순서로 직렬화됩니다.
+        User user = userRepository.findLockedById(userId).orElseThrow(UserNotFoundException::new);
+        PasswordReset passwordReset = passwordResetRepository.findByResetToken(tokenHash)
                 .orElseThrow(InvalidResetTokenException::new);
 
         if (!passwordReset.isValid()) {
@@ -74,14 +80,9 @@ public class PasswordResetService {
             throw new InvalidResetTokenException();
         }
 
-        // 비밀번호 검증 중인 로그인/다른 변경이 사용자 행의 과거 값을 다시 저장하지 못하게 합니다.
-        User user = userRepository.findLockedById(passwordReset.getUserId())
-                .orElseThrow(UserNotFoundException::new);
-
         user.changePassword(passwordEncoder.encode(newPassword));
-        passwordReset.markAsUsed();
+        passwordResetRepository.invalidateAllByUserId(user.getId());
         refreshTokenRepository.deleteByUserId(user.getId());
-        // 비밀번호가 바뀌어도 기존 refresh token이 살아 있으면 탈취된 세션이 계속 재발급될 수 있으므로 모두 폐기
-        // 둘 다 변경감지(dirty checking)로 트랜잭션 종료 시 자동 반영됨
+        // 비밀번호가 바뀌면 같은 계정의 다른 재설정 토큰과 기존 refresh 세션도 함께 폐기합니다.
     }
 }

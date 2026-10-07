@@ -46,7 +46,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     // 계정 정지 및 사용자 ID를 확인하여 같은 username의 재가입 계정도 구분합니다.
+                    Object tokenVersion = claims.get("tokenVersion");
                     if (String.valueOf(userDetails.getUserId()).equals(claims.getSubject()) &&
+                            tokenVersion instanceof Number version &&
+                            version.longValue() == userDetails.getUser().getAccessTokenVersion() &&
                             userDetails.isEnabled() && userDetails.isAccountNonLocked()) {
                         SecurityContextHolder.getContext().setAuthentication(authentication);
                     }

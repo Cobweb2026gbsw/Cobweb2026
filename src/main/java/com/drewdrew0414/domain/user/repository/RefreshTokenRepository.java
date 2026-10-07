@@ -13,5 +13,8 @@ import java.util.Optional;
 // JpaRepository<RefreshToken, Long> -> 기본 CRUD(save/findById/deleteById 등)는 자동으로 생김
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
     Optional<RefreshToken> findByToken(String token); // 재발급/로그아웃 시 토큰으로 조회
-    void deleteByUserId(Long userId); // 로그아웃, 재로그인 시 기존 토큰 정리
+    // 잠금 대기 전에 열린 REPEATABLE READ 스냅샷이 새로 발급된 토큰을 놓치지 않도록 현재 행을 직접 삭제합니다.
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("delete from RefreshToken r where r.userId = :userId")
+    void deleteByUserId(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

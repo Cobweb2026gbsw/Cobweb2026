@@ -26,6 +26,7 @@ package com.drewdrew0414.domain.user.entity;
  * last_login_at         DATETIME                     -> LocalDateTime lastLoginAt
  * created_at            TIMESTAMP DEFAULT NOW        -> LocalDateTime createdAt
  * updated_password_at   TIMESTAMP DEFAULT NOW        -> LocalDateTime updatedPasswordAt
+ * access_token_version  BIGINT DEFAULT 0             -> long accessTokenVersion
  */
 
 import jakarta.persistence.*;
@@ -122,6 +123,9 @@ public class User {
     @Column(name = "updated_password_at")
     private LocalDateTime updatedPasswordAt;
 
+    @Column(name = "access_token_version", nullable = false)
+    private long accessTokenVersion = 0;
+
     @Builder
     // 회원가입처럼 새로 만들 때 필요한 값만 받는 생성자에 빌더를 붙임
     // id, role, status 등은 여기서 안 받고 기본값 그대로 둠
@@ -146,6 +150,12 @@ public class User {
         // 비밀번호 바꿨을 때 호출되는 로직
         this.password = encodedPassword;
         this.updatedPasswordAt = LocalDateTime.now();
+        invalidateAccessTokens();
+    }
+
+    public void invalidateAccessTokens() {
+        // 매 요청의 JWT 버전과 현재 계정 버전을 대조합니다. 기존 access JWT는 즉시 거절됩니다.
+        this.accessTokenVersion++;
     }
 
     public void increaseLoginFailedCount() {

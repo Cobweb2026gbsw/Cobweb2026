@@ -1,6 +1,7 @@
 package com.drewdrew0414.domain.user.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 
 /*
@@ -11,6 +12,7 @@ import lombok.Getter;
 // 모든 필드의 getter를 자동 생성 (Lombok) -> 컨트롤러/서비스에서 request.getUsername()처럼 꺼내 씀
 public class LoginRequest {
     @NotBlank(message = "아이디를 입력해주세요.")
+    @Size(max = 16, message = "아이디는 16자 이하여야 합니다.")
     // null이거나 빈 문자열("")이거나 공백만 있으면 검증 실패 -> GlobalExceptionHandler가 이 message로 400 응답
     private String username;
 

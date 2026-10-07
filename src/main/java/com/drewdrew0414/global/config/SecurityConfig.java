@@ -4,6 +4,7 @@ import com.drewdrew0414.global.security.CustomUserDetailsService;
 import com.drewdrew0414.global.security.jwt.JwtAuthenticationFilter;
 import com.drewdrew0414.global.security.jwt.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -41,6 +42,7 @@ class SecurityConfig implements WebMvcConfigurer {
     }
 
     @Bean
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     // 스프링이 관리하는 SecurityFilterChain 빈으로 등록 -> 모든 HTTP 요청이 이 체인을 통과하게 됨
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
@@ -52,8 +54,13 @@ class SecurityConfig implements WebMvcConfigurer {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 세션을 아예 만들지 않음 -> 로그인 상태는 매 요청마다 JWT로만 판단
+                .exceptionHandling(errors -> errors
+                        // 인증 정보가 없거나 만료된 요청은 401, 인증은 되었지만 권한이 부족한
+                        // 요청은 403으로 구분합니다. 클라이언트는 401에서만 재발급을 시도할 수 있습니다.
+                        .authenticationEntryPoint((request, response, exception) -> response.setStatus(401))
+                        .accessDeniedHandler((request, response, exception) -> response.setStatus(403)))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles/*").permitAll()
                         .requestMatchers("/app.html", "/app.js", "/app.css").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         // 로그아웃은 현재 사용자 ID의 refresh token을 삭제하므로 반드시 access token으로 본인을 확인

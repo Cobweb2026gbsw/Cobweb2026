@@ -20,7 +20,7 @@ public class ProblemRequests {
         @Min(1) @Max(5) int rankInt,
         @Min(100) @Max(10000) int timeLimitMs,
         @Min(64) @Max(512) int memoryLimitMb,
-        @Pattern(regexp="STDIN|FUNCTION") @NotNull String executionMode,
+        @Pattern(regexp="STDIN|FUNCTION|SQL") @NotNull String executionMode,
         @NotNull @Size(max=20) List<@NotNull @Valid Example> examples,
         @NotEmpty @Size(max=50) List<@NotNull @Valid TestCase> tests
     ) {}

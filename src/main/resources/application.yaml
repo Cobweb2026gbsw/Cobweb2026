@@ -36,7 +36,7 @@ spring:
 
 judge:
   enabled: ${JUDGE_ENABLED:false}
-  image: cobweb-python:local
+  image: ${JUDGE_IMAGE:cobweb-languages:local}
   workspace: ${JUDGE_WORKSPACE:/tmp/cobweb-judge}
 
 jwt:

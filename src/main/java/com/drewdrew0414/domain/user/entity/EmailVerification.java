@@ -8,7 +8,7 @@ package com.drewdrew0414.domain.user.entity;
  * [테이블 컬럼 → 필드]
  * id            BIGINT PK                  -> Long id
  * email         VARCHAR(255) NOT NULL      -> String email
- * code          CHAR(8) NOT NULL           -> String code
+ * code_hash     CHAR(64) NOT NULL          -> String codeHash
  * purpose       ENUM(JOIN, PASSWORD_RESET) -> VerificationPurpose purpose
  * is_verified   BOOLEAN NOT NULL DEFAULT FALSE -> boolean verified
  * expires_at    DATETIME NOT NULL          -> LocalDateTime expiresAt
@@ -45,9 +45,9 @@ public class EmailVerification {
     @Column(nullable = false, length = 255)
     private String email;
 
-    @Column(nullable = false, length = 8)
-    // 8자리 숫자 코드, Flyway V1 스키마의 CHAR(8)과 길이를 맞춤
-    private String code;
+    @Column(name = "code_hash", nullable = false, length = 64)
+    // 8자리 원문 대신 이메일·목적·코드에 대한 HMAC-SHA-256 지문만 저장합니다.
+    private String codeHash;
 
     @Enumerated(EnumType.STRING)
     // enum을 이름 그대로 문자열로 저장 (ORDINAL 쓰면 순서 바뀔 때 데이터가 꼬임)
@@ -66,9 +66,9 @@ public class EmailVerification {
     //                              수정 불가 표시
     private LocalDateTime createdAt;
 
-    public EmailVerification(String email, String code, VerificationPurpose purpose, LocalDateTime expiresAt) {
+    public EmailVerification(String email, String codeHash, VerificationPurpose purpose, LocalDateTime expiresAt) {
         this.email = email;
-        this.code = code;
+        this.codeHash = codeHash;
         this.purpose = purpose;
         this.expiresAt = expiresAt;
     }

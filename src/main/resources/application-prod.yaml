@@ -3,8 +3,9 @@ spring:
     enabled: true
   jpa:
     show-sql: false
+  web:
+    error:
+      include-message: never
 server:
   forward-headers-strategy: none
   shutdown: graceful
-  error:
-    include-message: never

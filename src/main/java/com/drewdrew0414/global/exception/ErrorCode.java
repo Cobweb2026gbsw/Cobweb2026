@@ -24,9 +24,11 @@ public enum ErrorCode {
     VERIFICATION_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "인증 코드가 일치하지 않습니다."),
     VERIFICATION_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증 코드가 만료되었습니다. 다시 요청해주세요."),
     TOO_MANY_VERIFICATION_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해주세요."),
+    TOO_MANY_AUTH_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요."),
     INVALID_RESET_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 토큰입니다."),
     INVALID_OAUTH_STATE(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 요청입니다. 로그인을 다시 시작해주세요."),
     OAUTH_EMAIL_NOT_FOUND(HttpStatus.BAD_REQUEST, "소셜 계정에서 확인된 이메일을 가져올 수 없습니다."),
+    OAUTH_SIGNUP_UNAVAILABLE(HttpStatus.FORBIDDEN, "이 제공자의 신규 가입은 이메일 소유권 확인 절차가 준비될 때까지 중단됩니다."),
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "지원하지 않는 소셜 로그인 제공자입니다.");
 
     private final HttpStatus status;

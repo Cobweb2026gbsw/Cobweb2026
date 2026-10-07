@@ -2,8 +2,10 @@ package com.drewdrew0414;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
+@EnableScheduling
 // 이 애노테이션 하나가 @Configuration + @EnableAutoConfiguration + @ComponentScan을 합쳐놓은 것
 // 이 클래스가 있는 패키지(com.drewdrew0414) 아래를 전부 컴포넌트 스캔 대상으로 삼는다.
 public class Cobweb2026Application {

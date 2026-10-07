@@ -7,7 +7,7 @@ package com.drewdrew0414.domain.user.entity;
  * [테이블 컬럼 → 필드]
  * id           BIGINT PK                -> Long id
  * user_id      BIGINT NOT NULL          -> Long userId
- * reset_token  VARCHAR(255) NOT NULL UNIQUE -> String resetToken
+ * reset_token  CHAR(64) NOT NULL UNIQUE -> String resetToken (발급한 UUID의 SHA-256 지문)
  * is_used      BOOLEAN NOT NULL DEFAULT FALSE -> boolean used
  * expires_at   DATETIME NOT NULL        -> LocalDateTime expiresAt
  * created_at   DATETIME                 -> LocalDateTime createdAt
@@ -42,7 +42,7 @@ public class PasswordReset {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "reset_token", nullable = false, unique = true, length = 255)
+    @Column(name = "reset_token", nullable = false, unique = true, length = 64)
     private String resetToken;
     // UUID.randomUUID() 등으로 생성
 

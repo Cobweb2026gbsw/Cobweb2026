@@ -42,7 +42,7 @@ public class JwtTokenProvider {
     }
 
 
-    public String generateAccessToken(Long userId, String username, String role) {
+    public String generateAccessToken(Long userId, String username, String role, long tokenVersion) {
         // subject(sub 클레임)에 userId를 담고, username/role은 커스텀 클레임으로 추가
         Date now = new Date();
         Date expiry = new Date(now.getTime() + accessTokenExpiration);
@@ -51,6 +51,7 @@ public class JwtTokenProvider {
                 .subject(String.valueOf(userId))
                 .claim("username", username)
                 .claim("role", role)
+                .claim("tokenVersion", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key) // 위조 방지를 위해 서명 (key는 application.yaml jwt.secret 기반)
@@ -84,10 +85,15 @@ public class JwtTokenProvider {
     }
 
     public void validateOrThrow(String token) {
-        // reissue()처럼 "왜 실패했는지"까지 클라이언트에 알려줘야 하는 곳에서 씀
-        // 만료(ExpiredJwtException)와 그 외 위조/형식 오류를 구분해서 서로 다른 예외로 던짐
+        validateAndGetUserId(token);
+    }
+
+    /** 재발급 시 JWT를 한 번만 파싱하여 서명·만료·사용자 ID를 함께 검사합니다. */
+    public Long validateAndGetUserId(String token) {
         try {
-            Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
+            String subject = Jwts.parser().verifyWith(key).build().parseSignedClaims(token)
+                    .getPayload().getSubject();
+            return Long.valueOf(subject);
         } catch (ExpiredJwtException e) {
             throw new ExpiredTokenException();
         } catch (JwtException | IllegalArgumentException e) {

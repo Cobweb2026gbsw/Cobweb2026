@@ -24,6 +24,17 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @org.springframework.data.jpa.repository.Query("select u from User u where u.id = :id")
     Optional<User> findLockedById(@org.springframework.data.repository.query.Param("id") Long id);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select u from User u where u.email = :email")
+    Optional<User> findLockedByEmail(@org.springframework.data.repository.query.Param("email") String email);
+
+    // OAuth 재로그인도 사용자 행을 먼저 잠가 refresh 토큰 회전과 계정 상태 변경을 직렬화합니다.
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select u from User u where u.provider = :provider and u.providerId = :providerId")
+    Optional<User> findLockedByProviderAndProviderId(
+            @org.springframework.data.repository.query.Param("provider") Provider provider,
+            @org.springframework.data.repository.query.Param("providerId") String providerId);
+
     Optional<User> findByUsername(String username); // 로그인 시 아이디로 유저 조회
     Optional<User> findByEmail(String email); // 비밀번호 재설정 등 이메일로 유저 조회
     boolean existsByUsername(String username); // 회원가입 시 아이디 중복 체크

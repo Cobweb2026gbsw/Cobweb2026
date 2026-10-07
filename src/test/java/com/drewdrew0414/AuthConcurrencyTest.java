@@ -38,7 +38,7 @@ class AuthConcurrencyTest {
         long uid=db.queryForObject("SELECT id FROM users WHERE username=?",Long.class,name);
         String token=UUID.randomUUID().toString();
         db.update("INSERT INTO password_reset(user_id,reset_token,expires_at) VALUES(?,?,?)",
-                uid,token,LocalDateTime.now().plusMinutes(5));
+                uid,com.drewdrew0414.global.security.TokenHash.sha256(token),LocalDateTime.now().plusMinutes(5));
         var verified=new CountDownLatch(1);
         var releaseLogin=new CountDownLatch(1);
         doAnswer(call -> {

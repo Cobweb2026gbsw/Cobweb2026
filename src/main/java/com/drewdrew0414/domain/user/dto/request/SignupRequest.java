@@ -20,6 +20,7 @@ public class SignupRequest {
 
     @NotBlank(message = "이메일을 입력해주세요.")
     @Email(message = "이메일 형식이 올바르지 않습니다.")
+    @Size(max = 255, message = "이메일은 255자 이하여야 합니다.")
     // "aaa@bbb.ccc" 형태인지 형식만 검사 (실제 소유 여부는 EmailVerificationService가 별도로 검증)
     private String email;
 

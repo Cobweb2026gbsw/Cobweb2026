@@ -12,8 +12,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 /*
  * 깃허브 OAuth 연동을 담당하는 클라이언트입니다.
- * 깃허브는 프로필의 email이 비공개로 설정된 경우 null로 내려오기 때문에,
- * 그럴 때는 /user/emails를 추가로 호출해서 검증된(primary) 이메일을 따로 찾아옵니다.
+ * 공개 프로필의 email은 검증 여부를 전달하지 않으므로 사용하지 않습니다.
+ * /user/emails를 항상 호출해 검증된 대표 이메일만 가입 근거로 사용합니다.
  */
 @Component
 // 스프링이 관리하는 빈으로 등록 -> OAuthService가 List<OAuthClient>로 모아서 주입받음
@@ -76,8 +76,8 @@ public class GithubOAuthClient implements OAuthClient {
                 .retrieve()
                 .body(UserResponse.class);
 
-        String email = user.email() != null ? user.email() : fetchPrimaryEmail(token.accessToken());
-        // 프로필 이메일이 비공개면 null로 내려오므로, 그 경우에만 이메일 목록 API를 추가로 호출
+        // /user.email은 공개 프로필 값이며 검증 상태를 포함하지 않습니다. 항상 /user/emails에서 확인합니다.
+        String email = fetchPrimaryEmail(token.accessToken());
 
         return new OAuthUserInfo(Provider.GITHUB, String.valueOf(user.id()), email, user.login());
     }
@@ -108,7 +108,7 @@ public class GithubOAuthClient implements OAuthClient {
     }
 
     // /user 응답 중 우리가 쓰는 필드만 선언 -> 나머지 필드(avatar_url 등)는 자동으로 무시됨
-    private record UserResponse(long id, String login, String email) {
+    private record UserResponse(long id, String login) {
     }
 
     // /user/emails 응답 배열의 원소 하나

@@ -4,7 +4,9 @@ import com.drewdrew0414.domain.user.dto.response.TokenResponse;
 import com.drewdrew0414.domain.user.entity.Provider;
 import com.drewdrew0414.domain.user.entity.User;
 import com.drewdrew0414.domain.user.exception.InvalidOAuthStateException;
+import com.drewdrew0414.domain.user.exception.BannedUserException;
 import com.drewdrew0414.domain.user.exception.OAuthEmailNotFoundException;
+import com.drewdrew0414.domain.user.exception.OAuthSignupUnavailableException;
 import com.drewdrew0414.domain.user.oauth.OAuthClient;
 import com.drewdrew0414.domain.user.oauth.OAuthUserInfo;
 import com.drewdrew0414.domain.user.repository.UserRepository;
@@ -77,8 +79,13 @@ public class OAuthService {
 
         OAuthUserInfo info = resolveClient(provider).fetchUserInfo(code, state);
 
-        User user = userRepository.findByProviderAndProviderId(provider, info.providerId())
+        User user = userRepository.findLockedByProviderAndProviderId(provider, info.providerId())
                 .orElseGet(() -> {
+                    if (provider == Provider.NAVER) {
+                        // 네이버 프로필 응답에는 이메일 검증 여부가 없어 신규 계정의 복구 주소로 신뢰할 수 없습니다.
+                        // 기존 provider ID가 연결된 계정의 로그인만 유지합니다.
+                        throw new OAuthSignupUnavailableException();
+                    }
                     if (info.email() == null || info.email().isBlank()) {
                         // 새 계정은 이메일이 없으면 중복 판정과 비밀번호 복구가 불가능하므로 생성하지 않습니다.
                         // 이미 가입된 소셜 계정은 DB에 보관된 정보를 사용하므로 제공자가 이번에 이메일을 생략해도 로그인할 수 있습니다.
@@ -87,6 +94,8 @@ public class OAuthService {
                     return userRepository.save(createUser(provider, info));
                 });
         // 이미 가입된 (provider, providerId) 조합이면 그대로 조회, 처음 보는 조합이면 즉시 회원가입
+
+        if (!user.isLoginable()) throw new BannedUserException();
 
         return authService.issueTokens(user, response);
         // 로컬 로그인과 완전히 같은 방식(access/refresh token 발급 + 쿠키 세팅)으로 로그인 처리

@@ -1,0 +1,8 @@
+-- 기존 Python 전용 함수형 문제도 새 고정 함수 어댑터를 통해 모든 비-SQL 언어로 제출할 수 있습니다.
+INSERT IGNORE INTO problem_languages(problem_id,language)
+SELECT p.id,l.language FROM problems p CROSS JOIN (
+    SELECT 'C' AS language UNION ALL SELECT 'CPP' UNION ALL SELECT 'JAVA'
+    UNION ALL SELECT 'JAVASCRIPT' UNION ALL SELECT 'TYPESCRIPT' UNION ALL SELECT 'CSHARP'
+    UNION ALL SELECT 'GO' UNION ALL SELECT 'RUST' UNION ALL SELECT 'KOTLIN'
+    UNION ALL SELECT 'RUBY' UNION ALL SELECT 'LLVM_IR'
+) l WHERE p.execution_mode='FUNCTION';

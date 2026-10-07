@@ -1,8 +1,12 @@
 package com.drewdrew0414.domain.user.service;
 
 import com.drewdrew0414.domain.user.entity.Provider;
+import com.drewdrew0414.domain.user.entity.User;
+import com.drewdrew0414.domain.user.entity.UserStatus;
+import com.drewdrew0414.domain.user.exception.BannedUserException;
 import com.drewdrew0414.domain.user.exception.InvalidOAuthStateException;
 import com.drewdrew0414.domain.user.exception.OAuthEmailNotFoundException;
+import com.drewdrew0414.domain.user.exception.OAuthSignupUnavailableException;
 import com.drewdrew0414.domain.user.oauth.OAuthClient;
 import com.drewdrew0414.domain.user.oauth.OAuthUserInfo;
 import com.drewdrew0414.domain.user.repository.UserRepository;
@@ -14,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -78,7 +83,7 @@ class OAuthServiceTest {
     void loginOrSignup_rejectsAccountWithoutVerifiedEmail() {
         when(oAuthClient.fetchUserInfo("code", "same-state"))
                 .thenReturn(new OAuthUserInfo(Provider.GOOGLE, "provider-id", null, "name"));
-        when(userRepository.findByProviderAndProviderId(Provider.GOOGLE, "provider-id"))
+        when(userRepository.findLockedByProviderAndProviderId(Provider.GOOGLE, "provider-id"))
                 .thenReturn(Optional.empty());
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -87,5 +92,47 @@ class OAuthServiceTest {
                         Provider.GOOGLE, "code", "same-state", "same-state", response));
 
         verify(userRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void loginOrSignup_doesNotIssueTokensForStoppedAccount() {
+        User existing = User.builder().username("stopped-user").email("user@example.com").password("unused").build();
+        ReflectionTestUtils.setField(existing, "status", UserStatus.STOPPED);
+        when(oAuthClient.fetchUserInfo("code", "same-state"))
+                .thenReturn(new OAuthUserInfo(Provider.GOOGLE, "provider-id", "user@example.com", "name"));
+        when(userRepository.findLockedByProviderAndProviderId(Provider.GOOGLE, "provider-id"))
+                .thenReturn(Optional.of(existing));
+
+        assertThrows(BannedUserException.class, () -> oAuthService.loginOrSignup(
+                Provider.GOOGLE, "code", "same-state", "same-state", new MockHttpServletResponse()));
+        verify(authService, never()).issueTokens(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void naverNewSignupIsBlockedWithoutVerifiedEmailEvidence() {
+        when(oAuthClient.getProvider()).thenReturn(Provider.NAVER);
+        oAuthService.init();
+        when(oAuthClient.fetchUserInfo("code", "same-state"))
+                .thenReturn(new OAuthUserInfo(Provider.NAVER, "provider-id", "unverified@example.com", "name"));
+        when(userRepository.findLockedByProviderAndProviderId(Provider.NAVER, "provider-id"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(OAuthSignupUnavailableException.class, () -> oAuthService.loginOrSignup(
+                Provider.NAVER, "code", "same-state", "same-state", new MockHttpServletResponse()));
+        verify(userRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void existingNaverAccountCanStillLogIn() {
+        when(oAuthClient.getProvider()).thenReturn(Provider.NAVER);
+        oAuthService.init();
+        User existing = User.builder().username("naver-user").email("old@example.com").password("unused").build();
+        when(oAuthClient.fetchUserInfo("code", "same-state"))
+                .thenReturn(new OAuthUserInfo(Provider.NAVER, "provider-id", null, "name"));
+        when(userRepository.findLockedByProviderAndProviderId(Provider.NAVER, "provider-id"))
+                .thenReturn(Optional.of(existing));
+
+        oAuthService.loginOrSignup(Provider.NAVER, "code", "same-state", "same-state", new MockHttpServletResponse());
+        verify(authService).issueTokens(org.mockito.ArgumentMatchers.eq(existing), org.mockito.ArgumentMatchers.any());
     }
 }

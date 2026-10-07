@@ -29,7 +29,8 @@ class PasswordResetConcurrencyTest {
         long uid=db.queryForObject("SELECT id FROM users WHERE username=?",Long.class,name);
         String token=UUID.randomUUID().toString();
         // 엔티티와 동일한 JVM LocalDateTime을 사용합니다(DB 서버 NOW()의 시간대와 섞지 않습니다).
-        db.update("INSERT INTO password_reset(user_id,reset_token,expires_at) VALUES(?,?,?)",uid,token,
+        db.update("INSERT INTO password_reset(user_id,reset_token,expires_at) VALUES(?,?,?)",uid,
+                com.drewdrew0414.global.security.TokenHash.sha256(token),
                 java.time.LocalDateTime.now().plusMinutes(5));
 
         CountDownLatch encodeEntered=new CountDownLatch(2);

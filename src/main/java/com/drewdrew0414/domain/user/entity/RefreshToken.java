@@ -9,7 +9,7 @@ package com.drewdrew0414.domain.user.entity;
  * [테이블 컬럼 → 필드]
  * id          BIGINT PK                  -> Long id
  * user_id     BIGINT NOT NULL            -> Long userId
- * token       VARCHAR(512) NOT NULL UNIQUE -> String token
+ * token       CHAR(64) NOT NULL UNIQUE -> String token (원문 JWT의 SHA-256 지문)
  * expires_at  DATETIME NOT NULL          -> LocalDateTime expiresAt
  * created_at  DATETIME NOT NULL          -> LocalDateTime createdAt
  */
@@ -43,8 +43,8 @@ public class RefreshToken {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(nullable = false, unique = true, length = 512)
-    // JWT 문자열 자체를 그대로 저장 (재발급 요청 시 이 값으로 레코드를 찾음)
+    @Column(nullable = false, unique = true, length = 64)
+    // 쿠키 원문 대신 SHA-256 지문만 저장하고 같은 지문으로 조회합니다.
     private String token;
 
     @Column(name = "expires_at", nullable = false)

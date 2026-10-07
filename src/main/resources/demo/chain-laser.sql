@@ -25,7 +25,8 @@ INSERT INTO problems (
     group_id,
     source_name,
     source_url,
-    published_at
+    published_at,
+    function_abi_compatible
 ) VALUES (
     @chain_laser_problem_number,
     '체인 레이저',
@@ -74,7 +75,8 @@ INSERT INTO problems (
     NULL,
     NULL,
     NULL,
-    CURRENT_TIMESTAMP
+    CURRENT_TIMESTAMP,
+    TRUE
 )
 ON DUPLICATE KEY UPDATE
     id = LAST_INSERT_ID(id),
@@ -94,7 +96,8 @@ ON DUPLICATE KEY UPDATE
     group_id = VALUES(group_id),
     source_name = VALUES(source_name),
     source_url = VALUES(source_url),
-    published_at = VALUES(published_at);
+    published_at = VALUES(published_at),
+    function_abi_compatible = VALUES(function_abi_compatible);
 
 SET @chain_laser_problem_id = LAST_INSERT_ID();
 
@@ -166,9 +169,13 @@ FROM tags
 WHERE name IN ('구현', '그래프 탐색', '너비 우선 탐색')
 ON DUPLICATE KEY UPDATE tag_id = VALUES(tag_id);
 
-INSERT INTO problem_languages (problem_id, language)
-VALUES (@chain_laser_problem_id, 'PYTHON')
-ON DUPLICATE KEY UPDATE language = VALUES(language);
+INSERT IGNORE INTO problem_languages (problem_id, language)
+SELECT @chain_laser_problem_id, language FROM (
+    SELECT 'PYTHON' AS language UNION ALL SELECT 'C' UNION ALL SELECT 'CPP' UNION ALL SELECT 'JAVA'
+    UNION ALL SELECT 'JAVASCRIPT' UNION ALL SELECT 'TYPESCRIPT' UNION ALL SELECT 'CSHARP'
+    UNION ALL SELECT 'GO' UNION ALL SELECT 'RUST' UNION ALL SELECT 'KOTLIN'
+    UNION ALL SELECT 'RUBY' UNION ALL SELECT 'LLVM_IR'
+) supported_languages;
 
 UPDATE problems SET execution_mode='FUNCTION' WHERE id=@chain_laser_problem_id;
 

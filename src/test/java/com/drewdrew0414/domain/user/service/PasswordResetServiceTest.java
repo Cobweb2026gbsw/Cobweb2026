@@ -2,9 +2,11 @@ package com.drewdrew0414.domain.user.service;
 
 import com.drewdrew0414.domain.user.entity.PasswordReset;
 import com.drewdrew0414.domain.user.entity.User;
+import com.drewdrew0414.domain.user.entity.VerificationPurpose;
 import com.drewdrew0414.domain.user.repository.PasswordResetRepository;
 import com.drewdrew0414.domain.user.repository.RefreshTokenRepository;
 import com.drewdrew0414.domain.user.repository.UserRepository;
+import com.drewdrew0414.global.security.TokenHash;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -40,10 +42,20 @@ class PasswordResetServiceTest {
     private PasswordResetService passwordResetService;
 
     @Test
-    void confirmReset_invalidatesEveryRefreshTokenForUser() {
+    void requestResetUsesSharedSendPolicyForAnyEmail() {
+        String email = "missing@example.invalid";
+
+        passwordResetService.requestReset(email);
+
+        verify(emailVerificationService).sendCode(email, VerificationPurpose.PASSWORD_RESET);
+    }
+
+    @Test
+    void confirmReset_invalidatesAllResetAndRefreshTokensForUser() {
         PasswordReset passwordReset = new PasswordReset(42L, "reset-token", LocalDateTime.now().plusMinutes(30));
         User user = mock(User.class);
-        when(passwordResetRepository.findByResetToken("reset-token")).thenReturn(Optional.of(passwordReset));
+        when(passwordResetRepository.findUserIdByResetToken(TokenHash.sha256("reset-token"))).thenReturn(Optional.of(42L));
+        when(passwordResetRepository.findByResetToken(TokenHash.sha256("reset-token"))).thenReturn(Optional.of(passwordReset));
         when(userRepository.findLockedById(42L)).thenReturn(Optional.of(user));
         when(user.getId()).thenReturn(42L);
         when(passwordEncoder.encode("new-password")).thenReturn("encoded-password");
@@ -51,6 +63,7 @@ class PasswordResetServiceTest {
         passwordResetService.confirmReset("reset-token", "new-password");
 
         verify(user).changePassword("encoded-password");
+        verify(passwordResetRepository).invalidateAllByUserId(42L);
         verify(refreshTokenRepository).deleteByUserId(42L);
     }
 }

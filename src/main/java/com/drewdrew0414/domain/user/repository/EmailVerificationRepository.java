@@ -3,6 +3,9 @@ package com.drewdrew0414.domain.user.repository;
 import com.drewdrew0414.domain.user.entity.EmailVerification;
 import com.drewdrew0414.domain.user.entity.VerificationPurpose;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+
+import jakarta.persistence.LockModeType;
 
 import java.util.Optional;
 import java.time.LocalDateTime;
@@ -13,8 +16,11 @@ import java.time.LocalDateTime;
  */
 // JpaRepository<EmailVerification, Long> -> 기본 CRUD는 자동으로 생김
 public interface EmailVerificationRepository extends JpaRepository<EmailVerification, Long> {
-    // findTopBy...OrderByCreatedAtDesc -> email+purpose 조건에 맞는 것 중 created_at이 가장 최근인 1건만 조회
-    Optional<EmailVerification> findTopByEmailAndPurposeOrderByCreatedAtDesc(String email, VerificationPurpose purpose);
+    // DATETIME(0)에 같은 초의 발급 기록이 묶일 수 있으므로 ID로 순서를 확정합니다.
+    Optional<EmailVerification> findTopByEmailAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<EmailVerification> findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
 
     // 최근 일정 시간 안에 같은 주소/목적으로 발급한 횟수를 세어 메일 발송 요청 제한에 사용
     long countByEmailAndPurposeAndCreatedAtAfter(String email, VerificationPurpose purpose, LocalDateTime createdAfter);

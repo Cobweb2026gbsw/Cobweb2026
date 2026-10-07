@@ -13,6 +13,7 @@ import com.drewdrew0414.domain.user.repository.RefreshTokenRepository;
 import com.drewdrew0414.domain.user.repository.UserLogRepository;
 import com.drewdrew0414.domain.user.repository.UserRepository;
 import com.drewdrew0414.global.security.jwt.JwtTokenProvider;
+import com.drewdrew0414.global.security.TokenHash;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ import java.time.LocalDateTime;
 
 public class AuthService {
     private static final String REFRESH_TOKEN_COOKIE = "refreshToken";
+    private static final Duration AUTH_WINDOW = Duration.ofMinutes(10);
     // 응답 쿠키/요청 쿠키에서 refresh token을 주고받을 때 쓰는 쿠키 이름, 오타 방지를 위해 상수로 고정
 
     private final UserRepository userRepository;
@@ -46,11 +48,16 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final AuthRateLimitService authRateLimitService;
 
     @Transactional(dontRollbackOn = {UserNotFoundException.class, BannedUserException.class, PasswordMismatchException.class})
     // 정상적인 로그인 거절도 실패 횟수와 감사 로그는 커밋되어야 합니다.
     // 로그인 판정(성공/실패)과 UserLog 저장, User 필드 변경이 하나의 트랜잭션으로 묶여야 함
     public TokenResponse login(String username, String rawPassword, String clientIp, String userAgent, HttpServletResponse response) {
+        // REQUIRES_NEW: 실패한 비밀번호 때문에 로그인 트랜잭션이 종료되어도 시도 횟수는 유지됩니다.
+        authRateLimitService.hit("login-user", username, 20, AUTH_WINDOW);
+        // 프록시 뒤에서는 remoteAddr가 공유될 수 있으므로 IP 한도는 넉넉한 2차 상한으로만 사용합니다.
+        authRateLimitService.hit("login-ip", clientIp, 1000, AUTH_WINDOW);
         User user = userRepository.findLockedByUsername(username)
                 .orElseThrow(() -> {
                     // 유저 자체를 못 찾은 경우 -> userId 없이 시도 기록만 남기고 예외를 던짐
@@ -78,18 +85,20 @@ public class AuthService {
         return issueTokens(user, response);
     }
 
-    @Transactional
+    @Transactional(dontRollbackOn = ExpiredTokenException.class)
     // DB에서 기존 RefreshToken을 지우고 새로 저장하는 과정이 하나의 트랜잭션으로 묶여야 함
     public TokenResponse reissue(String refreshToken, HttpServletResponse response) {
         if (refreshToken == null) {
             // 쿠키 자체가 없는 경우 (로그아웃 후 재호출 등) -> 애초에 검증할 대상이 없으니 바로 예외
             throw new InvalidTokenException();
         }
-        jwtTokenProvider.validateOrThrow(refreshToken);
-        // JWT 자체의 서명/만료를 먼저 검사 (위조됐거나 만료됐으면 여기서 바로 예외를 던짐)
-
-        RefreshToken saved = refreshTokenRepository.findByToken(refreshToken)
+        long userId = jwtTokenProvider.validateAndGetUserId(refreshToken);
+        // 서명과 만료를 한 번만 검사하고 subject의 사용자 행부터 잠급니다.
+        // 로그인·재설정·로그아웃도 같은 행을 먼저 잠그므로 토큰 회전을 직렬화합니다.
+        User user = userRepository.findLockedById(userId).orElseThrow(UserNotFoundException::new);
+        RefreshToken saved = refreshTokenRepository.findByToken(TokenHash.sha256(refreshToken))
                 .orElseThrow(InvalidTokenException::new);
+        if (!saved.getUserId().equals(userId)) throw new InvalidTokenException();
         // DB에 없는 토큰 = 로그아웃되었거나 다른 토큰으로 이미 교체된 토큰
 
         if (saved.isExpired()) {
@@ -97,9 +106,6 @@ public class AuthService {
             refreshTokenRepository.deleteByUserId(saved.getUserId());
             throw new ExpiredTokenException();
         }
-
-        User user = userRepository.findById(saved.getUserId())
-                .orElseThrow(UserNotFoundException::new);
 
         // 로그인 이후 정지된 계정은 보유한 refresh token으로도 새 세션을 만들 수 없습니다.
         if (!user.isLoginable()) throw new BannedUserException();
@@ -110,13 +116,17 @@ public class AuthService {
     @Transactional
     // 토큰 삭제가 실패 없이 온전히 반영돼야 하므로 트랜잭션으로 묶음
     public void logout(Long userId, HttpServletResponse response) {
+        User user = userRepository.findLockedById(userId).orElseThrow(UserNotFoundException::new);
+        user.invalidateAccessTokens();
         refreshTokenRepository.deleteByUserId(userId);
         clearRefreshTokenCookie(response);
     }
 
     // package-private: OAuthService도 소셜 로그인 성공 시 동일한 토큰 발급 로직을 재사용합니다.
     TokenResponse issueTokens(User user, HttpServletResponse response) {
-        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername(), user.getRole().name());
+        if (!user.isLoginable()) throw new BannedUserException();
+        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername(),
+                user.getRole().name(), user.getAccessTokenVersion());
         String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId());
 
         refreshTokenRepository.deleteByUserId(user.getId());
@@ -125,7 +135,7 @@ public class AuthService {
         // 재로그인/재발급 시마다 기존 토큰을 지우고 새로 저장 -> 유저당 refresh token을 항상 1개만 유지 (토큰 회전)
         refreshTokenRepository.save(new RefreshToken(
                 user.getId(),
-                refreshToken,
+                TokenHash.sha256(refreshToken),
                 LocalDateTime.now().plus(Duration.ofMillis(jwtTokenProvider.getRefreshTokenExpiration()))
         ));
 

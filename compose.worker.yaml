@@ -1,0 +1,23 @@
+# 전용 채점 호스트에서만 실행합니다. DB는 웹 앱이 사용하는 동일한 MySQL의 사설 엔드포인트여야 합니다.
+services:
+  worker:
+    build: .
+    # Docker 소켓은 호스트 관리자 권한에 준하므로 이 호스트에 공개 웹 서비스를 두지 않습니다.
+    user: '0:0'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    env_file: .env
+    environment:
+      DB_URL: ${WORKER_DB_URL:?WORKER_DB_URL required}
+      DB_USERNAME: ${WORKER_DB_USERNAME:?WORKER_DB_USERNAME required}
+      DB_PASSWORD: ${WORKER_DB_PASSWORD:?WORKER_DB_PASSWORD required}
+      # DB 마이그레이션은 웹 호스트에서 먼저 적용합니다. prod 프로필의 true보다 직접 설정을 우선합니다.
+      SPRING_FLYWAY_ENABLED: 'false'
+      JUDGE_ENABLED: 'true'
+      SPRING_MAIN_WEB_APPLICATION_TYPE: none
+      JUDGE_WORKSPACE: /tmp/cobweb-judge
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/cobweb-judge:/tmp/cobweb-judge
+    restart: unless-stopped
