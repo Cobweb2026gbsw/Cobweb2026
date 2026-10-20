@@ -1,8 +1,8 @@
 # Cobweb 백엔드 구현 명세
 
-이 문서는 프런트엔드 연동과 백엔드 유지보수를 위한 현재 구현 명세입니다. 2026년 10월 2일 작업 트리의 컨트롤러, DTO, 서비스, 보안 필터, Flyway SQL, 채점 실행기를 기준으로 작성했습니다. 커밋되지 않은 다중 언어 지원과 인증 보강 변경도 포함합니다. 기획이나 DB에만 존재하는 기능을 구현 완료로 취급하지 않습니다.
+이 문서는 프런트엔드 연동과 백엔드 유지보수를 위한 현재 구현 명세입니다. 2026년 10월 13일 작업 트리의 컨트롤러, DTO, 서비스, 보안 필터, Flyway SQL, 채점 실행기를 기준으로 작성했습니다. 커밋되지 않은 변경도 포함하며 운영 배포와 로컬 검증을 구분합니다.
 
-현재 구현 범위는 회원 인증, 이메일 인증, 비밀번호 재설정, OAuth 연동, 문제 작성과 검수, 코드 제출과 비동기 채점, 프로필과 랭킹입니다. HTTP API는 25개이며, 서비스 테이블은 V1의 18개, V2의 번호 시퀀스 1개, V5의 인증 제어 테이블 2개로 총 21개입니다. SQL 문제는 SQLite, 일반 입출력·함수형 문제는 SQL을 제외한 12개 언어를 지원합니다.
+현재 구현 범위는 회원 인증, 이메일 인증, 비밀번호 재설정, OAuth 연동, 문제 제작과 관리, 코드 제출과 비동기 채점, 그룹 역할·시간제 시험, 커뮤니티·공지와 수정 이력, 프로필과 랭킹입니다. 아래 기존 API 표에 더해 신규 기능 절의 API가 제공됩니다. SQL 문제는 SQLite, 일반 입출력·함수형 문제는 SQL을 제외한 12개 언어를 지원합니다.
 
 인증·함수형 호환성 보강은 별도 테스트 DB의 Flyway V4–V8에서 검증하며 실제 사용자 DB는 변경하지 않았습니다. 검증 이력의 날짜와 문서 작성일은 다르므로 마지막 검증 절에서 구분합니다.
 
@@ -26,7 +26,7 @@
 | 빌드 | Gradle Kotlin DSL, Gradle Wrapper |
 | 데이터베이스 | MySQL 8.4 기반 Compose 구성 |
 | 영속성 | 인증과 회원은 Spring Data JPA, 문제·제출·프로필·랭킹은 JdbcTemplate |
-| 스키마 관리 | Flyway V1–V8. Hibernate `ddl-auto=none` |
+| 스키마 관리 | Flyway V1–V13. Hibernate `ddl-auto=none` |
 | 인증 | Spring Security, JJWT 0.12.6, BCrypt |
 | 입력 검증 | Jakarta Bean Validation |
 | 메일 | JavaMailSender, Gmail SMTP 설정, STARTTLS |
@@ -162,7 +162,7 @@ JWT 필터는 토큰 서명과 만료를 검증한 후 username으로 DB의 현�
 {"email":"member@example.com","purpose":"JOIN"}
 ```
 
-SecureRandom으로 숫자 8자리 코드를 만들며 앞자리 0을 보존하므로 문자열로 취급합니다. 유효 기간은 5분입니다. 이메일과 목적별 10분 동안 발송 3회와 확인 10회의 DB 공유 제한을 적용합니다. DB에는 원문 대신 이메일·목적·코드에 대한 서버 키 기반 HMAC-SHA-256 지문만 저장합니다. SMTP로 동기 발송하며 발송 실패 시 인증 기록 트랜잭션은 롤백됩니다. 독립 제한 횟수는 실패해도 유지되어 일시적 SMTP 장애 시 재시도도 제한될 수 있습니다. DB와 외부 SMTP의 원자적 커밋이나 메일 outbox는 없습니다.
+SecureRandom으로 숫자 8자리 코드를 만들며 앞자리 0을 보존하므로 문자열로 취급합니다. 유효 기간은 5분입니다. 이메일과 목적별 10분 동안 발송 3회와 확인 10회의 DB 공유 제한을 적용합니다. DB에는 원문 대신 이메일·목적·코드에 대한 서버 키 기반 HMAC-SHA-256 지문만 저장합니다. SMTP로 동기 발송하며 발송 실패 시 인증 기록 트랜잭션은 롤백됩니다. SMTP 연결 대기는 5초, 읽기·쓰기 대기는 각각 10초로 제한합니다. 독립 제한 횟수는 실패해도 유지되어 일시적 SMTP 장애 시 재시도도 제한될 수 있습니다. DB와 외부 SMTP의 원자적 커밋이나 메일 outbox는 없습니다.
 
 `POST /api/email-verifications/verify`
 
@@ -195,7 +195,7 @@ SecureRandom으로 숫자 8자리 코드를 만들며 앞자리 0을 보존하�
 {"username":"sample_user","email":"member@example.com","password":"example-password","verificationCode":"01234567"}
 ```
 
-먼저 JOIN 코드 확인 API를 성공시켜야 합니다. 가입 시에도 아직 유효한 verified 상태와 요청에 들어온 실제 코드를 다시 검사합니다. 아이디·이메일 중복은 409, 이메일 미인증은 400입니다. 인증 기록 소비와 BCrypt 비밀번호 저장은 같은 트랜잭션이며 실패 시 함께 롤백합니다. 성공 data는 회원 ID이고 자동 로그인이나 토큰 발급은 하지 않습니다.
+먼저 JOIN 코드 확인 API를 성공시켜야 합니다. 가입 시에도 아직 유효한 verified 상태와 요청에 들어온 실제 코드를 다시 검사합니다. 아이디 중복은 409이며 이메일 중복 409는 유효 코드 검증을 통과한 요청에만 반환합니다. 이메일 미인증이나 잘못된 코드는 400입니다. 중복 이메일은 코드 소비 전에 거절하고, 정상 가입의 인증 기록 소비와 BCrypt 비밀번호 저장은 같은 트랜잭션이며 실패 시 함께 롤백합니다. 성공 data는 회원 ID이고 자동 로그인이나 토큰 발급은 하지 않습니다.
 
 이메일 소문자화나 아이디 공백 제거 같은 정규화는 별도로 하지 않습니다. 중복 비교에는 DB collation도 영향을 주므로 대소문자 구분 정책을 API만으로 단정하면 안 됩니다.
 
@@ -280,9 +280,9 @@ data의 각 원소는 다음 필드입니다.
 - OPERATOR 또는 DEVELOPER.
 - 해당 문제 작성자.
 - PUBLISHED·PUBLIC인 문제의 모든 방문자.
-- PUBLISHED·GROUP이고 해당 group_id의 group_members 행이 있는 회원.
+- PUBLISHED·GROUP이고 해당 그룹 VIEW_PROBLEMS 권한이 있는 회원, 또는 그룹 EDIT/REVIEW_PROBLEMS 담당자.
 
-GROUP 조회는 멤버 존재를 검사하며 그룹의 WAITING·ACCEPTED 상태나 그룹 내 역할을 추가 조건으로 검사하지 않습니다. HTTP 보안 설정에서 공개 경로라는 사실이 PRIVATE 문제까지 공개한다는 뜻은 아닙니다.
+GROUP은 현재 DB 역할 권한을 검사합니다. 시험 연결 문제는 일반 조회에서 응시자에게 숨기며 시험 전용 API의 시간·참여·다시보기 검사를 거칩니다. HTTP 공개 경로 설정이 PRIVATE 문제나 비공개 테스트를 공개한다는 뜻은 아닙니다.
 
 | 응답 필드 | 타입 |
 |---|---|
@@ -316,9 +316,14 @@ GROUP 조회는 멤버 존재를 검사하며 그룹의 WAITING·ACCEPTED 상태
 | examples[].input | string | null 불가, 최대 65,535자 |
 | examples[].output | string | null 불가, 최대 65,535자 |
 | examples[].explanation | string 또는 null | 최대 65,535자 |
-| tests | array | 1부터 50개, null 원소 불가 |
+| tests | array | 0부터 50개, null 원소 불가. 검수/게시에는 활성 테스트 필요 |
 | tests[].input | string | null 불가, 최대 1,000,000자 |
 | tests[].expected | string | null 불가, 최대 1,000,000자 |
+| languages | array 또는 null | 실행 방식 호환 언어 선택, 최대 13개. 생략하면 방식별 기본 목록 |
+| tags | array 또는 null | 최대 10개, 각 50자. 공백 정규화·중복 제거 |
+| sourceName, sourceUrl | string 또는 null | 최대 255/1000자. URL은 HTTP(S)만 |
+| referenceSolutions | array 또는 null | 언어별 하나, 최대 13개. UTF-8 코드 각 64KiB, 파일명 최대 120자(경로 불가) |
+| groupId, visibility | integer/string 또는 null | 일반 PUBLIC/PRIVATE, 그룹 GROUP+groupId. 생성 후 범위 이동 금지 |
 
 다음은 일반 입출력 문제 생성 예시이며 실제 등록된 문제를 뜻하지 않습니다.
 
@@ -341,15 +346,15 @@ GROUP 조회는 멤버 존재를 검사하며 그룹의 WAITING·ACCEPTED 상태
 
 생성 시 번호 시퀀스 행을 FOR UPDATE로 잠그고 `max(next_number, 현재 최대 번호+1)`을 발급합니다. 정상 시퀀스의 시작 번호는 1000이며 기존 시드 번호를 건너뜁니다. 문제는 DRAFT·PRIVATE, 현재 회원을 작성자로 저장합니다. 생성 직후 불필요한 UPDATE·자식 테이블 DELETE 없이 본문과 예제·테스트·언어 목록을 바로 저장합니다. 성공 data는 발급된 번호입니다.
 
-수정은 작성자 또는 운영자만 가능하며 DRAFT·REJECTED 상태에서만 가능합니다. 그 외 상태는 409입니다. PUT은 부분 수정이 아니라 본문 필드와 예제·테스트·언어 목록의 전체 교체입니다. 기존 예제와 비공개 테스트 행을 삭제하고 전달받은 배열 순서대로 display_order를 1부터 부여해 다시 저장합니다. 테스트는 `compare_type=EXACT`, 활성 상태로 생성됩니다.
+작성자는 일반 DRAFT·REJECTED를, 운영자는 비공개 PUBLISHED도 수정할 수 있습니다. 그룹 문제는 CREATE/EDIT 권한을 검사하고 PUBLISHED는 먼저 ARCHIVED로 전환해야 합니다. 시험에 연결된 문제는 모든 사용자의 PUT을 409로 거절해 시험 원본을 보존합니다. PUT은 본문·예제·테스트·언어·태그를 교체하며 referenceSolutions=null은 기존 정답 유지, []는 명시적 삭제입니다. 테스트는 배열 순서대로 display_order를 부여하고 `compare_type=EXACT`, 활성 상태로 생성합니다.
 
-허용 언어는 클라이언트가 직접 입력하지 않습니다. 실행 모드에 따라 STDIN과 규격에 맞는 FUNCTION은 SQL을 제외한 12개 언어, SQL은 SQL을 자동 설정합니다. visibility, groupId, judgeType, 출처, 태그, 개별 테스트 배점이나 비교기를 이 DTO로 설정할 수 없습니다. 데이터베이스 TEXT의 바이트 용량이나 프록시 전체 요청 제한은 DTO 문자 수와 별개입니다.
+제목은 앞뒤/연속 공백을 정규화합니다. 일반 문제(scope 0)와 각 그룹 안에서 DB 고유 제약으로 중복을 막으며 충돌은 409입니다. 전체 제작 JSON은 UTF-8 2MiB 이내여야 합니다. 참고 정답은 코드 실행 경로나 명령으로 쓰지 않으며 관리 권한이 있는 편집 API에만 반환합니다. 사용자 지정 채점기·개별 배점 설정은 지원하지 않습니다.
 
 ### 검수와 상태 전환
 
 `POST /api/problems/{number}/review-request`는 요청 본문 없이 작성자 또는 운영자가 호출합니다. DRAFT·REJECTED에서 PENDING_REVIEW로 바꾸고 사유 `검수 요청`과 요청자 ID를 이력에 기록합니다. 그 외 상태는 409입니다.
 
-`POST /api/problems/{number}/review`는 운영자만 호출합니다.
+`POST /api/problems/{number}/review`는 일반 문제는 운영자, 그룹 문제는 REVIEW_PROBLEMS 담당자도 호출합니다.
 
 ```json
 {"status":"PUBLISHED","cause":"검수 완료"}
@@ -365,7 +370,93 @@ status는 PUBLISHED, REJECTED, ARCHIVED 중 하나이며 필수입니다. cause�
 | 임의 상태 | review ARCHIVED | ARCHIVED, 기존 visibility 유지 |
 | 그 외 조합 | 수정 또는 검수 요청 | 규칙 위반 시 409 |
 
-현재 ARCHIVED 요청에는 이전 상태 제한이 없습니다. 보관 취소 API는 없습니다. 검수 승인은 항상 PUBLIC으로 바꾸므로 GROUP 승인 흐름은 이 API만으로 구성할 수 없습니다. 초기 DRAFT 생성은 이력 테이블에 별도 기록하지 않고, 검수 요청·승인·반려·보관에서 이력을 남깁니다. 검수 대상 목록·이력 조회 API도 없습니다.
+검수·게시에는 활성 테스트와 허용 언어의 참고 정답이 필요합니다. 승인 시 일반 문제는 저장된 requested_visibility(PUBLIC/PRIVATE), 그룹 문제는 GROUP을 유지합니다. 운영자 visibility API는 일반 공개/비공개, 그룹 PUBLISHED/ARCHIVED 전환으로 해석하며 그룹을 전체 공개하지 않습니다. 상태 변경 사유와 담당자는 DB 이력에 남깁니다.
+
+### 편집·관리 API
+
+| 경로 | 기능/권한 |
+|---|---|
+| GET `/api/problems/permissions` | 로그인, canCreate/canManage |
+| GET `/api/problems/mine?page&search` | 본인 문제 모든 상태, 30개 |
+| GET `/api/problems/{number}/edit` | 작성자/운영자/그룹 CREATE(본인)·EDIT·REVIEW. camelCase Write+상태·현재 공개범위·canEdit·usedInContest·비공개 테스트·정답 |
+| GET `/api/admin/problems?page&search&status&visibility` | 운영자 전체 문제 목록 |
+| GET `/api/admin/problems/{number}` | 운영자 편집 자료 |
+| PATCH `/api/admin/problems/{number}/visibility` | 운영자, `{visibility:"PUBLIC" 또는 "PRIVATE",cause?}` |
+
+## 그룹과 코딩테스트 API
+
+그룹 생성은 DB solved_count≥50, 가입/소유를 합해 최대 3개입니다. 생성·가입은 사용자 행 잠금으로 상한을 직렬화합니다.
+기본 역할은 OWNER, MANAGER, AUTHOR, CONTEST_MANAGER, MEMBER의 5개이고 커스텀 포함 총 8개입니다.
+OWNER는 잠금 방지를 위해 고정하고 다른 역할의 기능별 권한은 변경할 수 있습니다. 기본 역할 삭제, 소유자 탈퇴·제거·역할 변경은 금지합니다.
+
+권한 플래그는 VIEW_PROBLEMS, CREATE_PROBLEMS, EDIT_PROBLEMS, REVIEW_PROBLEMS, MANAGE_MEMBERS,
+MANAGE_ROLES, MANAGE_GROUP, CREATE_CONTESTS, MANAGE_CONTESTS, VIEW_CONTEST_RESULTS, TAKE_CONTESTS입니다.
+역할·문제·시험 쓰기는 해당 플래그를 매 요청의 현재 DB에서 확인합니다. 전역 운영자는 관리 권한만 우회할 수 있고, 생성 상한이나 실제 응시의 회원/시간 제한은 우회하지 않습니다.
+
+| 경로 | 기능 |
+|---|---|
+| GET/POST `/api/groups` | 공개 이름 목록/검색, 로그인 생성 `{name,description}` |
+| GET `/api/groups/mine` | 가입 그룹·역할·권한 목록 |
+| GET/PATCH `/api/groups/{gid}` | 소속 회원 상세/설정 변경 |
+| POST `/api/groups/{gid}/join`, `/leave` | 직접 가입/탈퇴 |
+| GET `/api/groups/{gid}/members` | 회원 목록 |
+| PATCH/DELETE `/api/groups/{gid}/members/{userId}` | 역할 지정 `{roleId}`/제거 |
+| GET/POST `/api/groups/{gid}/roles` | 역할 목록/생성 `{name,permissions:[]}` |
+| PUT/DELETE `/api/groups/{gid}/roles/{roleId}` | 역할 수정/미사용 커스텀 삭제 |
+| GET `/api/groups/{gid}/problems?page&search` | 그룹 공개 문제, 시험 연결 문제는 일반 회원에게 제외. 담당자 응답의 usedInContest는 일반 풀이 버튼 차단 안내용 |
+| GET `/api/groups/{gid}/problems/review-queue?page&search` | EDIT/REVIEW 담당자의 모든 상태 문제관리 목록 |
+| GET/POST `/api/groups/{gid}/contests` | 시험 목록/생성 |
+| GET/PUT `/api/groups/{gid}/contests/{cid}` | 시험 상세/설정 변경 |
+| GET `.../{cid}/problems`, `.../{cid}/problems/{number}` | 시간·권한·다시보기 검사 후 시험 문제 열람 |
+| POST `.../{cid}/submissions` | `{problemNumber,language,sourceCode}` 별도 시험 제출 |
+| GET `.../{cid}/me` | 본인 답안·판정·코드, 응시 중 또는 허용된 다시보기 |
+| GET `.../{cid}/results`, `.../{cid}/submissions?userId` | 결과 권한 담당자의 실시간 순위/대상 답안 |
+| GET/POST `.../{cid}/events` | 결과 권한 담당자 신호 조회/응시자의 보호 신호 기록 |
+
+시험 Write: `{title,startsAt,endsAt,problemNumbers:[],replayAllowed,captureProtection,windowSwitchProtection}`.
+시각은 ISO UTC이고 시작≤DB UTC현재<종료일 때만 접수합니다. 새 시험은 미래 시작, 같은 그룹의 준비된 PUBLISHED 문제 1–50개를 선택합니다.
+시작 후 제목·시간·문제 변경은 금지하며 다시보기와 보호 옵션만 변경할 수 있습니다.
+연결된 문제는 내용 수정을 영구 금지합니다. 그룹 목록에서 보관해도 기존 시험 원문·답안은 보존됩니다.
+다시보기는 종료+관리자 허용+본인 제출 기록+현재 응시 권한을 모두 만족해야 합니다.
+
+시험 제출은 submissions.contest_id로 분리하고 일반 submit_count, accepted_count, solved_count, user_solved_problems에 반영하지 않습니다.
+일반 제출 목록도 시험 답안을 제외하며 `/api/submissions/{id}`로 읽어도 동일한 시험 다시보기 검사를 적용합니다.
+순위는 해결 문제 수 내림차순, 문제별 최초 정답 제출의 시작 이후 경과초 합 오름차순입니다(오답 패널티 없음).
+프런트는 15초 간격 새로고침을 사용하며 SSE/WebSocket은 없습니다. 시험 제출/판정/이벤트 시각은 UTC이고,
+V13부터 제출·판정 시각도 DATETIME(6)에 저장합니다. 제출 DTO의 submittedAt/judgedAt은 ISO Z 문자열입니다.
+
+보호 옵션은 브라우저 복사·인쇄 억제와 전체화면 복귀 요구·창 이탈 감시입니다. OS 캡처를 완전히 막을 수 없습니다.
+이벤트는 WINDOW_BLUR, VISIBILITY_HIDDEN, FULLSCREEN_EXIT, COPY_BLOCKED, PRINT_BLOCKED, CAPTURE_KEY,
+eventId(UUID) 중복 제거, 사용자/시험당 1분 최대 60개입니다. 클라이언트 신호이므로 자동 부정행위 판정을 하지 않습니다.
+
+## 커뮤니티·공지와 영구 보존
+
+카테고리: HARDWARE, SOFTWARE, NEWS, PROBLEM_QNA, MAJOR_QNA, GENERAL, NOTICE. NOTICE 생성/전환/편집은 운영자만 가능합니다.
+게시글 제목 200자·본문 20,000자, 댓글 5,000자입니다. 공개 API는 현재 내용만 반환하며 HTML을 실행하지 않습니다.
+문제 연결은 PUBLISHED·PUBLIC·비그룹 문제만 허용하고 이후 비공개 전환 시 공개 응답에서 연결 번호를 숨깁니다.
+
+| 경로 | 기능/권한 |
+|---|---|
+| GET/POST `/api/community/posts` | 공개 검색/카테고리/20개 페이지, 로그인 글 작성 |
+| GET `/api/community/notices` | 공개 공지 목록 |
+| GET/PUT/DELETE `/api/community/posts/{id}` | 공개 상세/작성자·운영자 수정/soft-delete |
+| GET/POST `/api/community/posts/{id}/comments` | 부모별 20개 조회(`parentId`,page)/로그인 댓글·답글 작성 |
+| PUT/DELETE `/api/community/comments/{id}` | 작성자·운영자 수정/soft-delete |
+| GET `/api/admin/community/posts?includeDeleted=true` | 운영자 삭제 글 포함 검색 |
+| GET `/api/admin/community/posts/{id}`, `.../{id}/comments` | 운영자 삭제 글·댓글도 열람/페이지 조회 |
+| GET `/api/admin/community/posts/{id}/history`, `/api/admin/community/comments/{id}/history` | 운영자 이전/이후 내용·수정자·시각·문제 연결 스냅샷, 20개 페이지 |
+| POST `/api/admin/community/posts/{id}/restore`, `/api/admin/community/comments/{id}/restore` | 운영자 `{version,reason?}` 복원 |
+
+글 Write는 `{title,body,category,problemNumber?}`, 댓글 Write는 `{parentId?,body}`입니다.
+PUT은 현재 version을 추가하고 DELETE는 `?version=`를 필수로 받습니다. 낡은 버전은 409로 거절합니다.
+글 PUT의 선택 필드 `preserveProblemLink: true`와 `problemNumber: null`은 기존 연결을 유지합니다.
+숨긴 번호를 새로 연결하는 권한이 아니며 다른 공개 번호를 지정하면 기존 공개 일반문제 검증을 적용합니다.
+작성자/운영자의 상세에만 `problemLinkHidden: true`가 표시될 수 있어 번호 없이 제목/본문을 편집할 수 있습니다.
+필드를 생략/false로 보내고 번호를 null로 교체하면 기존처럼 연결을 제거합니다. 선택 필드는 nullable Boolean으로 구형 JSON을 유지합니다.
+댓글 깊이는 원댓글0→대댓글1→대대댓글2이며 그 이상은 400입니다. 부모 댓글 삭제는 자식 답글을 삭제하지 않습니다.
+삭제된 댓글은 일반 사용자에게 본문 없이 삭제 표시만 반환하며 수정 전 원문은 관리자 이력에서 확인합니다.
+게시글·댓글·이력에 대한 물리 DELETE는 없고 생성/수정/삭제/복원마다 한 트랜잭션에 old/new 스냅샷을 쌓습니다.
+저자/수정자 계정과 분리된 username 스냅샷도 유지합니다. DB 관리자의 직접 조작까지 막는 저장소 수준 불변 보증은 아닙니다.
 
 ## 언어 API와 실행 규격
 
@@ -488,20 +579,20 @@ SELECT SUM(value) FROM numbers;
 ### 워커 처리
 
 1. `judge.enabled=true`인 프로세스에만 JudgeWorker가 등록됩니다. 작업 종료 후 fixedDelay 1000ms마다 다시 실행하고 한 워커는 제출 하나씩 처리합니다.
-2. claim 트랜잭션은 claimed_at이 20분 넘은 RUNNING을 SYSTEM_ERROR로 마무리하고 judge_token을 비웁니다.
-3. QUEUED를 ID 순서로 `FOR UPDATE SKIP LOCKED`로 1개 가져와 RUNNING, claimed_at, UUID judge_token을 설정합니다. 여러 워커는 서로 잠긴 작업을 건너뜁니다.
+2. claim 트랜잭션은 heartbeat가 20분 넘게 갱신되지 않은 RUNNING의 토큰을 폐기합니다. 실행 시도 횟수가 3 미만이면 QUEUED로 돌리고, 3회째 실행도 중단됐으면 SYSTEM_ERROR로 마무리합니다. heartbeat가 없는 작업은 claimed_at, 그 값도 없으면 submitted_at으로 만료를 판단합니다.
+3. QUEUED를 ID 순서로 `FOR UPDATE SKIP LOCKED`로 1개 가져와 RUNNING, claimed_at, heartbeat, 새 UUID judge_token을 설정하고 실행 시도 횟수를 1 증가시킵니다. 여러 워커는 서로 잠긴 작업을 건너뜁니다. 재시도는 제출 접수 횟수를 다시 늘리지 않습니다.
 4. 컴파일 언어는 제출당 한 번 컴파일합니다. 실패 시 test_case_id가 null인 제출 단계 결과 한 건을 남깁니다.
 5. 성공하면 활성 테스트를 display_order 순으로 실행합니다. 각 케이스는 새 컨테이너이고, 앞선 오답이 나와도 기본 루프는 나머지 케이스를 계속 실행합니다.
 6. 결과 반영은 사용자, 문제, 제출 순서로 잠급니다. 아직 RUNNING이고 judge_token이 같을 때만 결과를 저장합니다. 오래된 워커의 재반영은 무시합니다.
 7. 정상 경로에서 런타임 컨테이너, 컴파일 컨테이너, 산출물 볼륨, 호스트 임시 소스 파일을 정리합니다.
 
-20분 만료 처리는 독립 감시 서비스가 아니라 다음 claim 호출에서 수행됩니다. 자동 재시도·재채점·취소 API나 큐 관리 API는 없습니다.
+블로킹 채점 스레드와 별도의 실행기에서 30초마다 heartbeat를 갱신하고 단계 전환에서도 갱신합니다. RUNNING·제출 ID·토큰 조건이 맞을 때만 갱신하며 토큰 상실이나 연속 3회 갱신 실패 이후에는 다음 단계와 결과 반영을 멈춥니다. 실패 로그에는 제출 ID와 단계만 남기며 코드·테스트·토큰은 남기지 않습니다. 20분 만료 회수는 다음 claim 호출에서 수행됩니다. 정상 판정 오류의 자동 재시도나 수동 재채점·취소·큐 관리 API는 없습니다.
 
 ### 상태와 판정
 
 | 상태 | 현재 의미 |
 |---|---|
-| QUEUED | 접수되어 워커 대기 |
+| QUEUED | 접수되었거나 만료 lease에서 복구되어 워커 대기 |
 | RUNNING | 워커가 claim하여 컴파일 또는 테스트 처리 중 |
 | ACCEPTED | 모든 결과가 ACCEPTED |
 | WRONG_ANSWER | 정상 종료했으나 정답 문자열과 다름 |
@@ -509,7 +600,7 @@ SELECT SUM(value) FROM numbers;
 | MEMORY_LIMIT_EXCEEDED | 종료 코드 137이며 Docker OOMKilled=true |
 | RUNTIME_ERROR | 기타 비정상 실행, SQL 실패, 출력 제한 초과 등 |
 | COMPILATION_ERROR | 컴파일 실패·컴파일 시간 초과·컴파일 출력 제한 초과 |
-| SYSTEM_ERROR | Docker 준비 오류, 처리 예외, 비어 있는 결과, 오래된 RUNNING 등 |
+| SYSTEM_ERROR | Docker 준비 오류, 처리 예외, 비어 있는 결과, 세 번째 실행도 lease가 만료된 작업 등 |
 
 런타임 분류는 wall timeout, 종료 코드 125·126·127, 출력 제한, 종료 코드 137, 종료 코드 152, 기타 비정상 종료, 정답 비교 순으로 판단합니다. 125·126·127은 SYSTEM_ERROR이며 137은 OOMKilled가 아니면 TIME_LIMIT_EXCEEDED, 152도 TIME_LIMIT_EXCEEDED입니다. 자원 부족으로 언어 런타임이 다른 코드로 종료하면 RUNTIME_ERROR가 될 수 있어 메모리 초과를 완벽하게 구분하는 규약은 아닙니다.
 
@@ -521,7 +612,7 @@ SELECT SUM(value) FROM numbers;
 
 ### 통계와 랭크 갱신
 
-- ACCEPTED 제출마다 문제 accepted_count를 1 증가시킵니다.
+- 일반 ACCEPTED 제출마다 문제 accepted_count를 1 증가시킵니다. 시험 제출은 별도 결과에만 반영합니다.
 - user_solved_problems의 `(user_id, problem_id)`를 INSERT IGNORE하여 최초 해결일 때만 사용자 solved_count를 증가시킵니다.
 - 실패·시스템 오류 제출도 이미 접수된 제출 수에는 남습니다.
 - 해결 수에 따른 사용자 랭크는 임시 정책이며 문제 난이도별 가중치가 없습니다.
@@ -593,7 +684,7 @@ solvedProblems는 해결 시각 내림차순 최근 100개이며 현재 PUBLISHE
 
 ## 데이터베이스 명세
 
-Flyway SQL이 물리 스키마의 기준입니다. 아래는 V7 적용 후 필드와 사용 상태를 요약한 데이터 사전입니다. 별도 표시가 없으면 ID 단일 PK 테이블의 id는 BIGINT AUTO_INCREMENT입니다. 정확한 NULL, DEFAULT, 인덱스 정의는 버전별 SQL을 함께 확인해야 합니다. Flyway 자체 이력 테이블은 아래 서비스 테이블 21개에 포함하지 않습니다.
+Flyway SQL이 물리 스키마의 기준입니다. 아래는 V13까지의 주요 필드와 사용 상태를 요약한 데이터 사전입니다. 별도 표시가 없으면 ID 단일 PK 테이블의 id는 BIGINT AUTO_INCREMENT입니다. 정확한 NULL, DEFAULT, 인덱스 정의는 버전별 SQL을 함께 확인해야 합니다. Flyway 자체 이력 테이블은 서비스 테이블 수에 포함하지 않습니다.
 
 ### 회원과 인증 테이블
 
@@ -618,29 +709,43 @@ Flyway SQL이 물리 스키마의 기준입니다. 아래는 V7 적용 후 필�
 | problem_test_cases | id; problem_id BIGINT; input_data, expected_output LONGTEXT; compare_type ENUM; score INT; display_order INT; is_active BOOLEAN; created_at DATETIME | (problem_id, display_order) UNIQUE, 순서 양수·점수 음수 금지. 문제 삭제 CASCADE. 비공개 채점 데이터 |
 | problem_languages | problem_id BIGINT; language VARCHAR(30) | 두 필드 복합 PK. 문제 삭제 CASCADE. 저장된 언어 목록이며 비호환 레거시 FUNCTION은 API에서 Python만 노출·접수 |
 | tags | id; name VARCHAR(50) | 이름 UNIQUE. 관리 API 미구현 |
-| problem_tags | problem_id BIGINT; tag_id BIGINT | 복합 PK, 양쪽 삭제 CASCADE. 태그 연결 API 미구현 |
+| problem_tags | problem_id BIGINT; tag_id BIGINT | 복합 PK, 양쪽 삭제 CASCADE. 제작 Write에서 태그 연결 가능 |
+| reference_solutions | problem_id BIGINT, language VARCHAR(30), file_name VARCHAR(120), source_code LONGTEXT, created_at DATETIME | (problem_id,language) PK. 비공개 편집 자료, 공개 상세·채점 컨테이너에는 전달하지 않음 |
 | problem_likes | user_id BIGINT; problem_id BIGINT; created_at DATETIME | 두 ID 복합 PK, 양쪽 삭제 CASCADE. 좋아요 API 미구현 |
 
-problems의 목록 인덱스는 status·visibility·problem_number, 등급 인덱스는 rank_type·rank_int, 그룹 목록 인덱스는 group_id·status·problem_number, 작성자 인덱스는 author_id·created_at입니다. test_cases는 problem_id·is_active·display_order 인덱스로 조회합니다.
+problems의 목록 인덱스는 status·visibility·problem_number, 등급 인덱스는 rank_type·rank_int, 그룹 목록 인덱스는 group_id·status·problem_number, 작성자 인덱스는 author_id·created_at입니다. V10은 requested_visibility 및 STORED 생성 컬럼 title_scope=COALESCE(group_id,0), UNIQUE(title_scope,problem_title)를 추가합니다. test_cases는 problem_id·is_active·display_order 인덱스로 조회합니다.
 
 ### 제출과 해결 테이블
 
 | 테이블 | 필드 | 제약과 용도 |
 |---|---|---|
-| submissions | id; user_id, problem_id BIGINT; language VARCHAR(30); source_code LONGTEXT; status ENUM; score INT; execution_time_ms, memory_usage_kb INT nullable; submitted_at, judged_at DATETIME; claimed_at DATETIME nullable; judge_token VARCHAR(36) nullable | user와 problem 삭제 CASCADE. 점수·시간·메모리 음수 금지. 기본 상태 QUEUED, score 0. claimed_at·judge_token은 V2 추가 |
+| submissions | id; user_id, problem_id BIGINT; language VARCHAR(30); source_code LONGTEXT; status ENUM; score INT; execution_time_ms, memory_usage_kb INT nullable; submitted_at, judged_at DATETIME(6); claimed_at DATETIME nullable; judge_token VARCHAR(36) nullable; judge_heartbeat_at DATETIME(6) nullable; judge_attempts INT | user와 problem 삭제 CASCADE. 점수·시간·메모리·시도 횟수 음수 금지. 기본 상태 QUEUED, score 0. claimed_at·judge_token은 V2, heartbeat·attempts는 V9, 시각 정밀도는 V13 |
 | submission_test_case_results | id; submission_id BIGINT; test_case_id BIGINT nullable; status ENUM; score INT; execution_time_ms, memory_usage_kb INT nullable | 제출 삭제 CASCADE, 테스트 삭제 SET NULL. 점수 음수 금지. 컴파일 단계 실패는 test_case_id NULL. COMPILATION_ERROR는 V3 추가 |
 | user_solved_problems | user_id BIGINT; problem_id BIGINT; solved_at DATETIME | 두 ID 복합 PK로 중복 해결 방지. 양쪽 삭제 CASCADE |
 
-submissions에는 사용자·제출 시각, 문제·제출 시각, 문제·사용자·상태 인덱스가 있으며 V2에서 status·submitted_at·id 큐 인덱스를 추가합니다. 케이스 결과의 score는 현재 명시적으로 갱신하지 않아 기본 0입니다. memory_usage_kb는 스키마만 있고 현재 워커가 측정·저장하지 않습니다.
+submissions에는 사용자·제출 시각, 문제·제출 시각, 문제·사용자·상태 인덱스가 있으며 V2에서 status·submitted_at·id 큐 인덱스, V9에서 status·judge_heartbeat_at·id 만료 조회 인덱스를 추가합니다. V11은 nullable contest_id와 (contest_id,problem_id) 복합 FK 및 시험/사용자 인덱스를 추가합니다. NULL이면 일반 제출입니다. 케이스 결과의 score는 현재 명시적으로 갱신하지 않아 기본 0입니다. memory_usage_kb는 스키마만 있고 현재 워커가 측정·저장하지 않습니다.
 
 ### 그룹 테이블
 
 | 테이블 | 필드 | 제약과 구현 상태 |
 |---|---|---|
-| study_groups | id; group_name VARCHAR(16); group_description VARCHAR(1000); status ENUM; created_at DATETIME | 그룹명 UNIQUE. 상태 WAITING, ACCEPTED, REJECTED. 생성·승인·수정 API 없음 |
-| group_members | user_id BIGINT; group_id BIGINT; member_number INT; permission ENUM; joined_at DATETIME | 두 ID 복합 PK. (group_id, member_number) UNIQUE, 번호 양수, 양쪽 삭제 CASCADE. permission은 MEMBER, ADMIN, OWNER. 가입·탈퇴·역할 API 없음 |
+| study_groups | id; group_name VARCHAR(16); group_description VARCHAR(1000); status ENUM; created_at DATETIME | 그룹명 UNIQUE. 새 생성은 ACCEPTED, 생성·설정 API 제공 |
+| group_members | user_id BIGINT; group_id BIGINT; member_number INT; permission ENUM; role_id BIGINT; joined_at DATETIME | 두 ID 복합 PK. (group_id,member_number) UNIQUE, (group_id,role_id)→group_roles FK. permission은 기존 호환용 |
+| group_roles | id, group_id, role_name, builtin_key, 기능별 can_* BOOLEAN 11개 | 그룹별 역할명/기본키 UNIQUE, 기본5개+커스텀 총8개 서비스 상한 |
+| group_contests | id, group_id, title, starts_at, ends_at, replay_allowed, capture_protection, window_switch_protection, created_by, 시각 | starts_at<ends_at CHECK, UTC 시간창 |
+| contest_problems | contest_id,problem_id,display_order | 복합 PK, 시험 내 순서 UNIQUE, 문제 FK RESTRICT |
+| contest_events | id,contest_id,user_id,event_id,event_type,occurred_at | 시험/사용자/UUID UNIQUE, UTC 시각·발생률 인덱스 |
 
-그룹 관련 현재 실행 로직은 문제 상세의 소속 그룹 확인입니다. 스키마가 존재한다고 그룹 기능 전체가 구현된 것은 아닙니다.
+### 커뮤니티 보존 테이블
+
+| 테이블 | 필드와 보존 정책 |
+|---|---|
+| community_posts | category,title,body,problem_id,author_id,author_username,version,is_deleted,deleted_at,created_at,updated_at. soft-delete, 저자 이름 스냅샷 |
+| community_comments | post_id,parent_id,depth 0–2,body,author_id,author_username,version,삭제 상태/시각. 부모/글 삭제 FK RESTRICT |
+| community_post_revisions | action,old/new title/category/body/problem_id/problem_number/deleted/version,editor_id/editor_username,edited_at,reason. 글 삭제 FK RESTRICT |
+| community_comment_revisions | action,old/new body/deleted/version,editor_id/editor_username,edited_at,reason. 댓글 삭제 FK RESTRICT |
+
+커뮤니티 서비스는 위 네 테이블을 물리 삭제하지 않습니다. 수정 이력과 본문 변경은 같은 트랜잭션이며 일반 사용자는 삭제/과거 내용을 읽을 수 없습니다.
 
 ### 스키마 enum
 
@@ -665,10 +770,15 @@ submissions에는 사용자·제출 시각, 문제·제출 시각, 문제·사�
 - V6는 기존 FUNCTION 문제에 SQL 외 12개 언어를 허용합니다. 신규 시드도 12개를 삽입합니다.
 - V7은 기존 미완료 이메일 인증 기록을 삭제하고 `code` 원문 열을 `code_hash CHAR(64)`로 바꿉니다. 진행 중인 인증 코드는 다시 발급해야 합니다.
 - V8은 기존 FUNCTION 문제의 활성 테스트가 15×15 이진 행렬·유효한 목표 좌표·정확한 불리언 정답 규격을 모두 만족할 때만 `function_abi_compatible`을 참으로 표시합니다. 비호환 문제의 테스트나 언어 행은 삭제하지 않으며 API에서 Python만 노출·접수합니다.
+- V9는 제출의 heartbeat, 실행 시도 횟수, 만료 조회 인덱스를 추가합니다. 기존 RUNNING의 claimed_at을 heartbeat로 옮기고 첫 실행으로 기록합니다. 새 앱·워커를 같은 버전으로 배치해야 합니다.
+- V10은 범위별 제목 고유 제약·requested_visibility·비공개 reference_solutions를 추가합니다. 중복 제목이 있으면 원자 ALTER가 실패하며 자동 재명명/삭제하지 않습니다.
+- V11은 기본 그룹 역할 5개 backfill·그룹 코테·문제 연결·별도 시험 제출·보호 이벤트를 추가합니다.
+- V12는 커뮤니티 게시글·댓글과 생성/수정/삭제/복원 이력 테이블을 추가합니다.
+- V13은 기존 값을 유지하며 submissions.submitted_at/judged_at을 DATETIME(6)으로 확장합니다. 과거 시각의 미보관 소수초를 추정하지 않습니다.
 - `demo.seed=true`이면 DemoData가 문제 번호 1000의 존재를 먼저 확인합니다. 있으면 아무 시드도 실행하지 않습니다. 없으면 체인 레이저 본문·예제·비공개 테스트 10개와 STOPPED인 cobweb-system 작성자를 넣습니다.
 - 시드 SQL은 DemoData를 통한 개발용 실행을 전제로 합니다. 임의의 부분 데이터가 있는 DB에 직접 반복 실행하는 범용 마이그레이션이 아닙니다.
 - 체인 레이저는 ELITE 5, 1000ms, 256MB, PUBLISHED·PUBLIC·FUNCTION·12개 비-SQL 언어입니다. 시드의 judge_type SPECIAL은 범용 특별 채점기 구현을 의미하지 않습니다.
-- 기존 DB를 자동 baseline 처리하거나 기존 데이터의 중복을 자동 정리하지 않습니다. 적용된 V1–V8을 바꾸는 대신 신규 마이그레이션을 추가해야 합니다.
+- 기존 DB를 자동 baseline 처리하거나 기존 데이터의 중복을 자동 정리하지 않습니다. 적용된 마이그레이션을 바꾸는 대신 신규 버전을 추가해야 합니다.
 
 ## 오류 명세
 
@@ -710,7 +820,7 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 | OAUTH_SIGNUP_UNAVAILABLE | 403 | 이 제공자의 신규 가입은 이메일 소유권 확인 절차가 준비될 때까지 중단됩니다. |
 | UNSUPPORTED_OAUTH_PROVIDER | 400 | 지원하지 않는 소셜 로그인 제공자입니다. |
 
-일반 로그인은 아이디 없음과 비밀번호 불일치의 상태를 구분하고 재설정 요청도 이메일 없음에 404를 반환합니다. 계정 존재 여부를 통일 응답으로 숨기는 정책은 현재 구현이 아닙니다.
+일반 로그인은 아이디 없음과 비밀번호 불일치의 상태를 구분합니다. 재설정 요청은 등록·미등록 주소 모두 정상 요청에 같은 성공 응답을 주지만, 동기 SMTP의 지연·실패 차이는 남습니다. 가입의 이메일 중복은 유효한 코드 소유 증명 뒤에만 반환합니다.
 
 ## 운영 설정
 
@@ -759,7 +869,38 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 
 ## 검증 이력
 
-초기 문서는 2026년 9월 30일 작성했고 10월 3일 인증·다국어 함수형 채점·배포 분리 보강 내용을 반영했습니다. 실제 사용자 DB·SMTP·실계정 OAuth는 사용하지 않았습니다. 이번 회귀 검증은 별도 테스트 DB에만 적용했습니다.
+### 2026-10-13 별도 앱·자동 워커와 기능 간 연동
+
+전용 `cobweb_linkage_test`에 Flyway V1–V13을 적용하고 루프백 웹 JAR와 non-web 워커 JAR를 별도 JVM으로 실행했습니다.
+`scripts/verify-local-linkage.py`의 HTTP 연동 13개 항목이 통과했습니다. 일반 Python·SQL·1000번 FUNCTION·시험 C++ 제출은
+자동 워커에서 모두 ACCEPTED, attempts=1·token/heartbeat 해제·1000번 10케이스 기록을 확인했습니다.
+공개/비공개·커뮤니티 연결 보존·댓글/게시글 이력·그룹/시험 권한·시간창·순위·별도 통계·다시보기 경계도 확인했습니다.
+관리자 편집의 시험 문제 상태 변경, 그룹의 일반 풀이 잘못된 안내, 로그인 후 경로 복귀 및 숨긴 연결 해제를 수정했습니다.
+구형 JSON의 선택 필드 생략을 별도 HTTP 회귀로 확인했고, 전체 `clean build`는 172개 실패/오류/건너뜀 0입니다.
+로컬 두 JVM 연동이지 운영 다중 호스트·실제 OAuth/SMTP·부하·원격 CI 승인은 아닙니다.
+
+### 2026-10-13 재검증
+
+기존 테스트 DB의 V12→V13 업그레이드와 새 `127.0.0.1:13309/cobweb_revalidation_test`의 V1→V13을 검증했습니다.
+새 계정/화면 세대 검사, 비밀번호·재설정 토큰·개인 DOM 정리, 사용자→문제 잠금 순서, 시험 소수초 저장·UTC 응답을 보강했습니다.
+커뮤니티 게시글/댓글 8개 쓰기 경로도 사용자행 선잠금으로 맞췄습니다.
+실제 MySQL 병렬 검수/제출, 같은 운영자 및 일반 작성자/별도 운영자의 문제 연결·비공개 전환,
+제출 시각≥시작 시각 및 판정 UTC DTO를 새 회귀에 포함했습니다.
+전체 Docker 빌드 **171개, 실패/오류/건너뜀 0**, 13언어 결과 가드와 Node 5개 회귀·Compose 3개 검사가 통과했습니다.
+실제 브라우저 로그인/로그아웃과 다른 계정 전환에서 개인 자료 제거·시험 카운트다운을 확인했습니다.
+외부 연동 및 실제 사용자 DB 전환은 여전히 별도 검증입니다.
+
+### 2026-10-12 현재 코드
+
+새 격리 MySQL 8.4(`127.0.0.1:13309/cobweb_feature_test`)에 Flyway V1–V12를 처음부터 적용했습니다.
+`DOCKER_JUDGE_TEST=true ./gradlew --no-daemon --console=plain build`의 최종 결과는
+159개 테스트, 실패 0·오류 0·건너뜀 0입니다. 13개 언어·FUNCTION·HTTP 워커 XML 결과 가드도 통과했습니다.
+새 제작/그룹/시험/커뮤니티 실제 DB 회귀는 16개이며, Node 회귀 4개 스크립트·Compose 3개·JAR 생성도 통과했습니다.
+실제 브라우저에서 테스트 계정 로그인, 제작·관리 페이지, 커뮤니티와 댓글 표시를 확인했습니다.
+기존 사용자 DB, 외부 OAuth·SMTP, 운영 서버·원격 CI는 검증 범위가 아닙니다.
+아래는 과거 검증 시점의 기록이며 당시의 Docker 연결 장애는 현재 로컬 검증에서 해소됐습니다.
+
+초기 문서는 2026년 9월 30일 작성했고 10월 8일 채점 lease·CI·가입 정보 보호 보강을 반영했습니다. 실제 사용자 DB·SMTP·실계정 OAuth는 사용하지 않았습니다. 아래 전체 검증 기록은 10월 3일 코드에 대한 결과입니다.
 
 2026년 9월 17일 전체 JUnit 보고서는 68개였습니다. 10월 3일 별도 테스트 DB에서 `DOCKER_JUDGE_TEST=true ./gradlew clean build`를 재실행한 최신 결과는 104개, 실패 0, 오류 0, 건너뜀 0입니다. 프런트 인증 흐름의 Node 회귀 4건과 웹·워커 Compose 구성 검사도 통과했습니다.
 
@@ -782,12 +923,25 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 
 해당 검증은 별도 cobweb_test DB와 ARM64 Docker 이미지에서 수행한 기록입니다. 모든 CPU 아키텍처·언어 기능·운영 장애·동시성 경로를 완전히 검증했다는 의미는 아닙니다. 테스트 프로필은 .env import를 끄고 기본 127.0.0.1:13307/cobweb_test, Flyway와 데모 시드 활성화, 자동 워커 비활성화를 사용합니다. 실제 사용자 DB에는 V4–V8을 적용하지 않았습니다.
 
+10월 8일 변경의 로컬 검증은 DB 없는 서비스·보안·lease JUnit 22건(실패·오류·건너뜀 0),
+앱 JAR 생성, Node 인증 회귀 4건, Compose 3개 설정 검사까지 통과했습니다.
+새 JudgeLeaseIntegrationTest와 SignupEmailPrivacyIntegrationTest는 작성했지만 전용 MySQL이
+JDBC 연결에 응답하지 않아 DB 전체 실행을 중단했습니다. Docker 관리 API도 무응답이므로 V9 적용,
+새 코드의 실제 Docker 채점·운영 이미지 기동은 아직 검증하지 않았습니다.
+기존 104개 전체 통과 기록을 현재 코드의 통과 결과로 취급하지 않습니다.
+
+CI는 `.github/workflows/ci.yml`의 quick와 judge-full 작업으로 구성했습니다. quick는 MySQL 연동,
+Node 인증, Compose를 검사하고 judge-full은 채점 이미지를 빌드해 `DOCKER_JUDGE_TEST=true`
+전체 빌드를 수행합니다. XML 결과에서 13언어·FUNCTION·HTTP 워커 실행이 누락되거나 건너뛰어지면
+실패합니다. 액션은 공식 릴리스 커밋으로 고정하고 로그·결과는 7일 보관합니다.
+원격 GitHub 실행과 보호 브랜치 필수 검사 설정은 아직 수행하지 않았습니다.
+
 ## 미구현과 운영 전 확인 사항
 
 다음 항목은 개발 완료 범위에 포함하지 않습니다.
 
-- 그룹 생성·승인·가입·탈퇴·권한 관리 API, 그룹 공개 문제 작성 흐름.
-- 태그·좋아요 관리, 태그·난이도 검색, 작성한 문제 목록, 검수 대기 목록과 이력 조회.
+- 그룹 가입 승인·초대 방식, 소유권 양도, 그룹 삭제/운영 심사(현재 생성 즉시 ACCEPTED·직접 가입).
+- 좋아요 관리, 태그·난이도 검색, 일반 문제 상태 이력 조회 API(커뮤니티 수정 이력 조회는 구현).
 - 사용자 역할·상태 관리, 회원 탈퇴, 이메일·아이디 변경, 프로필 이미지.
 - 임의 시그니처의 범용 함수형 문제, 사용자 지정 검사기, 부분 점수, 부동소수 허용 오차, 효율성 평가.
 - 다중 소스 업로드와 외부 패키지 설치, 컴파일 진단·소스·실제 출력 조회 API.
@@ -812,7 +966,9 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 | 언어와 제출 | `src/main/java/com/drewdrew0414/domain/submission/Language.java`, `LanguageController.java`, `SubmissionController.java`, `SubmissionService.java` |
 | 워커와 격리 | `src/main/java/com/drewdrew0414/domain/submission/JudgeWorker.java`, `DockerJudge.java`, `judge/runner.py`, `judge/function/`, `judge/Dockerfile`, `judge/csharp/` |
 | 프로필과 랭킹 | `src/main/java/com/drewdrew0414/domain/user/controller/ProfileController.java` |
-| 물리 스키마 | `src/main/resources/db/migration/V1__initial_schema.sql`부터 `V7__hash_email_codes.sql`까지의 순차 마이그레이션 |
+| 물리 스키마 | `src/main/resources/db/migration/V1__initial_schema.sql`부터 `V13__submission_timestamp_precision.sql`까지의 순차 마이그레이션 |
+| 그룹/시험 | `src/main/java/com/drewdrew0414/domain/group/`, `domain/submission/ContestSubmissionController.java` |
+| 커뮤니티/공지/보존 | `src/main/java/com/drewdrew0414/domain/community/`, `V12__community_history.sql` |
 | 데모 | `src/main/java/com/drewdrew0414/global/config/DemoData.java`, `src/main/resources/demo/chain-laser.sql` |
 | 설정과 배포 | `src/main/resources/application*.yaml`, `build.gradle.kts`, `compose.dev.yaml`, `compose.prod.yaml`, `Dockerfile`, `deploy/Caddyfile` |
 | 테스트 | `src/test/java/`, `src/test/resources/application-test.yaml` |

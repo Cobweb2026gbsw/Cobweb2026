@@ -19,8 +19,9 @@ function reply(status, data = {}) {
 
 function fixture(replies) {
   const calls = [];
-  const nodes = {'#logout': {}, '#account': {textContent: '내 계정'}, '#notice': {textContent: ''}};
-  let view = null;
+  const nodes = {'#logout': {}, '#account': {textContent: '내 계정'}, '#notice': {textContent: ''},
+    '#author-nav': {hidden: false}, '#admin-nav': {hidden: false}};
+  let view = null, cleared = 0;
   const context = {
     document: {querySelector: selector => nodes[selector]},
     fetch: async (url, options) => {
@@ -28,13 +29,14 @@ function fixture(replies) {
       assert.ok(replies.length, 'unexpected request: ' + url);
       return replies.shift();
     },
-    show: async id => { view = id; nodes['#notice'].textContent = ''; }
+    show: async id => { view = id; nodes['#notice'].textContent = ''; },
+    clearPrivateViews: () => { cleared++; }
   };
   vm.createContext(context);
   vm.runInContext(
-    "let token='expired'; const $=s=>document.querySelector(s); function notice(text){$('#notice').textContent=text;}\n" +
-    apiSource + '\n' + logoutSource + '\nthis.getToken=()=>token; this.callApi=api;', context);
-  return {calls, nodes, context, getView: () => view};
+    "let token='expired', permissions={canCreate:true,canManage:true}; let sessionEpoch=0, viewEpoch=0, loggingOut=false, permissionsRequest=0; const STALE_REQUEST_MESSAGE='__COBWEB_STALE_REQUEST__'; const $=s=>document.querySelector(s); function notice(text){$('#notice').textContent=text;} function currentSession(epoch){return epoch===sessionEpoch;} function staleRequest(){const error=Error(STALE_REQUEST_MESSAGE);error.stale=true;return error;} function currentView(){return true;}\n" +
+    apiSource + '\n' + logoutSource + '\nthis.getToken=()=>token; this.callApi=api; this.getPermissions=()=>permissions;', context);
+  return {calls, nodes, context, getView: () => view, getCleared: () => cleared};
 }
 
 async function main() {
@@ -45,6 +47,10 @@ async function main() {
   assert.equal(recovered.calls[2].options.headers.Authorization, 'Bearer fresh');
   assert.ok(recovered.calls.every(c => c.options.credentials === 'same-origin'));
   assert.equal(recovered.context.getToken(), null);
+  assert.deepEqual(JSON.parse(JSON.stringify(recovered.context.getPermissions())), {canCreate: false, canManage: false});
+  assert.equal(recovered.nodes['#author-nav'].hidden, true);
+  assert.equal(recovered.nodes['#admin-nav'].hidden, true);
+  assert.equal(recovered.getCleared(), 1);
   assert.equal(recovered.nodes['#account'].textContent, '로그인');
   assert.equal(recovered.getView(), 'auth');
   assert.equal(recovered.nodes['#notice'].textContent, '');

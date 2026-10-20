@@ -52,19 +52,35 @@ class MvpIntegrationTest {
         return new CustomUserDetails(u);
     }
     ProblemRequests.Write draft(){
-        return new ProblemRequests.Write("테스트 문제","본문","입력","출력","제한","ELITE",5,1000,128,"FUNCTION",
+        return new ProblemRequests.Write("테스트 문제 "+UUID.randomUUID(),"본문","입력","출력","제한","ELITE",5,1000,128,"FUNCTION",
             List.of(new ProblemRequests.Example("example","true","설명")),
-            List.of(new ProblemRequests.TestCase(functionInput(),"true")));
+            List.of(new ProblemRequests.TestCase(functionInput(),"true")),null,null,null,null,
+            List.of(new ProblemRequests.ReferenceSolution("PYTHON","solution.py","def sol(matrix,target): return True")),null,"PUBLIC");
     }
     private String functionInput() {
         String row="["+String.join(",",Collections.nCopies(15,"0"))+"]";
         return "{\"matrix\":["+String.join(",",Collections.nCopies(15,row))+"],\"target\":[7,7]}";
     }
+    private void tickUntilTerminal(JudgeWorker worker,long targetId) {
+        // 공유 큐의 선행 제출을 순서대로 처리하되, 손상된 큐에서 무한 반복하지 않습니다.
+        long queuedAhead=db.queryForObject(
+            "SELECT COUNT(*) FROM submissions WHERE status='QUEUED' AND id<=?",Long.class,targetId);
+        int maxTicks=(int)Math.min(64L,queuedAhead+3L);
+        for(int attempt=0;attempt<maxTicks;attempt++) {
+            String status=db.queryForObject("SELECT status FROM submissions WHERE id=?",String.class,targetId);
+            if(!"QUEUED".equals(status) && !"RUNNING".equals(status)) return;
+            worker.tick();
+        }
+        String status=db.queryForObject("SELECT status FROM submissions WHERE id=?",String.class,targetId);
+        assertFalse("QUEUED".equals(status) || "RUNNING".equals(status),
+            "submission "+targetId+" did not finish after "+maxTicks+" ticks (status="+status+")");
+    }
     private ProblemRequests.Write withFunctionTest(String input,String expected) {
         var r=draft();
         return new ProblemRequests.Write(r.title(),r.description(),r.inputDescription(),r.outputDescription(),
             r.constraints(),r.rankType(),r.rankInt(),r.timeLimitMs(),r.memoryLimitMb(),r.executionMode(),
-            r.examples(),List.of(new ProblemRequests.TestCase(input,expected)));
+            r.examples(),List.of(new ProblemRequests.TestCase(input,expected)),null,null,null,null,
+            r.referenceSolutions(),null,"PUBLIC");
     }
     @Test void functionTestsRequireTheSharedLanguageInputContract() {
         int number=problems.create(draft(),author);
@@ -147,7 +163,7 @@ class MvpIntegrationTest {
         assertEquals(200,canonical.statusCode());
         assertTrue(canonical.body().contains("name=\"verificationCode\""));
         assertTrue(canonical.body().contains("src=\"/app.js\""));
-        for(String path:List.of("/","/app.html")) {
+        for(String path:List.of("/","/app.html","/create","/admin","/groups","/community","/notices")) {
             var response=get(path,null);
             assertEquals(200,response.statusCode(),path);
             assertEquals(canonical.body(),response.body(),path);
@@ -165,6 +181,8 @@ class MvpIntegrationTest {
     @Test
     @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named="DOCKER_JUDGE_TEST",matches="true")
     void chainLaserHttpSubmissionRunsAllPrivateCases() throws Exception {
+        // 단발 tick이면 먼저 들어온 다른 제출만 처리하고 이 테스트의 결과가 QUEUED로 남습니다.
+        long olderId=submissions.submit(publishedLanguageProblem("STDIN"),"print(5)",Language.PYTHON,author);
         // 테스트 정답 구현은 발사점을 BFS로 순회합니다. 시드 정답 생성의 행/열 확장 방식과 독립적입니다.
         String code="""
             from collections import deque
@@ -193,7 +211,9 @@ class MvpIntegrationTest {
         var response=HttpClient.newHttpClient().send(request,HttpResponse.BodyHandlers.ofString());
         assertEquals(200,response.statusCode(),response.body());
         long id=json.readTree(response.body()).get("data").asLong();
-        new JudgeWorker(submissions,dockerJudge).tick();
+        assertTrue(olderId<id);
+        tickUntilTerminal(new JudgeWorker(submissions,dockerJudge),id);
+        assertEquals("ACCEPTED",submissions.detail(olderId,author).get("status"));
         var result=submissions.detail(id,other);
         assertEquals("ACCEPTED",result.get("status"),result.toString());
         assertEquals(10,((List<?>)result.get("cases")).size());
@@ -443,9 +463,13 @@ class MvpIntegrationTest {
     private ProblemRequests.Write languageDraft(String mode) {
         String input=mode.equals("SQL")?"CREATE TABLE numbers(v INTEGER); INSERT INTO numbers VALUES(2),(3);":
             mode.equals("FUNCTION")?functionInput():"2 3\n";
-        return new ProblemRequests.Write("언어 검증 "+mode,"본문","입력","출력","제한","ELITE",5,3000,256,mode,
+        String language=mode.equals("SQL")?"SQL":"PYTHON";
+        String reference=mode.equals("SQL")?"SELECT SUM(v) FROM numbers;":
+            mode.equals("FUNCTION")?"def sol(matrix,target): return True":"print(sum(map(int,input().split())))";
+        return new ProblemRequests.Write("언어 검증 "+mode+" "+UUID.randomUUID(),"본문","입력","출력","제한","ELITE",5,3000,256,mode,
             List.of(new ProblemRequests.Example("2 3","5","")),
-            List.of(new ProblemRequests.TestCase(input,mode.equals("FUNCTION")?"true":"5")));
+            List.of(new ProblemRequests.TestCase(input,mode.equals("FUNCTION")?"true":"5")),null,null,null,null,
+            List.of(new ProblemRequests.ReferenceSolution(language,mode.equals("SQL")?"solution.sql":"solution.py",reference)),null,"PUBLIC");
     }
     private int publishedLanguageProblem(String mode) {
         int number=problems.create(languageDraft(mode),author);
@@ -510,7 +534,7 @@ class MvpIntegrationTest {
             var response=submitLanguage(sample.getFirst().equals("SQL")?sql:stdin,sample.getFirst(),sample.get(1));
             assertEquals(200,response.statusCode(),response.body());
             long id=json.readTree(response.body()).get("data").asLong();
-            for(int attempt=0;attempt<20 && "QUEUED".equals(submissions.detail(id,other).get("status"));attempt++)worker.tick();
+            tickUntilTerminal(worker,id);
             var detail=json.readTree(get("/api/submissions/"+id,other).body()).get("data");
             assertEquals(sample.get(2),detail.get("status").asText(),detail.toString());
             assertEquals(sample.get(2),detail.get("cases").get(0).get("status").asText());

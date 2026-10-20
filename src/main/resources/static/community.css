@@ -1,0 +1,13 @@
+.community-layout{display:grid;grid-template-columns:minmax(290px,390px) minmax(0,1fr);gap:20px;align-items:start}
+.community-search{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;align-items:end}.community-search button{grid-column:1/-1;justify-self:start}
+.community-item{border-bottom:1px solid #dfe8e0;padding:14px 0;display:flex;align-items:flex-start;gap:8px;justify-content:space-between}
+.community-item strong{font-size:1.05rem;overflow-wrap:anywhere}.community-item p{color:#607365;font-size:.87rem;margin:6px 0}.community-item button{flex:none}
+.community-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:16px 0}.community-create{border-top:1px solid #dfe8e0;padding-top:18px;margin-top:18px}.community-create summary{font-weight:700;cursor:pointer}
+.community-detail h2{margin-top:8px;overflow-wrap:anywhere}.community-body,.community-comment-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-family:inherit}
+.community-body{padding:16px;background:#f7faf6;border-radius:8px;min-height:100px}.community-actions{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.community-actions button{padding:6px 11px;font-size:.89rem}
+.community-comments{border-top:1px solid #dfe8e0;margin-top:24px}.community-comment{border-left:2px solid #b9d8c4;padding:8px 0 8px 14px;margin:12px 0}.community-comment.depth-0{border-color:#3a8e66}
+.comment-body{display:grid;gap:4px}.comment-body small{color:#63776a}.comment-body pre{margin:6px 0}.comment-body.deleted pre,.community-deleted{color:#8b5b3d;font-style:italic}
+.comment-children{padding-left:10px}.community-comment-form{padding:10px;background:#f8fbf7;border-radius:10px}.community-comment-form textarea{margin-bottom:8px}
+.community-history-slot{margin-top:18px}.history-item{border-top:1px solid #dfe8e0;padding:10px 0}.history-item summary{cursor:pointer}
+@media(max-width:900px){.community-layout{grid-template-columns:1fr}.community-search{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.community-search{grid-template-columns:1fr}.community-item{flex-direction:column}.community-item button{align-self:flex-start}.comment-children{padding-left:4px}}

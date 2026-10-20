@@ -39,6 +39,8 @@ class SecurityConfig implements WebMvcConfigurer {
         // HTML은 index.html 하나만 유지합니다. 예전 즐겨찾기/OAuth 복귀 주소도 같은
         // 화면으로 내부 전달하여 URL fragment의 토큰을 잃거나 중복 화면이 생기지 않게 합니다.
         registry.addViewController("/app.html").setViewName("forward:/index.html");
+        for(String path:new String[]{"/create","/admin","/groups","/community","/notices"})
+            registry.addViewController(path).setViewName("forward:/index.html");
     }
 
     @Bean
@@ -61,7 +63,10 @@ class SecurityConfig implements WebMvcConfigurer {
                         .accessDeniedHandler((request, response, exception) -> response.setStatus(403)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles/*").permitAll()
-                        .requestMatchers("/app.html", "/app.js", "/app.css").permitAll()
+                        .requestMatchers(HttpMethod.GET,"/api/groups","/api/community/notices","/api/community/posts",
+                            "/api/community/posts/*","/api/community/posts/*/comments").permitAll()
+                        .requestMatchers(HttpMethod.GET,"/app.html","/create","/admin","/groups","/community","/notices",
+                            "/app.js","/groups.js","/community.js","/app.css","/groups.css","/community.css").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         // 로그아웃은 현재 사용자 ID의 refresh token을 삭제하므로 반드시 access token으로 본인을 확인
                         .requestMatchers("/api/auth/**").permitAll()

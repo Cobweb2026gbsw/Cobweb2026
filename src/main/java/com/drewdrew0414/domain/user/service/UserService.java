@@ -34,9 +34,6 @@ public class UserService {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new DuplicateUsernameException();
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new DuplicateEmailException();
-        }
         if (!emailVerificationService.isVerified(request.getEmail(), VerificationPurpose.JOIN)) {
             // 이 이메일로 발송된 JOIN 목적 인증 코드가 확인(verified)된 적이 없으면 가입 자체를 막음
             throw new EmailNotVerifiedException();
@@ -45,6 +42,11 @@ public class UserService {
         // verified는 이메일 단위 상태이므로 다른 익명 요청도 그 상태를 이용할 수 있습니다.
         // 최종 가입 요청이 유효한 코드를 직접 갖고 있어야만 인증 결과를 소비하게 합니다.
         emailVerificationService.verifyCode(request.getEmail(), request.getVerificationCode(), VerificationPurpose.JOIN);
+
+        // 이메일 중복 여부는 코드 소유를 확인한 요청에만 알립니다. 중복이면 인증 기록은 소비하지 않습니다.
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateEmailException();
+        }
 
         // 확인된 이메일 인증 결과는 이번 회원가입에서 한 번만 사용합니다.
         // 아래 사용자 저장이 실패하면 @Transactional에 의해 인증 기록 삭제도 함께 롤백됩니다.

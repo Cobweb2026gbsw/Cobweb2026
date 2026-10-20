@@ -15,9 +15,22 @@ public class ProblemController {
     public Object list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search) {
         return ApiResponse.success(service.list(page,search));
     }
+    @GetMapping("/permissions")
+    public Object permissions(@AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(service.permissions(user));
+    }
+    @GetMapping("/mine")
+    public Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
+                       @AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(service.mine(page,search,user));
+    }
     @GetMapping("/{number}")
     public Object detail(@PathVariable int number,@AuthenticationPrincipal CustomUserDetails user) {
         return ApiResponse.success(service.detail(number,user));
+    }
+    @GetMapping("/{number}/edit")
+    public Object edit(@PathVariable int number,@AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(service.edit(number,user));
     }
     @PostMapping
     public Object create(@Valid @RequestBody ProblemRequests.Write request,@AuthenticationPrincipal CustomUserDetails user) {

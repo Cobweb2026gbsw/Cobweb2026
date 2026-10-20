@@ -1,0 +1,172 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: API, browser auth, and Compose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SPRING_PROFILES_ACTIVE: test
+      TEST_DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
+      TEST_DB_USERNAME: root
+      TEST_DB_PASSWORD: cobweb-test-only
+      DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
+      DB_USERNAME: root
+      DB_PASSWORD: cobweb-test-only
+      JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
+      MAIL_USERNAME: test@example.invalid
+      MAIL_PASSWORD: unused
+      GOOGLE_CLIENT_ID: unused
+      GOOGLE_CLIENT_SECRET: unused
+      NAVER_CLIENT_ID: unused
+      NAVER_CLIENT_SECRET: unused
+      GITHUB_CLIENT_ID: unused
+      GITHUB_CLIENT_SECRET: unused
+      DOCKER_JUDGE_TEST: 'false'
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: cobweb_test
+          MYSQL_ROOT_PASSWORD: cobweb-test-only
+        ports:
+          - 13307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pcobweb-test-only"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check browser auth flow
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          {
+            node --check src/main/resources/static/app.js &&
+            node --check src/main/resources/static/groups.js &&
+            node --check src/main/resources/static/community.js &&
+            node src/test/js/app-auth.test.cjs &&
+            node src/test/js/app-session.test.cjs &&
+            node src/test/js/problem-editor.test.cjs &&
+            node src/test/js/groups.test.cjs &&
+            node src/test/js/community.test.cjs
+          } 2>&1 | tee ci-logs/browser-auth.log
+      - name: Validate Compose configurations
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/check-compose-config.sh 2>&1 | tee ci-logs/compose.log
+      - name: Run Gradle tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          ./gradlew --no-daemon --console=plain test 2>&1 | tee ci-logs/quick-gradle.log
+      - name: Save quick-test reports and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quick-test-results
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+            ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+  judge-full:
+    name: Full 13-language Docker judge
+    needs: quick
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SPRING_PROFILES_ACTIVE: test
+      TEST_DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
+      TEST_DB_USERNAME: root
+      TEST_DB_PASSWORD: cobweb-test-only
+      DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
+      DB_USERNAME: root
+      DB_PASSWORD: cobweb-test-only
+      JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
+      MAIL_USERNAME: test@example.invalid
+      MAIL_PASSWORD: unused
+      GOOGLE_CLIENT_ID: unused
+      GOOGLE_CLIENT_SECRET: unused
+      NAVER_CLIENT_ID: unused
+      NAVER_CLIENT_SECRET: unused
+      GITHUB_CLIENT_ID: unused
+      GITHUB_CLIENT_SECRET: unused
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: cobweb_test
+          MYSQL_ROOT_PASSWORD: cobweb-test-only
+        ports:
+          - 13307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pcobweb-test-only"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build the judge image
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          docker build -t cobweb-languages:local judge 2>&1 | tee ci-logs/judge-image.log
+      - name: Run the full build with Docker tests enabled
+        shell: bash
+        run: |
+          set -o pipefail
+          DOCKER_JUDGE_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
+      - name: Assert that all Docker judge tests ran
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/check-judge-results.py build/test-results/test 2>&1 | tee ci-logs/judge-results.log
+      - name: Save full-build reports and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: full-judge-results
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+            ci-logs/
+          if-no-files-found: warn
+          retention-days: 7

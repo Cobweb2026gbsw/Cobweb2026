@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="ko">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cobweb · 문제 풀이</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<title>Cobweb · 문제 풀이</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/groups.css"><link rel="stylesheet" href="/community.css"><script src="/groups.js" defer></script><script src="/community.js" defer></script><script src="/app.js" defer></script></head>
 <body>
 <header><a href="/" class="brand">Cobweb</a><nav>
 <button data-view="problems">문제</button><button data-view="submissions">내 제출</button>
-<button data-view="ranking">랭킹</button><button data-view="profile">프로필</button>
-<button data-view="author">문제 만들기</button><button data-view="auth" id="account">로그인</button>
+<button data-view="ranking">랭킹</button><button data-view="groups">그룹</button><button data-view="community">커뮤니티</button><button data-view="notices">공지</button><button data-view="profile">프로필</button>
+<button data-view="author" id="author-nav" hidden>문제 만들기</button><button data-view="admin" id="admin-nav" hidden>문제 관리</button><button data-view="auth" id="account">로그인</button>
 </nav></header>
 <main><p id="notice" role="status" aria-live="polite"></p>
 <section id="problems" class="view">
@@ -27,6 +27,10 @@
 </section>
 <section id="submissions" class="view" hidden><h1>내 제출</h1><div id="submission-list" class="list"></div></section>
 <section id="ranking" class="view" hidden><h1>랭킹</h1><p>해결한 문제 수, 적은 제출 수 순으로 정렬됩니다.</p><div id="rank-list" class="list"></div></section>
+<section id="groups" class="view" hidden><div id="groups-app"></div></section>
+<section id="contest" class="view" hidden><div id="contest-app"></div></section>
+<section id="community" class="view" hidden><div id="community-app"></div></section>
+<section id="notices" class="view" hidden><div id="notices-app"></div></section>
 <section id="profile" class="view" hidden><h1>내 프로필</h1><pre id="profile-info" class="prose"></pre>
 <form id="profile-form"><label>자기소개<textarea name="bio" maxlength="300"></textarea></label>
 <label>GitHub 주소<input name="githubUrl" type="url" placeholder="https://github.com/username"></label><button>저장</button></form>
@@ -44,28 +48,44 @@
 <form id="reset-verify"><label>이메일<input name="email" type="email" required></label><label>코드<input name="code" required></label><button>코드 확인</button></form>
 <form id="reset-confirm"><label>새 비밀번호<input name="newPassword" type="password" minlength="8" required></label><button>비밀번호 변경</button></form></div>
 </div></section>
-<section id="author" class="view" hidden><h1>문제 작성과 검수</h1>
-<p>새 문제는 비공개 초안으로 저장됩니다. 검수를 요청하면 운영자가 공개 여부를 결정합니다.</p>
-<form id="author-form">
-<label>문제 번호 (새 문제는 비워두세요)<input name="number" type="number" min="1000"></label>
-<label>제목<input name="title" maxlength="200" required></label>
-<label>본문<textarea name="description" required rows="6"></textarea></label>
-<label>입력 설명<textarea name="inputDescription" required></textarea></label>
-<label>출력 설명<textarea name="outputDescription" required></textarea></label>
-<label>제한 사항<textarea name="constraints"></textarea></label>
-<label>등급<select name="rankType"><option>INITIATE</option><option>SKILLED</option><option>ELITE</option><option>EXPERT</option><option>LEGEND</option><option>MYTHIC</option><option>ABSOLUTE</option></select></label>
-<label>세부 등급<input name="rankInt" type="number" min="1" max="5" value="5"></label>
-<label>시간 제한 (ms)<input name="timeLimitMs" type="number" min="100" max="10000" value="1000"></label>
-<label>메모리 제한 (MB)<input name="memoryLimitMb" type="number" min="64" max="512" value="256"></label>
-<label>실행 방식<select name="executionMode"><option value="STDIN">표준 입출력 (12개 언어)</option><option value="FUNCTION">함수형 (12개 언어)</option><option value="SQL">SQL (SQLite 읽기 쿼리)</option></select></label>
-<p>SQL 문제의 비공개 입력에는 CREATE TABLE/INSERT 초기화 SQL, 정답에는 헤더 없는 탭 구분 결과를 입력하세요. 행 순서는 제출 쿼리의 ORDER BY로 지정합니다.</p>
-<label>예제 입력<textarea name="exampleInput"></textarea></label><label>예제 출력<textarea name="exampleOutput"></textarea></label>
-<label>비공개 채점 입력<textarea name="testInput" required></textarea></label><label>정답 출력<textarea name="testOutput" required></textarea></label>
-<button>초안 저장</button></form>
-<form id="review-request"><label>문제 번호<input name="number" type="number" min="1000" required></label><button>검수 요청</button></form>
-<form id="review"><h2>운영자 검수</h2><label>문제 번호<input name="number" type="number" min="1000" required></label>
-<label>처리<select name="status"><option value="PUBLISHED">공개 승인</option><option value="REJECTED">반려</option><option value="ARCHIVED">보관</option></select></label>
-<label>사유<input name="cause"></label><button>처리</button></form>
-</section>
+<section id="author" class="view" hidden>
+<div class="section-heading"><div><p class="eyebrow">문제 제작</p><h1>나만의 문제 만들기</h1><p>초안은 비공개로 저장됩니다. 중복 제목은 사용할 수 없으며 정답 코드는 검수 요청 전까지 없어도 됩니다.</p></div><button id="new-problem" type="button">새 문제</button></div>
+<div class="workspace-grid">
+<aside class="panel" aria-labelledby="mine-heading"><h2 id="mine-heading">내가 작성한 문제</h2>
+<form id="mine-search" class="inline-form"><label for="mine-query">제목 검색</label><input id="mine-query" name="search" type="search" placeholder="제목 검색"><button>검색</button></form>
+<div id="mine-list" class="list" aria-live="polite"></div><div class="pager"><button id="mine-previous" type="button">이전</button><button id="mine-next" type="button">다음</button></div></aside>
+<div class="panel editor-panel"><h2 id="editor-heading">새 비공개 초안</h2><p id="editor-state" role="status"></p>
+<form id="author-form"><input name="number" type="hidden"><input name="groupId" type="hidden">
+<div class="form-grid"><label>문제 범위 <select name="scope"><option value="GLOBAL">전체 문제</option><option value="GROUP">그룹 문제</option></select></label>
+<label id="group-destination-label" hidden>대상 그룹 <select name="groupDestination" aria-describedby="group-destination-help"></select><small id="group-destination-help">그룹을 고르면 작성 후 범위를 바꿀 수 없습니다.</small></label></div>
+<label>검수 후 공개 의도 <select name="visibility"><option value="PUBLIC">전체 공개</option><option value="PRIVATE">비공개 유지</option></select></label>
+<div class="form-grid"><label>제목 <input name="title" maxlength="200" required placeholder="문제 제목"></label>
+<label>실행 방식 <select name="executionMode"><option value="STDIN">표준 입출력</option><option value="FUNCTION">함수형</option><option value="SQL">SQL (SQLite)</option></select></label></div>
+<label>문제 본문 <textarea name="description" required rows="8" placeholder="문제 설명을 작성하세요."></textarea></label>
+<div class="form-grid"><label>입력 설명 <textarea name="inputDescription" rows="4"></textarea></label><label>출력 / 함수 반환 설명 <textarea name="outputDescription" rows="4"></textarea></label></div>
+<label>제한 사항 <textarea name="constraints" rows="3"></textarea></label>
+<div class="form-grid"><label>등급 <select name="rankType"><option>INITIATE</option><option>SKILLED</option><option>ELITE</option><option>EXPERT</option><option>LEGEND</option><option>MYTHIC</option><option>ABSOLUTE</option></select></label>
+<label>세부 등급 <input name="rankInt" type="number" min="1" max="5" value="5" required></label>
+<label>시간 제한 (ms) <input name="timeLimitMs" type="number" min="100" max="10000" value="1000" required></label>
+<label>메모리 제한 (MB) <input name="memoryLimitMb" type="number" min="64" max="512" value="256" required></label></div>
+<fieldset><legend>허용 언어</legend><p class="field-hint">실행 방식에 맞는 언어를 하나 이상 선택하세요.</p><div id="author-languages" class="choice-grid"></div></fieldset>
+<div class="form-grid"><label>태그 <input name="tags" placeholder="최대 10개, 각각 50자 · 쉼표로 구분"></label><label>출처 이름 <input name="sourceName" maxlength="255" placeholder="선택 입력"></label></div>
+<label>출처 URL <input name="sourceUrl" type="url" maxlength="1000" placeholder="https://example.com/problem"></label>
+<fieldset><legend>예제 <span id="example-count"></span></legend><p class="field-hint">최대 20개. 위에서 아래 순서로 표시됩니다.</p><div id="example-rows" class="repeat-list"></div><button id="add-example" type="button">예제 추가</button></fieldset>
+<fieldset><legend>비공개 채점 테스트 <span id="test-count"></span></legend><p class="field-hint">1~50개. 입력과 기대 출력을 순서대로 저장합니다. SQL 입력은 초기화 SQL, 기대 출력은 헤더 없는 TSV입니다.</p><div id="test-rows" class="repeat-list"></div><button id="add-test" type="button">테스트 추가</button></fieldset>
+<fieldset><legend>정답 코드 <span id="solution-count"></span></legend><p class="field-hint">언어당 하나, 최대 13개. 파일은 64 KiB 이하 UTF-8 텍스트만 읽어 코드 내용으로 전송하며 서버에 파일 경로를 보내지 않습니다.</p><div id="solution-rows" class="repeat-list"></div><button id="add-solution" type="button">정답 코드 추가</button></fieldset>
+<div class="editor-actions"><button id="save-problem" type="submit">초안 저장</button><button id="request-review" type="button">검수 요청</button></div>
+</form></div></div></section>
+<section id="admin" class="view" hidden><div class="section-heading"><div><p class="eyebrow">운영자</p><h1>문제 관리</h1><p>검수, 공개 범위 변경, 반려와 보관을 처리합니다.</p></div></div>
+<form id="admin-search" class="filter-form panel"><label>제목 검색 <input name="search" type="search" placeholder="문제 제목"></label>
+<label>상태 <select name="status"><option value="">전체</option><option value="DRAFT">초안</option><option value="PENDING_REVIEW">검수 대기</option><option value="PUBLISHED">승인</option><option value="REJECTED">반려</option><option value="ARCHIVED">보관</option></select></label>
+<label>공개 범위 <select name="visibility"><option value="">전체</option><option value="PUBLIC">공개</option><option value="PRIVATE">비공개</option><option value="GROUP">그룹</option></select></label><button>검색</button></form>
+<div id="admin-list" class="list" aria-live="polite"></div><div class="pager"><button id="admin-previous" type="button">이전</button><button id="admin-next" type="button">다음</button></div>
+<div id="admin-detail" class="panel" hidden><div class="section-heading"><div><h2 id="admin-detail-title"></h2><p id="admin-detail-meta"></p></div><button id="admin-close" type="button">닫기</button></div>
+<div id="admin-preview" class="review-preview"></div><div class="admin-actions"><button id="admin-edit" type="button">편집기로 불러오기</button>
+<form id="review"><h3>검수 처리</h3><label>처리 <select name="status"><option value="PUBLISHED">공개 승인</option><option value="REJECTED">반려</option><option value="ARCHIVED">보관</option></select></label>
+<label>사유 <input name="cause" maxlength="2000" placeholder="반려·보관 사유"></label><button>처리</button></form>
+<form id="visibility-form"><h3>공개 범위 변경</h3><label>공개 범위 <select name="visibility"><option value="PUBLIC">공개</option><option value="PRIVATE">비공개</option></select></label>
+<label>변경 사유 <input name="cause" maxlength="2000" placeholder="필요한 경우 입력"></label><button>적용</button></form></div></div></section>
 </main><footer>Cobweb · 알고리즘 문제 풀이</footer>
 </body></html>

@@ -179,6 +179,29 @@ SELECT @chain_laser_problem_id, language FROM (
 
 UPDATE problems SET execution_mode='FUNCTION' WHERE id=@chain_laser_problem_id;
 
+-- 정답 코드는 편집 권한이 있는 작성자/운영자에게만 반환하며 채점 시 실행하지 않습니다.
+INSERT IGNORE INTO reference_solutions(problem_id,language,file_name,source_code)
+VALUES (@chain_laser_problem_id,'PYTHON','solution.py',CONCAT(
+    'def sol(matrix, target):', CHAR(10),
+    '    pending = [(7, 7)]', CHAR(10),
+    '    seen = {(7, 7)}', CHAR(10),
+    '    while pending:', CHAR(10),
+    '        row, col = pending.pop()', CHAR(10),
+    '        if row == target[0] or col == target[1]:', CHAR(10),
+    '            return True', CHAR(10),
+    '        for next_col in range(15):', CHAR(10),
+    '            point = (row, next_col)', CHAR(10),
+    '            if matrix[row][next_col] == 1 and point not in seen:', CHAR(10),
+    '                seen.add(point)', CHAR(10),
+    '                pending.append(point)', CHAR(10),
+    '        for next_row in range(15):', CHAR(10),
+    '            point = (next_row, col)', CHAR(10),
+    '            if matrix[next_row][col] == 1 and point not in seen:', CHAR(10),
+    '                seen.add(point)', CHAR(10),
+    '                pending.append(point)', CHAR(10),
+    '    return False', CHAR(10)
+));
+
 -- 독립된 행/열 도달성 모델로 계산한 경계·연쇄·비도달 테스트입니다.
 INSERT INTO problem_test_cases(problem_id,input_data,expected_output,compare_type,display_order) VALUES
 (@chain_laser_problem_id, '{"matrix":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"target":[7,7]}', 'true', 'EXACT', 1),
