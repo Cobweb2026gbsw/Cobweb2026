@@ -1,3 +1,4 @@
+```
 #!/usr/bin/env bash
 # 로컬 개발 전용: DB → 채점 이미지/JAR 빌드 → 웹 → 별도 채점 워커.
 # Ctrl+C/TERM/기동 실패 시 이 실행의 프로세스와 DB만 멈추고 데이터는 보존합니다.
@@ -12,7 +13,7 @@ usage() {
     '사용법: ./run.sh [--rebuild-judge]  (종료: Ctrl+C)' \
     '' \
     '필수: Java JDK 21, 실행 중인 Docker Desktop/Engine, Docker Compose, curl, openssl' \
-    '기본 주소: http://localhost:8080  /  전용 MySQL: 127.0.0.1:3307' \
+    '웹 바인딩: 0.0.0.0:8080 (접속: http://localhost:8080 또는 http://서버IP:8080) / 전용 MySQL: 127.0.0.1:3307' \
     '옵션: COBWEB_PORT=18080 ./run.sh (웹 포트), COBWEB_RUN_PROJECT=cobweb-local (격리된 Compose 이름)' \
     '실행 설정·로그: .local/run/<Compose 이름>/' \
     '처음에는 컴파일러 이미지 다운로드와 Flyway V1 이후 마이그레이션으로 시간이 걸립니다.' \
@@ -212,7 +213,7 @@ export SPRING_DATASOURCE_USERNAME=cobweb SPRING_DATASOURCE_PASSWORD="$DEV_DB_PAS
 export SPRING_CONFIG_IMPORT="file:$CONFIG_FILE[.properties],optional:file:$ROOT_DIR/.env[.properties]"
 export PUBLIC_BASE_URL="http://localhost:$PORT"
 info "웹 시작 (Flyway 적용): $PUBLIC_BASE_URL"
-"$JAVA_BIN" -jar "$APP_JAR" --spring.profiles.active=local --server.address=127.0.0.1 --server.port="$PORT" \
+"$JAVA_BIN" -jar "$APP_JAR" --spring.profiles.active=local --server.address=0.0.0.0 --server.port="$PORT" \
   --spring.flyway.enabled=true --judge.enabled=false --demo.seed=true </dev/null > "$LOG_DIR/web.log" 2>&1 &
 WEB_PID=$!
 ready=false
@@ -240,3 +241,5 @@ info "로그: $LOG_DIR"
 info 'Ctrl+C를 누르면 웹·워커·전용 DB가 모두 종료됩니다. 데이터는 삭제하지 않습니다.'
 while owned_alive "$WEB_PID" && owned_alive "$WORKER_PID"; do sleep 1; done
 fail "웹 또는 워커가 종료되어 나머지도 정리합니다. 로그: $LOG_DIR"
+
+```
