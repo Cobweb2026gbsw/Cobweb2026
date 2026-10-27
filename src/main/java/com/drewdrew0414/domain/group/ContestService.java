@@ -1,6 +1,8 @@
 package com.drewdrew0414.domain.group;
 
 import com.drewdrew0414.domain.problem.ProblemAuthorProjection;
+import com.drewdrew0414.domain.problem.FunctionSignature;
+import com.drewdrew0414.domain.problem.ProblemService;
 
 import com.drewdrew0414.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.*;
 public class ContestService {
     private final JdbcTemplate db;
     private final GroupService groups;
+    private static final tools.jackson.databind.ObjectMapper FUNCTION_JSON=new tools.jackson.databind.ObjectMapper();
 
     private static long id(Object value) { return ((Number)value).longValue(); }
     private static boolean enabled(Object value) {
@@ -270,7 +273,7 @@ public class ContestService {
             SELECT p.id,p.problem_number,p.problem_title,p.description,p.input_description,
                    p.output_description,p.constraints_text,p.rank_type,p.rank_int,p.time_limit_ms,
                    p.memory_limit_mb,p.execution_mode,p.status,p.author_id,p.author_public,
-                   p.function_abi_compatible,p.source_name,p.source_url
+                   p.function_abi_compatible,p.function_signature,p.source_name,p.source_url
             FROM contest_problems cp JOIN problems p ON p.id=cp.problem_id
             WHERE cp.contest_id=? AND p.problem_number=? AND p.group_id=? AND p.visibility='GROUP'
             """,cid,number,gid);
@@ -286,11 +289,14 @@ public class ContestService {
             """,p.get("id")));
         var languages=db.queryForList("SELECT language FROM problem_languages WHERE problem_id=? ORDER BY language",
             String.class,p.get("id"));
-        if("FUNCTION".equals(p.get("execution_mode")) && !enabled(p.get("function_abi_compatible")))
+        if("FUNCTION".equals(p.get("execution_mode")) && !ProblemService.functionAbiCompatible(p))
             languages=languages.stream().filter("PYTHON"::equals).toList();
         result.put("languages",languages);
-        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && enabled(p.get("function_abi_compatible"))
-            ? "CHAIN_LASER_V1" : null);
+        boolean function="FUNCTION".equals(p.get("execution_mode"));
+        var signature=function?FunctionSignature.fromJson(FUNCTION_JSON,p.get("function_signature")):null;
+        result.put("functionSignature",signature);
+        result.put("functionAbi",!function?null:signature!=null?"GENERIC_V1":
+            ProblemService.functionAbiCompatible(p)?"CHAIN_LASER_V1":null);
         // 문제 접근 권한·시험 시간창을 확인한 뒤 공개 시작 코드만 제공합니다.
         var allowedLanguages=languages;
         result.put("starterCodes",db.queryForList("""

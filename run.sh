@@ -27,6 +27,7 @@ usage() {
     '정상 기동 뒤 Ctrl+C: 웹·워커·전용 DB를 모두 중지합니다. DB 내용을 되돌리지 않습니다.' \
     '실행 JAR는 실행별 로그 폴더의 app.jar 사본이므로 이후 재빌드해도 실행본을 덮지 않습니다.' \
     '로컬 마이그레이션만 단발 JVM의 Flyway 전용 root 연결로 실행하고 웹·워커는 제한 계정을 유지합니다.' \
+    '마이그레이션·웹·워커 JVM 힙은 초기 64 MiB/최대 512 MiB이며, OOM 발생 시 해당 JVM을 종료합니다(전체 RSS 한도 아님).' \
     '현재 소스로 JAR를 빌드하며, 채점 이미지가 없거나 이전 언어 세트이면 자동 갱신합니다(테스트는 별도).' \
     'judge/의 코드·도구 체인 변경 후에는 ./run.sh --rebuild-judge로 이미지를 다시 빌드하세요.'
 }
@@ -81,6 +82,9 @@ JAVAC_BIN="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
 command -v "$JAVAC_BIN" >/dev/null || fail 'JRE가 아닌 JDK 21이 필요합니다(javac 없음).'
 KEYTOOL_BIN="${JAVA_HOME:+$JAVA_HOME/bin/}keytool"
 command -v "$KEYTOOL_BIN" >/dev/null || fail '로컬 HTTPS 인증서를 준비할 keytool(JDK 21)이 필요합니다.'
+# 호스트 RAM 비율로 기본 힙이 커지지 않도록 앱 JVM 세 개에 동일한 내부 상한을 적용합니다.
+# 메타스페이스·스레드·직접 버퍼 등은 힙 밖이므로 이 값이 전체 RSS 512 MiB를 보장하지는 않습니다.
+readonly -a APP_JVM_OPTIONS=(-Xms64m -Xmx512m -XX:+ExitOnOutOfMemoryError)
 
 umask 077
 STATE_DIR="$ROOT_DIR/.local/run/$PROJECT"
@@ -468,7 +472,7 @@ current_id="$(current_db_id)" || fail '기동 후 DB 컨테이너 확인 실패'
 [[ -z "$DB_INITIAL_ID" || "$current_id" == "$DB_INITIAL_ID" ]] || fail '기존 DB 컨테이너가 바뀌었습니다. 자동 진행하지 않습니다.'
 STAGE='judge-image'
 JUDGE_IMAGE="${JUDGE_IMAGE:-cobweb-languages:local}"
-JUDGE_LANGUAGE_SET='17-v1'
+JUDGE_LANGUAGE_SET='17-v3-generic-nested'
 # 이전 13언어 이미지가 남아 있어도 새 언어 제출을 SYSTEM_ERROR로 처리하지 않도록 갱신합니다.
 installed_language_set="$(docker image inspect --format '{{index .Config.Labels "org.cobweb.judge.language-set"}}' "$JUDGE_IMAGE" 2>/dev/null || true)"
 if [[ "$REBUILD_JUDGE" == true || "$installed_language_set" != "$JUDGE_LANGUAGE_SET" ]]; then
@@ -524,13 +528,13 @@ STAGE='migrate'
 info "로컬 DB 마이그레이션: 로그 $LOG_DIR/migrate.log"
 SPRING_CONFIG_IMPORT="file:$APP_CONFIG_FILE[.properties]" SPRING_FLYWAY_URL="$SPRING_DATASOURCE_URL" \
   SPRING_FLYWAY_USER=root SPRING_FLYWAY_PASSWORD="$DEV_ROOT_PASSWORD" \
-  run_task "$JAVA_BIN" -jar "$APP_JAR" --local.migrate-only=true --spring.profiles.active=local \
-  --spring.main.web-application-type=none --spring.flyway.enabled=true --judge.enabled=false --demo.seed=false \
+  run_task "$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --local.migrate-only=true --spring.profiles.active=local \
+  --spring.main.web-application-type=none --spring.flyway.enabled=true --judge.enabled=false --demo.seed=false --curriculum.level0.enabled=false \
   > "$LOG_DIR/migrate.log" 2>&1
 info "웹 시작 (마이그레이션 검증): HTTP http://localhost:$PORT / HTTPS $PUBLIC_BASE_URL"
 STAGE='web'
 set -m
-"$JAVA_BIN" -jar "$APP_JAR" --spring.profiles.active=local --server.address=0.0.0.0 --server.port="$PORT" \
+"$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --spring.profiles.active=local --server.address=0.0.0.0 --server.port="$PORT" \
   --local.https.enabled=true --local.https.port="$HTTPS_PORT" --local.https.key-store="$TLS_KEYSTORE" \
   --spring.flyway.enabled=true --judge.enabled=false --demo.seed=true </dev/null > "$LOG_DIR/web.log" 2>&1 &
 WEB_PID=$!
@@ -539,8 +543,8 @@ remember_process "$WEB_PID" || fail '웹 프로세스 시작 정보 조회 실�
 ready=false
 for ((attempt=0;attempt<120;attempt++)); do
   owned_alive "$WEB_PID" || fail "웹 기동 실패. 로그: $LOG_DIR/web.log"
-  if curl --noproxy '*' --silent --fail --connect-timeout 1 --max-time 2 "http://127.0.0.1:$PORT/api/languages" >/dev/null && \
-      curl --noproxy '*' --silent --fail --connect-timeout 1 --max-time 2 --cacert "$TLS_CERTIFICATE" "https://127.0.0.1:$HTTPS_PORT/api/languages" >/dev/null; then ready=true; break; fi
+  if curl --noproxy '*' --silent --fail --connect-timeout 1 --max-time 2 "http://127.0.0.1:$PORT/api/ready" >/dev/null && \
+      curl --noproxy '*' --silent --fail --connect-timeout 1 --max-time 2 --cacert "$TLS_CERTIFICATE" "https://127.0.0.1:$HTTPS_PORT/api/ready" >/dev/null; then ready=true; break; fi
   sleep 1
 done
 [[ "$ready" == true ]] || fail "웹 준비 시간 초과. 로그: $LOG_DIR/web.log"
@@ -548,9 +552,9 @@ done
 # 마이그레이션과 웹 준비가 끝난 뒤 같은 JAR의 non-web 워커를 실행합니다.
 STAGE='worker'
 set -m
-"$JAVA_BIN" -jar "$APP_JAR" --spring.profiles.active=local --spring.main.web-application-type=none \
+"$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --spring.profiles.active=local --spring.main.web-application-type=none \
   --spring.flyway.enabled=false --judge.enabled=true --judge.image="$JUDGE_IMAGE_ID" \
-  --judge.workspace="$JUDGE_WORKSPACE" --demo.seed=false </dev/null > "$LOG_DIR/worker.log" 2>&1 &
+  --judge.workspace="$JUDGE_WORKSPACE" --demo.seed=false --curriculum.level0.enabled=false </dev/null > "$LOG_DIR/worker.log" 2>&1 &
 WORKER_PID=$!
 set +m
 remember_process "$WORKER_PID" || fail '워커 프로세스 시작 정보 조회 실패. 임의 프로세스에 신호를 보내지 않습니다.'

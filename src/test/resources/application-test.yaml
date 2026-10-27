@@ -28,3 +28,6 @@ judge:
   enabled: false
 demo:
   seed: true
+curriculum:
+  level0:
+    enabled: false

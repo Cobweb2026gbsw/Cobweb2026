@@ -29,17 +29,27 @@ public class ProfileController {
         return profile(username);
     }
     @GetMapping("/profiles/{username}") public Object profile(@PathVariable String username) {
-        var rows=db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE username=?",username);
+        return ApiResponse.success(profileData(username));
+    }
+    private java.util.Map<String,Object> profileData(String username) {
+        return profileData(db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE username=?",username));
+    }
+    private java.util.Map<String,Object> profileData(java.util.List<java.util.Map<String,Object>> rows) {
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var p=rows.getFirst(); Object uid=p.remove("id");
         p.put("solvedProblems",db.queryForList("""
             SELECT p.problem_number,p.problem_title FROM user_solved_problems s JOIN problems p ON p.id=s.problem_id
             WHERE s.user_id=? AND p.status='PUBLISHED' AND p.visibility='PUBLIC' ORDER BY s.solved_at DESC LIMIT 100
             """,uid));
-        return ApiResponse.success(p);
+        return p;
     }
     @GetMapping("/me") public Object me(@AuthenticationPrincipal CustomUserDetails user) {
-        ProblemService.requireUser(user); return profile(user.getUsername());
+        long uid=ProblemService.requireUser(user);
+        var profile=profileData(db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE id=?",uid));
+        // 내 계정에서만 초안 분리에 필요한 불변 ID를 제공합니다. 공개 프로필에는 넣지 않습니다.
+        // BIGINT를 JavaScript Number로 반올림하지 않도록 10진 문자열로 전달합니다.
+        profile.put("id",Long.toString(uid));
+        return ApiResponse.success(profile);
     }
     @PatchMapping("/me") public Object edit(@Valid @RequestBody Edit request,@AuthenticationPrincipal CustomUserDetails user) {
         long id=ProblemService.requireUser(user);

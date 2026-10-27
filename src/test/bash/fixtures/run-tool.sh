@@ -66,12 +66,27 @@ case "$tool" in
     printf 'immutable fixture JAR\n' > build/libs/cobweb-0.0.1-SNAPSHOT.jar
     exit 0 ;;
   java)
-    if [[ "${1:-}" != -jar ]]; then printf '    java.specification.version = 21\n' >&2; exit 0; fi
+    if [[ $# == 2 && "${1:-}" == -XshowSettings:properties && "${2:-}" == -version ]]; then
+      printf '    java.specification.version = 21\n' >&2; exit 0
+    fi
+    initial_heap=false;maximum_heap=false;exit_on_oom=false
+    # 알려진 옵션만 -jar 앞에서 해석합니다. 누락/중복/알 수 없는 옵션을 버전 조회로 오인하지 않습니다.
+    while [[ $# -gt 0 && "${1:-}" != -jar ]]; do
+      case "$1" in
+        -Xms64m) [[ "$initial_heap" == false ]] || exit 94; initial_heap=true ;;
+        -Xmx512m) [[ "$maximum_heap" == false ]] || exit 94; maximum_heap=true ;;
+        -XX:+ExitOnOutOfMemoryError) [[ "$exit_on_oom" == false ]] || exit 94; exit_on_oom=true ;;
+        *) exit 94 ;;
+      esac
+      shift
+    done
+    [[ $# -ge 2 && "${1:-}" == -jar && "$initial_heap" == true && "$maximum_heap" == true && "$exit_on_oom" == true ]] || exit 94
     jar="$2"; shift 2; kind=web
     for argument in "$@"; do [[ "$argument" != --spring.main.web-application-type=none ]] || kind=worker; done
     for argument in "$@"; do [[ "$argument" != --local.migrate-only=true ]] || kind=migrate; done
     printf '%s\n' "$jar" > "$MOCK_STATE/$kind.jar"
     printf '%s\n' "$$" > "$MOCK_STATE/$kind.pid"
+    : > "$MOCK_STATE/$kind.jvm-options-checked"
     # fake credential의 값은 진단에 출력하지 않고 역할 분리 계약만 확인합니다.
     [[ "${SPRING_DATASOURCE_USERNAME:-}" == cobweb && "${SPRING_DATASOURCE_PASSWORD:-}" == fake-db-password ]] || exit 94
     [[ "${SPRING_FLYWAY_URL:-}" == "${SPRING_DATASOURCE_URL:-}" && -z "${DEV_ROOT_PASSWORD+x}" ]] || exit 94
@@ -87,7 +102,7 @@ case "$tool" in
       [[ "${SPRING_FLYWAY_USER:-}" == root && "${SPRING_FLYWAY_PASSWORD:-}" == fake-root-password ]] || exit 94
       [[ " $* " == *' --spring.profiles.active=local '* && " $* " == *' --spring.main.web-application-type=none '* \
         && " $* " == *' --spring.flyway.enabled=true '* && " $* " == *' --judge.enabled=false '* \
-        && " $* " == *' --demo.seed=false '* ]] || exit 94
+        && " $* " == *' --demo.seed=false '* && " $* " == *' --curriculum.level0.enabled=false '* ]] || exit 94
       : > "$MOCK_STATE/migrate.credentials-checked"
       if [[ "${MOCK_FAIL_STAGE:-}" == migrate_interrupt ]]; then : > "$MOCK_STATE/migrate.waiting"; hold; fi
       stage_fail migrate
@@ -99,9 +114,16 @@ case "$tool" in
     [[ "${SPRING_FLYWAY_USER:-}" == cobweb && "${SPRING_FLYWAY_PASSWORD:-}" == fake-db-password ]] || exit 94
     : > "$MOCK_STATE/$kind.credentials-checked"
     stage_fail "$kind"
-    [[ "$kind" != worker ]] || printf 'Started Cobweb2026Application\n'
+    if [[ "$kind" == worker ]]; then
+      [[ " $* " == *' --curriculum.level0.enabled=false '* ]] || exit 94
+      printf 'Started Cobweb2026Application\n'
+    fi
     hold ;;
   curl)
+    case "${!#}" in
+      http://127.0.0.1:*/api/ready|https://127.0.0.1:*/api/ready) ;;
+      *) exit 96 ;;
+    esac
     # readiness는 가짜 웹 프로세스가 시작된 뒤에만 성공합니다.
     [[ -f "$MOCK_STATE/web.pid" ]] || exit 7
     [[ "${MOCK_FAIL_STAGE:-}" != readiness ]] || exit 7
@@ -185,7 +207,7 @@ case "$command" in
     [[ "${1:-}" != rm ]] || exit 97
     [[ "${1:-}" != inspect || -f "$MOCK_STATE/volume.exists" ]]
     exit $? ;;
-  image) if [[ " $* " == *'org.cobweb.judge.language-set'* ]]; then printf '17-v1\n'; else printf 'sha256:%064d\n' 0; fi; exit 0 ;;
+  image) if [[ " $* " == *'org.cobweb.judge.language-set'* ]]; then printf '17-v3-generic-nested\n'; else printf 'sha256:%064d\n' 0; fi; exit 0 ;;
   build) stage_fail judge; exit 0 ;;
   *) printf '허용하지 않은 docker: %s\n' "$command" >&2; exit 96 ;;
 esac

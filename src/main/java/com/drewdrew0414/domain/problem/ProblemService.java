@@ -49,6 +49,7 @@ public class ProblemService {
         return uid;
     }
     public static boolean functionAbiCompatible(Map<String,Object> problem) {
+        if(problem.get("function_signature")!=null) return true;
         Object value=problem.get("function_abi_compatible");
         return value instanceof Boolean b ? b : value instanceof Number n && n.intValue()!=0;
     }
@@ -192,8 +193,7 @@ public class ProblemService {
             languages=languages.stream().filter("PYTHON"::equals).toList();
         result.put("languages",languages);
         // 함수 시작 코드 생성용 공개 규격 이름만 전달합니다. 레거시 문제를 체인 레이저로 추정하지 않습니다.
-        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && functionAbiCompatible(p)
-            ? "CHAIN_LASER_V1" : null);
+        putFunctionContract(result,p);
         // 시작 코드는 명시적으로 공개 등록된 행만 읽습니다. 정답 테이블은 조회하지 않습니다.
         var allowedLanguages=languages;
         result.put("starterCodes",starterCodes(p.get("id")).stream()
@@ -242,8 +242,7 @@ public class ProblemService {
         result.put("memoryLimitMb",p.get("memory_limit_mb"));
         result.put("executionMode",p.get("execution_mode"));
         // 편집 화면도 동일한 공개 규격 이름으로 안전한 기본 시작 코드를 생성합니다.
-        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && functionAbiCompatible(p)
-            ? "CHAIN_LASER_V1" : null);
+        putFunctionContract(result,p);
         result.put("sourceName",p.get("source_name"));
         result.put("sourceUrl",p.get("source_url"));
         result.put("examples",db.queryForList("""
@@ -273,6 +272,13 @@ public class ProblemService {
             WHERE problem_id=? ORDER BY language
             """,problemId);
     }
+    private void putFunctionContract(Map<String,Object> result,Map<String,Object> problem) {
+        boolean function="FUNCTION".equals(problem.get("execution_mode"));
+        var signature=function?FunctionSignature.fromJson(json,problem.get("function_signature")):null;
+        result.put("functionSignature",signature);
+        result.put("functionAbi",!function?null:signature!=null?"GENERIC_V1":
+            functionAbiCompatible(problem)?"CHAIN_LASER_V1":null);
+    }
     public Map<String,Object> adminDetail(int number,CustomUserDetails user) {
         requireOperator(user);
         return edit(number,user);
@@ -280,7 +286,7 @@ public class ProblemService {
     @Transactional
     public int create(ProblemRequests.Write request, CustomUserDetails user) {
         long uid = requireUser(user);
-        var prepared=prepareWrite(request,request==null?null:request.groupId(),null);
+        var prepared=prepareWrite(request,request==null?null:request.groupId(),null,null);
         lockUser(user);
         if(prepared.groupId()!=null)
             groups.requirePermission(prepared.groupId(),user,GroupPermission.CREATE_PROBLEMS);
@@ -294,14 +300,15 @@ public class ProblemService {
             db.update("""
                 INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,
                   constraints_text,rank_type,rank_int,time_limit_ms,memory_limit_mb,execution_mode,
-                  author_id,group_id,status,visibility,requested_visibility,function_abi_compatible,source_name,source_url,author_public)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?)
+                  author_id,group_id,status,visibility,requested_visibility,function_abi_compatible,source_name,source_url,author_public,function_signature)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?,?)
                 """,number,prepared.title(),request.description(),request.inputDescription(),request.outputDescription(),
                     request.constraints(),request.rankType(),request.rankInt(),request.timeLimitMs(),
                     request.memoryLimitMb(),request.executionMode(),uid,prepared.groupId(),
                     prepared.groupId()==null?"PRIVATE":"GROUP",prepared.requestedVisibility(),
                     "FUNCTION".equals(request.executionMode()),
-                    prepared.sourceName(),prepared.sourceUrl(),Boolean.TRUE.equals(request.authorPublic()));
+                    prepared.sourceName(),prepared.sourceUrl(),Boolean.TRUE.equals(request.authorPublic()),
+                    prepared.functionSignature()==null?null:prepared.functionSignature().toJson(json));
         } catch(DuplicateKeyException e) {
             throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목 또는 번호입니다.");
         }
@@ -342,7 +349,9 @@ public class ProblemService {
             throw new ApiException(HttpStatus.CONFLICT,"진행 중인 제출이 있어 수정할 수 없습니다.");
         if(usedInContest(((Number)p.get("id")).longValue()))
             throw new ApiException(HttpStatus.CONFLICT,"시험에 사용된 문제는 복제하여 수정해주세요.");
-        var prepared=prepareWrite(r,groupId,(String)p.get("requested_visibility"));
+        var previousSignature="FUNCTION".equals(p.get("execution_mode"))
+            ?FunctionSignature.fromJson(json,p.get("function_signature")):null;
+        var prepared=prepareWrite(r,groupId,(String)p.get("requested_visibility"),previousSignature);
         titleAvailable(prepared.title(),groupId,((Number)p.get("id")).longValue());
         if(prepared.references()==null) {
             var oldLanguages=db.queryForList("SELECT language FROM reference_solutions WHERE problem_id=?",
@@ -362,12 +371,13 @@ public class ProblemService {
                 UPDATE problems SET problem_title=?,description=?,input_description=?,output_description=?,
                  constraints_text=?,rank_type=?,rank_int=?,time_limit_ms=?,memory_limit_mb=?,execution_mode=?,
                  function_abi_compatible=?,source_name=?,source_url=?,requested_visibility=?,
-                 author_public=COALESCE(?,author_public)
+                 author_public=COALESCE(?,author_public),function_signature=?
                 WHERE id=?
                 """,prepared.title(),r.description(),r.inputDescription(),r.outputDescription(),r.constraints(),
                     r.rankType(),r.rankInt(),r.timeLimitMs(),r.memoryLimitMb(),r.executionMode(),
                     "FUNCTION".equals(r.executionMode()),prepared.sourceName(),prepared.sourceUrl(),
-                    prepared.requestedVisibility(),r.authorPublic(),p.get("id"));
+                    prepared.requestedVisibility(),r.authorPublic(),
+                    prepared.functionSignature()==null?null:prepared.functionSignature().toJson(json),p.get("id"));
         } catch(DuplicateKeyException e) {
             throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
         }
@@ -381,8 +391,30 @@ public class ProblemService {
             db.update("DELETE FROM problem_starter_codes WHERE problem_id=?",p.get("id"));
         saveContent(((Number)p.get("id")).longValue(),r,prepared);
     }
-    private void validateFunctionTests(ProblemRequests.Write request) {
-        if (!"FUNCTION".equals(request.executionMode())) return;
+    private void validateFunctionTests(ProblemRequests.Write request,FunctionSignature signature) {
+        if (!"FUNCTION".equals(request.executionMode())) {
+            // DTO의 범용 함수 확장으로 기존 STDIN/SQL 제작 한도가 함께 늘어나지 않도록 유지합니다.
+            for(var test:request.tests()) if(test==null || test.input()==null || test.expected()==null ||
+                    test.input().length()>1000000 || test.expected().length()>1000000)
+                throw new ApiException(HttpStatus.BAD_REQUEST,"일반 테스트 입력·정답은 각각 100만 자 이하여야 합니다.");
+            return;
+        }
+        if(signature!=null) {
+            // 50개 테스트가 각각 최대 크기인 요청을 누적 저장하지 않도록 묶음 전체도 제한합니다.
+            long total=0;
+            for(var test:request.tests()) {
+                if(test==null) throw new ApiException(HttpStatus.BAD_REQUEST,"함수 테스트를 확인해주세요.");
+                if(test.input()==null || test.expected()==null) throw new ApiException(HttpStatus.BAD_REQUEST,"함수 테스트를 확인해주세요.");
+                total+=(long)test.input().getBytes(StandardCharsets.UTF_8).length+test.expected().getBytes(StandardCharsets.UTF_8).length;
+                if(total>32L*1024*1024) throw new ApiException(HttpStatus.BAD_REQUEST,"함수 테스트 입력·정답 묶음은 UTF-8 32 MiB 이하여야 합니다.");
+                signature.validateCase(json,test.input(),test.expected());
+            }
+            for(var example:request.examples()) {
+                if(example==null) throw new ApiException(HttpStatus.BAD_REQUEST,"함수 예제를 확인해주세요.");
+                signature.validateCase(json,example.input(),example.output());
+            }
+            return;
+        }
         int index=0;
         for (var test:request.tests()) {
             index++;
@@ -436,14 +468,17 @@ public class ProblemService {
             db.update("INSERT INTO problem_starter_codes(problem_id,language,source_code) VALUES(?,?,?)",
                 problemId,starter.language(),starter.sourceCode());
     }
-    private PreparedWrite prepareWrite(ProblemRequests.Write r,Long groupId,String priorVisibility) {
+    private PreparedWrite prepareWrite(ProblemRequests.Write r,Long groupId,String priorVisibility,
+                                       FunctionSignature priorSignature) {
         if(r==null || r.title()==null || r.examples()==null || r.tests()==null || r.executionMode()==null ||
            !Set.of("STDIN","FUNCTION","SQL").contains(r.executionMode()))
             throw new ApiException(HttpStatus.BAD_REQUEST,"문제 입력을 확인해주세요.");
         // 크기 위반은 요청 오류지만 직렬화 엔진의 예기치 않은 실패를 400으로 숨기지 않습니다.
         // 그 실패는 공통 API 경계에서 진단 ID가 있는 안전한 500 응답으로 변환합니다.
-        if(json.writeValueAsBytes(r).length>2*1024*1024)
-            throw new ApiException(HttpStatus.BAD_REQUEST,"문제 입력은 UTF-8 2MiB 이하여야 합니다.");
+        boolean generic="FUNCTION".equals(r.executionMode()) && (r.functionSignature()!=null || priorSignature!=null);
+        int requestLimitMb=generic?40:2;
+        if(json.writeValueAsBytes(r).length>requestLimitMb*1024*1024)
+            throw new ApiException(HttpStatus.BAD_REQUEST,"문제 입력은 UTF-8 "+requestLimitMb+"MiB 이하여야 합니다.");
         if(groupId!=null && groupId<=0) throw new ApiException(HttpStatus.BAD_REQUEST,"그룹을 확인해주세요.");
         String requestedVisibility=r.visibility()!=null?r.visibility()
             : priorVisibility!=null?priorVisibility:groupId==null?"PUBLIC":"GROUP";
@@ -528,9 +563,11 @@ public class ProblemService {
                 starters.add(new ProblemRequests.StarterCode(language,starter.sourceCode()));
             }
         }
-        validateFunctionTests(r);
+        FunctionSignature signature="FUNCTION".equals(r.executionMode())
+            ?r.functionSignature()!=null?r.functionSignature().validated():priorSignature:null;
+        validateFunctionTests(r,signature);
         return new PreparedWrite(title,languages,List.copyOf(tags),sourceName,sourceUrl,references,
-            starters==null?null:List.copyOf(starters),groupId,requestedVisibility);
+            starters==null?null:List.copyOf(starters),groupId,requestedVisibility,signature);
     }
     private static String normalizeSpace(String text) { return text.strip().replaceAll("(?U)\\s+"," "); }
     private static String optionalText(String value,int maximum) {
@@ -574,7 +611,7 @@ public class ProblemService {
     private record PreparedWrite(String title,List<String> languages,List<String> tags,String sourceName,
                                  String sourceUrl,List<ProblemRequests.ReferenceSolution> references,
                                  List<ProblemRequests.StarterCode> starters,
-                                 Long groupId,String requestedVisibility) {}
+                                 Long groupId,String requestedVisibility,FunctionSignature functionSignature) {}
     @Transactional
     public void requestReview(int number,CustomUserDetails user) {
         lockUser(user);

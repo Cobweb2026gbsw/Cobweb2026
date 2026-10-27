@@ -53,6 +53,48 @@ class SubmissionReuseTest {
         assertThrows(IllegalStateException.class,()->SubmissionService.contextDigest(broken,List.of(),IMAGE,ENGINE));
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",SubmissionService.sourceDigest("abc"));
     }
+    @Test void streamingContextHashRetainsTheLegacyByteFormatAndHandlesNearThirtyTwoMiB() throws Exception {
+        var p=problem();var cases=List.of(test(11L,"a\u0000가\n","2",1),test(12L,"é","4",2));
+        var bytes=new java.io.ByteArrayOutputStream();var output=new java.io.DataOutputStream(bytes);
+        var values=new ArrayList<Object>(List.of("COBWEB_JUDGEMENT_V1",IMAGE,ENGINE,p.get("execution_mode"),p.get("time_limit_ms"),p.get("memory_limit_mb"),false));
+        values.add(null);
+        for(Object value:values){if(value==null)output.writeInt(-1);else{byte[] encoded=value.toString().getBytes(StandardCharsets.UTF_8);output.writeInt(encoded.length);output.write(encoded);}}
+        output.writeInt(cases.size());
+        for(var row:cases)for(String key:List.of("id","input_data","expected_output","compare_type","display_order")){
+            byte[] encoded=row.get(key).toString().getBytes(StandardCharsets.UTF_8);output.writeInt(encoded.length);output.write(encoded);
+        }
+        output.flush();
+        String old=HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
+        assertEquals(old,SubmissionService.contextDigest(p,cases,IMAGE,ENGINE));
+        String input="{\"args\":[["+"1234567890,".repeat(249999)+"1234567890]]}";
+        var large=java.util.stream.IntStream.range(0,12).mapToObj(i->test(100L+i,input,"true",i+1)).toList();
+        p.put("execution_mode","FUNCTION");p.put("function_abi_compatible",true);
+        assertNotNull(SubmissionService.contextDigest(p,large,IMAGE,ENGINE));
+    }
+    @Test void genericSignatureChangesCannotReuseAnEarlierFunctionJudgement() {
+        var problem=problem();problem.put("execution_mode","FUNCTION");problem.put("function_abi_compatible",true);
+        var tests=List.of(test(11L,"{\"args\":[1]}","1",1));
+        String legacy=SubmissionService.contextDigest(problem,tests,IMAGE,ENGINE);
+        problem.put("function_signature","{\"name\":\"sol\",\"parameters\":[{\"name\":\"value\",\"type\":\"int\"}],\"returnType\":\"int\"}");
+        String integer=SubmissionService.contextDigest(problem,tests,IMAGE,ENGINE);
+        assertNotEquals(legacy,integer);
+        problem.put("function_signature","{\"name\":\"solution\",\"parameters\":[{\"name\":\"value\",\"type\":\"int\"}],\"returnType\":\"int\"}");
+        assertNotEquals(integer,SubmissionService.contextDigest(problem,tests,IMAGE,ENGINE));
+    }
+    @Test void workerCarriesTheStoredGenericSignatureIntoThePinnedPreparation() {
+        var submissions=mock(SubmissionService.class);var runner=mock(DockerJudge.class);
+        var prepared=mock(DockerJudge.Prepared.class);var claim=claim();var problem=problem();
+        String signature="{\"name\":\"sol\",\"parameters\":[],\"returnType\":\"int\"}";
+        problem.put("execution_mode","FUNCTION");problem.put("function_signature",signature);
+        when(submissions.claim()).thenReturn(claim);when(submissions.heartbeat(claim)).thenReturn(true);
+        when(runner.imageIdentity()).thenReturn(IMAGE);when(submissions.problem(3L)).thenReturn(problem);
+        when(submissions.cases(3L)).thenReturn(List.of(test(11L,"{\"args\":[]}","1",1)));
+        when(runner.preparePinned(Language.PYTHON,"print(1)","FUNCTION",IMAGE,signature)).thenReturn(prepared);
+        when(prepared.failure()).thenReturn("COMPILATION_ERROR");
+        new JudgeWorker(submissions,runner,60000).tick();
+        verify(runner).preparePinned(Language.PYTHON,"print(1)","FUNCTION",IMAGE,signature);
+        verify(prepared).close();verify(submissions).finish(anyMap(),anyList());
+    }
 
     @Test void partialCorruptOrSystemErrorResultsCannotBeReused() {
         var tests=List.of(test(11L,"1","2",1),test(12L,"3","4",2));

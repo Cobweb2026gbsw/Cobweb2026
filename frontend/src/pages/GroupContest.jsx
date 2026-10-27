@@ -9,6 +9,7 @@ import {ContestForm} from './GroupDetail';
 import CodeEditor from '../components/CodeEditor';
 import ProblemStatement from '../components/ProblemStatement';
 import ProblemAttribution from '../components/ProblemAttribution';
+import SubmissionDiagnostic from '../components/SubmissionDiagnostic';
 import './common.css';
 import './Groups.css';
 import './Contests.css';
@@ -122,7 +123,7 @@ function ContestQuestion({base, number, contest, canTake, onSubmitted}) {
       rememberLanguage(language);
       const session = getSessionEpoch(), generation = ++pollGeneration.current;
       submitFlight.current = true;
-      clearTimeout(pollTimer.current); setBusy(true); setError('');
+      clearTimeout(pollTimer.current); setBusy(true); setError(''); setResult(null);
       try {
         const id = await api(base + '/submissions', 'POST', {problemNumber: number, sourceCode: code, language});
         if (!alive.current || generation !== pollGeneration.current || session !== getSessionEpoch()) return;
@@ -139,6 +140,7 @@ function ContestQuestion({base, number, contest, canTake, onSubmitted}) {
       <p className="gp-muted">{languageHelp(language, problem.execution_mode, problem)}</p><button className="cw-btn primary" disabled={!open || busy || !code.trim()}>시험 답안 제출</button>
       <p className="gp-muted">종료된 시험은 다시 보기가 허용되어도 제출할 수 없습니다.</p>
       {result && <p role="status" className="gc-result">제출 #{result.id} · {result.status}{result.score != null ? ` · ${result.score}점` : ''}</p>}
+      <SubmissionDiagnostic submission={result}/>
     </form></> : !error && <p role="status">시험 문제를 불러오는 중입니다.</p>}</>;
 }
 function SubmissionRows({items}) {

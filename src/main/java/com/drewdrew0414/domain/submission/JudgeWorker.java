@@ -65,12 +65,16 @@ public class JudgeWorker {
                 stage="prepare";
                 if(!lease.renew(stage)) return;
                 var language=Language.parse((String)s.get("language"));
-                try(var prepared=imageId==null?runner.prepare(language,(String)s.get("source_code"),(String)p.get("execution_mode")):
+                String signature=(String)p.get("function_signature");
+                try(var prepared=signature!=null
+                        ?imageId==null?runner.prepare(language,(String)s.get("source_code"),(String)p.get("execution_mode"),signature)
+                            :runner.preparePinned(language,(String)s.get("source_code"),(String)p.get("execution_mode"),imageId,signature)
+                        :imageId==null?runner.prepare(language,(String)s.get("source_code"),(String)p.get("execution_mode")):
                         runner.preparePinned(language,(String)s.get("source_code"),(String)p.get("execution_mode"),imageId)) {
                     if(!lease.renew("prepared")) return;
                     if(prepared.failure()!=null) {
                         // 컴파일 실패는 특정 테스트 입력과 관계없으므로 제출 단계 결과 한 건으로 기록합니다.
-                        results.add(new SubmissionService.JudgeResult(null,prepared.failure(),0));
+                        results.add(new SubmissionService.JudgeResult(null,prepared.failure(),0,prepared.publicDiagnostic()));
                     } else {
                         stage="cases";
                         for(var t:tests) {

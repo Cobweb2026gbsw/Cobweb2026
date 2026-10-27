@@ -1,6 +1,7 @@
 package com.drewdrew0414.global.exception;
 
 import com.drewdrew0414.global.common.ApiResponse;
+import com.drewdrew0414.global.security.ProblemAuthoringBodyFilter;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -58,6 +59,7 @@ public class GlobalExceptionHandler {
         MissingServletRequestParameterException.class,MissingServletRequestPartException.class,
         MethodArgumentNotValidException.class,BindException.class,jakarta.validation.ConstraintViolationException.class})
     public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception error) {
+        if(ProblemAuthoringBodyFilter.isBodyLimitExceeded(error))return failure(ApiException.Type.PAYLOAD_TOO_LARGE);
         return failure(ApiException.Type.INVALID_REQUEST);
     }
 
@@ -120,7 +122,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception error) {return internal(error);}
+    public ResponseEntity<ApiResponse<Void>> handleException(Exception error) {
+        return ProblemAuthoringBodyFilter.isBodyLimitExceeded(error)?failure(ApiException.Type.PAYLOAD_TOO_LARGE):internal(error);
+    }
 
     private static ResponseEntity<ApiResponse<Void>> failure(ApiException.Type type) {
         return ResponseEntity.status(type.status()).body(ApiResponse.error(type.name(),type.message()));

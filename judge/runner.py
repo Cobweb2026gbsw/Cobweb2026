@@ -11,6 +11,10 @@ import shutil
 import sqlite3
 import sys
 
+# -I omits script paths; import only the trusted module shipped in this image.
+sys.path.insert(0, "/opt/judge")
+import generic_function
+
 phase, language, mode, memory = sys.argv[1:]
 memory = int(memory)
 heap = max(16, memory // 2)
@@ -94,7 +98,14 @@ def function_input(args):
         raise ValueError("Invalid FUNCTION test input")
     return matrix, target
 
-if phase == "compile":
+generic_signature = None
+if mode == "FUNCTION" and os.path.isfile("/source/signature.json"):
+    with open("/source/signature.json") as signature_file:
+        generic_signature = generic_function.signature(generic_function.load_json(signature_file))
+
+if phase == "compile" and generic_signature is not None:
+    command = generic_function.compile_command(language, generic_signature)
+elif phase == "compile":
     if mode == "FUNCTION":
         if language == "GO":
             shutil.copyfile("/source/main.go", "/work/main.go")
@@ -104,6 +115,9 @@ if phase == "compile":
         command = compilers[language]
 elif phase != "run":
     raise ValueError("Unknown phase")
+elif generic_signature is not None:
+    generic_function.run(language, generic_signature, memory, java, node, php)
+    sys.exit(0)
 elif mode == "FUNCTION" and language == "PYTHON":
     args = json.load(sys.stdin)
     # V6 이전 Python 전용 FUNCTION 문제의 비정형 테스트는 계속 실행할 수 있습니다.

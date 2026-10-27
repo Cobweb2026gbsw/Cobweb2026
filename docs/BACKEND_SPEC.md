@@ -1,10 +1,10 @@
 # Cobweb 백엔드 구현 명세
 
-이 문서는 프런트엔드 연동과 백엔드 유지보수를 위한 현재 구현 명세입니다. 2026년 10월 26일 작업 트리의 컨트롤러, DTO, 서비스, 보안 필터, Flyway SQL, 채점 실행기를 기준으로 갱신했습니다. 커밋되지 않은 변경도 포함하며 운영 배포와 로컬 검증을 구분합니다.
+이 문서는 프런트엔드 연동과 백엔드 유지보수를 위한 현재 구현 명세입니다. 2026년 10월 27일 작업 트리의 컨트롤러, DTO, 서비스, 보안 필터, Flyway SQL, 채점 실행기를 기준으로 갱신했습니다. 커밋되지 않은 변경도 포함하며 운영 배포와 로컬 검증을 구분합니다.
 
 현재 구현 범위는 회원 인증, 이메일 인증, 비밀번호 재설정, OAuth 연동, 문제 제작과 관리, 코드 제출과 비동기 채점, 그룹 역할·시간제 시험, 커뮤니티·공지와 수정 이력, 프로필과 랭킹입니다. 아래 기존 API 표에 더해 신규 기능 절의 API가 제공됩니다. 전체 카탈로그는 17개 언어이며 SQL 문제는 SQLite만, 일반 입출력은 SQL을 제외한 16개, 함수형은 SQL·엄랭을 제외한 15개 언어를 지원합니다.
 
-현재 스키마는 Flyway V1–V18입니다. 검증은 별도 테스트 DB와 ARM64 Docker를 사용하며, 과거 인증·함수형 호환성 보강 및 2026-10-21 V14 검증 이력은 마지막 절에서 날짜별로 구분합니다. 현재 작업의 최종 검증 결과는 `PROGRESS.md`를 기준으로 확인합니다.
+현재 스키마는 Flyway V1–V21입니다. 검증은 별도 테스트 DB와 ARM64 Docker를 사용하며, 과거 인증·함수형 호환성 보강 및 2026-10-21 V14 검증 이력은 마지막 절에서 날짜별로 구분합니다. 현재 작업의 최종 검증 결과는 `PROGRESS.md`를 기준으로 확인합니다.
 
 ## 문서 구성
 
@@ -26,7 +26,7 @@
 | 빌드 | Gradle Kotlin DSL, Gradle Wrapper |
 | 데이터베이스 | MySQL 8.4 기반 Compose 구성 |
 | 영속성 | 인증과 회원은 Spring Data JPA, 문제·제출·프로필·랭킹은 JdbcTemplate |
-| 스키마 관리 | Flyway V1–V18. Hibernate `ddl-auto=none` |
+| 스키마 관리 | Flyway V1–V21. Hibernate `ddl-auto=none` |
 | 인증 | Spring Security, JJWT 0.12.6, BCrypt |
 | 입력 검증 | Jakarta Bean Validation |
 | 메일 | JavaMailSender, Gmail SMTP 설정, STARTTLS |
@@ -109,7 +109,7 @@ OAuth 콜백 성공은 JSON이 아닌 리다이렉트입니다. 애플리케이�
 | GET | `/api/ranking` | 공개 | 사용자 랭킹 | 사용자 요약 배열 |
 | GET | `/api/profiles/{username}` | 공개 | 공개 프로필 | 프로필 객체 |
 | GET | `/api/profiles?username=...` | 공개 | 사용자명을 쿼리로 전달하는 공개 프로필 별칭 | 프로필 객체 |
-| GET | `/api/me` | 회원 | 내 공개 프로필 형식 조회 | 프로필 객체 |
+| GET | `/api/me` | 회원 | 내 프로필 및 불변 ID 조회 | 프로필 객체 + 본인 id 문자열 |
 | PATCH | `/api/me` | 회원 | 소개와 GitHub URL 변경 | null |
 
 ## 인증과 권한
@@ -304,13 +304,14 @@ GROUP은 현재 DB 역할 권한을 검사합니다. 시험 연결 문제는 일
 | starterCodes | `{language: string, sourceCode: string}` 배열. 문제에 명시 등록한 공개 시작 코드만 포함 |
 | authorPublic | boolean. 문제의 visibility와 독립적인 제작자 표시 동의. 기본 false |
 | authorUsername | string 또는 null. authorPublic=true일 때만 author_id에 연결된 실제 계정명. 비공개면 본인/운영자의 공개 상세에서도 null이며 제작자 ID·이메일은 포함하지 않음 |
-| functionAbi | `CHAIN_LASER_V1` 또는 null. 서버가 확인한 함수 규격이며 쓰기 요청 필드가 아님 |
+| functionAbi | `GENERIC_V1`, `CHAIN_LASER_V1` 또는 null. 서버가 확인한 함수 규격이며 쓰기 요청 필드가 아님 |
+| functionSignature | `{name,parameters:[{name,type}],returnType}` 또는 null. GENERIC_V1의 공개 인자·반환형이며 정답에서 추출하지 않음 |
 
 예제는 display_order 순서, 언어는 ID 정렬 순서입니다. 내부 PK, 작성자 ID, visibility, group_id, 비공개 테스트, 정답, 테스트별 점수는 반환하지 않습니다. 작성자·운영자에게도 이 상세 API가 비공개 테스트를 반환하는 별도 분기는 없습니다.
 
 2026-10-26부터 `starterCodes`와 `functionAbi`를 일반 상세, 권한 있는 편집 상세 및 시험 전용 문제 상세에 제공합니다. 시작 코드는 별도 공개 테이블에서만 읽으며
 비공개 참고 정답을 추출하지 않습니다. 공개 상세와 시험 상세에서는 실제 노출된 `languages`에 포함된 시작 코드만 반환합니다. 이 메타데이터를 읽기 전에 기존 문제 가시성·그룹 권한·시험 시간창/다시보기 검사를 그대로 적용합니다.
-`functionAbi`는 FUNCTION이고 서버의 호환 플래그가 참인 경우에만 `CHAIN_LASER_V1`이며, 다른 모드나 비호환 레거시는 null입니다.
+`functionAbi`는 FUNCTION에 공개 서명이 있으면 `GENERIC_V1`, 서명 없이 호환 플래그가 참이면 `CHAIN_LASER_V1`이며, 다른 모드나 비호환 레거시는 null입니다.
 제작자는 문제별 언어 시작 코드에서 매개변수 이름과 선언을 지정할 수 있지만, 이 값으로 실제 채점 입력 규약을 바꾸거나 클라이언트가 호환 플래그를 설정할 수는 없습니다.
 
 ### 생성과 수정 요청
@@ -329,13 +330,14 @@ GROUP은 현재 DB 역할 권한을 검사합니다. 시험 연결 문제는 일
 | timeLimitMs | integer | 100부터 10,000 ms |
 | memoryLimitMb | integer | 64부터 512 MB |
 | executionMode | string | STDIN, FUNCTION, SQL |
+| functionSignature | object 또는 null | FUNCTION의 공개 범용 서명. sol/solution 이름, 인자 최대 6개, int/float/bool/string/int[]/string[]/int[][]/string[][] 자료형. PUT 생략/null은 기존 범용 서명 보존, 다른 실행 형식으로 변경하면 제거 |
 | examples | array | null 불가, 0부터 20개, null 원소 불가 |
 | examples[].input | string | null 불가, 최대 65,535자 |
 | examples[].output | string | null 불가, 최대 65,535자 |
 | examples[].explanation | string 또는 null | 최대 65,535자 |
 | tests | array | 0부터 50개, null 원소 불가. 검수/게시에는 활성 테스트 필요 |
-| tests[].input | string | null 불가, 최대 1,000,000자 |
-| tests[].expected | string | null 불가, 최대 1,000,000자 |
+| tests[].input | string | null 불가. 범용 함수는 UTF-8 16MiB와 서명별 타입/배열 상한, 일반·레거시는 최대 1,000,000자 |
+| tests[].expected | string | null 불가. 범용 함수는 UTF-8 16MiB와 반환 타입/배열 상한, 일반·레거시는 최대 1,000,000자 |
 | languages | array 또는 null | 카탈로그 상한 17개. 실행 방식 호환 언어만 선택 가능하며 생략하면 STDIN 16개/FUNCTION 15개/SQL 1개 기본 목록 |
 | tags | array 또는 null | 최대 10개, 각 50자. 공백 정규화·중복 제거 |
 | sourceName, sourceUrl | string 또는 null | 최대 255/1000자. URL은 HTTP(S)만 |
@@ -367,9 +369,11 @@ GROUP은 현재 DB 역할 권한을 검사합니다. 시험 연결 문제는 일
 
 작성자는 일반 DRAFT·REJECTED를, 운영자는 비공개 PUBLISHED도 수정할 수 있습니다. 그룹 문제는 CREATE/EDIT 권한을 검사하고 PUBLISHED는 먼저 ARCHIVED로 전환해야 합니다. 시험에 연결된 문제는 모든 사용자의 PUT을 409로 거절해 시험 원본을 보존합니다. PUT은 본문·예제·테스트·언어·태그를 교체하며 referenceSolutions=null은 기존 정답 유지, []는 명시적 삭제입니다. 테스트는 배열 순서대로 display_order를 부여하고 `compare_type=EXACT`, 활성 상태로 생성합니다.
 
-`starterCodes`의 생략/null은 PUT에서 기존 시작 코드를 보존하며, `[]`는 명시적으로 비웁니다. 허용 언어를 바꾸면서 필드를 생략해 기존 시작 코드가 새 목록 밖에 남으면 400으로 거절하고 함께 수정하도록 요구합니다. 명시 목록은 전체 교체하며 언어 중복·미허용 언어·빈 코드·UTF-8 64KiB 초과·17개 초과·null 원소는 400입니다. 생성 시 생략하면 등록된 시작 코드 없이 저장합니다. 모든 제작 JSON의 기존 UTF-8 2MiB 상한에도 포함합니다.
+`starterCodes`의 생략/null은 PUT에서 기존 시작 코드를 보존하며, `[]`는 명시적으로 비웁니다. 허용 언어를 바꾸면서 필드를 생략해 기존 시작 코드가 새 목록 밖에 남으면 400으로 거절하고 함께 수정하도록 요구합니다. 명시 목록은 전체 교체하며 언어 중복·미허용 언어·빈 코드·UTF-8 64KiB 초과·17개 초과·null 원소는 400입니다. 생성 시 생략하면 등록된 시작 코드 없이 저장합니다. 제작 JSON 전체 상한에도 포함합니다.
 
-제목은 앞뒤/연속 공백을 정규화합니다. 일반 문제(scope 0)와 각 그룹 안에서 DB 고유 제약으로 중복을 막으며 충돌은 409입니다. 전체 제작 JSON은 UTF-8 2MiB 이내여야 합니다. 참고 정답은 코드 실행 경로나 명령으로 쓰지 않으며 관리 권한이 있는 편집 API에만 반환합니다. 사용자 지정 채점기·개별 배점 설정은 지원하지 않습니다.
+제목은 앞뒤/연속 공백을 정규화합니다. 일반 문제(scope 0)와 각 그룹 안에서 DB 고유 제약으로 중복을 막으며 충돌은 409입니다. 전체 제작 JSON은 일반·레거시 함수는 UTF-8 2MiB, 범용 함수는40MiB 이내여야 합니다. 범용 private 테스트 입력·정답 묶음은32MiB입니다. 참고 정답은 코드 실행 경로나 명령으로 쓰지 않으며 관리 권한이 있는 편집 API에만 반환합니다. 사용자 지정 채점기·개별 배점 설정은 지원하지 않습니다.
+
+인증을 통과한 문제 생성/수정은 스트리밍으로 HTTP 본문40MiB를 제한합니다. Content-Length가 없거나 작게 신고된 입력도 동일하게 계수하고 초과 시413을 반환합니다. 한 JVM에서 문제 제작 요청은1개만 처리하며 겹치면 대기 없이429/Retry-After:1을 반환합니다. 전체 본문 캐시를 만들지 않고 종료·실패 시 슬롯을 돌려줍니다. 이는 단일 서버의 파싱 메모리 보호이며 분산 전역 제한이나 전체 RSS 보장은 아닙니다.
 
 ### 검수와 상태 전환
 
@@ -523,7 +527,7 @@ STDIN은 SQL을 제외한 16개 언어에서 테스트의 input_data를 UTF-8 �
 
 ### 함수 호출 모드
 
-FUNCTION은 범용 함수형 채점기가 아니라 15×15 이진 행렬, 0–14 범위의 목표 행·열, 불리언 결과에 고정되어 있습니다. 새 문제의 비공개 테스트는 저장 시 이 규격을 검증하며, SQL·엄랭을 제외한 15개 언어의 고정 어댑터가 같은 테스트 JSON을 각 언어의 자료형으로 전달합니다. V8 마이그레이션에서 규격이 맞지 않는 레거시 FUNCTION 문제는 기존 테스트·언어 행을 삭제하지 않고 Python 제출만 노출합니다. 언어별 함수 선언은 README의 표가 기준입니다.
+FUNCTION은 공개 `functionSignature`가 있으면 GENERIC_V1의 최대 6개 인자·8개 자료형(중첩 int/string 배열 포함)을 사용합니다. 테스트 입력은 `{ "args": [...] }`이고 반환형에 맞는 JSON을 기대값으로 사용합니다. 서명이 없는 호환 문제는 기존 15×15 이진 행렬·목표 좌표·불리언 규격을 유지합니다. 두 규격 모두 SQL·엄랭을 제외한 15개 언어를 허용합니다. V8에서 비호환으로 분류한 레거시 문제의 테스트·언어 행을 삭제하지 않고 Python 전용 정책도 유지합니다. 아래 시그니처는 체인 레이저 전용입니다.
 
 ```python
 def sol(matrix: list[list[int]], target: tuple[int, int]) -> bool:
@@ -533,13 +537,13 @@ def sol(matrix: list[list[int]], target: tuple[int, int]) -> bool:
 입력은 `{"matrix":[...],"target":[행,열]}` JSON입니다. Python에서는 target을 tuple로 변환하고 반환 타입이 정확히 bool인지 검사합니다. 다른 언어는 고정된 225개 행 우선 정수와 목표 좌표를 받아 `sol`을 호출하는 이미지 내부 래퍼를 빌드하거나 실행합니다. 결과는 소문자 `true` 또는 `false`로 출력하므로 비공개 expected도 이 형식을 사용해야 합니다. Python 제출의 일반 print 출력은 함수 실행 중 stderr로 돌립니다. Python 소스 실행의 `__name__`은 `__submission__`입니다. 제출자는 래퍼나 빌드 옵션을 바꿀 수 없습니다.
 
 공개 시작 코드는 이 ABI와 별개인 편집 메타데이터입니다. 예를 들어 작성자가 `def sol(x: int, y: int):`를 등록할 수 있어도 임의 두 정수를 전달하는 범용 함수 채점기가 생기는 것은 아닙니다.
-기본 함수 시작 코드 자동 생성은 `functionAbi=CHAIN_LASER_V1`인 15개 호환 언어에만 적용하며 비호환 레거시 함수의 매개변수는 추정하지 않습니다. 등록된 공개 시작 코드가 있으면 그것을 우선 사용합니다.
+기본 함수 시작 코드는 GENERIC_V1의 공개 서명 또는 CHAIN_LASER_V1에서 생성하며 비호환 레거시 함수의 매개변수는 추정하지 않습니다. 등록된 공개 시작 코드가 있으면 그것을 우선 사용합니다.
 
 ### React 코드 편집 보조
 
 일반 풀이·그룹 시험·제작 화면의 CodeMirror 6 편집기는 17개 언어의 키워드·주요 내장 이름·문법 스니펫과 현재 문서의 이름을 추천합니다. `Ctrl+Space`로 추천을 요청하며,
 언어별 괄호 자동 닫기·조건부 Enter 들여쓰기·구문 강조를 제공합니다. 네 기능은 각각 켜고 끌 수 있습니다. 모든 외부 라이브러리 API를 분석하는 LSP·프로젝트 전체 타입 추론·컴파일 진단은 구현하지 않으며 편집 소스를 외부 언어 서버에 보내지 않습니다.
-편집기용 `localStorage` 키에는 설정 네 boolean(`suggestions`, `brackets`, `indentation`, `highlight`)만 저장하며 소스와 인증 토큰은 저장하지 않습니다. 기존 화면 테마 저장은 별도 키를 유지합니다. 답안은 언어별 화면 메모리에서 보존하고 계정 전환·이탈 때 정리합니다. 제작 저장/제출 API 전송과 브라우저의 로컬 저장소는 구분합니다.
+편집기 설정 키에는 네 boolean(`suggestions`, `brackets`, `indentation`, `highlight`)과 `fontSize`만 저장하며 인증 토큰은 영구 저장하지 않습니다. 일반 문제의 작성 코드는 별도 `cobweb.problem-drafts.v1` 키에 계정 ID/익명·문제·언어별로 30일, 코드당 UTF-8 64KiB·최근 50개·총 2MiB 이내에서 저장합니다. 인증 로딩·계정 전환 중에는 복원하지 않고 해당 문제의 새 서버 조회 성공 뒤에만 복원합니다. 초기화는 해당 언어의 저장 초안을 제거합니다. 브라우저 캐시는 같은 기기의 사용자가 읽을 수 있으며 계정 접근 제어·암호화 보관함이 아닙니다. 코테·문제 제작의 비공개 자료는 화면 메모리 보관을 유지합니다.
 
 ### SQL 모드
 
@@ -616,7 +620,13 @@ API가 빈 코드·잘못된 유니코드·UTF-8 64KiB 초과를 거절하며, V
 }
 ```
 
-이 예시의 ID·시간은 설명용입니다. 판정 전 execution_time_ms와 judged_at은 null이고 cases는 빈 배열일 수 있습니다. 결과는 최종 반영 트랜잭션에서 저장하므로 실행 중 개별 케이스 진행 상황을 계속 반환하지 않습니다. 일반 제출의 소스 코드, 테스트 입력·정답, 실제 출력, stderr, 컴파일 진단, 최대 메모리 사용량은 이 API로 반환하지 않습니다. 제출 상세에는 problem_number와 problem_title도 없으므로 필요한 경우 목록의 값을 함께 보관해야 합니다.
+이 예시의 ID·시간은 설명용입니다. 판정 전 execution_time_ms와 judged_at은 null이고 cases는 빈 배열일 수 있습니다. 결과는 최종 반영 트랜잭션에서 저장하므로 실행 중 개별 케이스 진행 상황을 계속 반환하지 않습니다. 일반 제출의 소스 코드, 테스트 입력·정답, 실제 출력, stderr 원문, 최대 메모리 사용량은 이 API로 반환하지 않습니다. 컴파일/실행 오류일 때만 `diagnostic`에 `phase`, 허용된 `errorType`, 고정 한국어 `message`, 제출 파일의 유효한 `locations`(최대 5개)를 반환합니다. 원문 로그·코드 조각·인자값·내부 경로는 저장/반환하지 않습니다. 기존 제출 조회 및 시험 다시보기 권한을 그대로 적용하고 캐시 재사용 시에도 안전 진단만 복제합니다. 제출 상세에는 problem_number와 problem_title도 없으므로 필요한 경우 목록의 값을 함께 보관해야 합니다.
+
+### 사용자 입력 테스트 실행
+
+`POST /api/problems/{number}/test-runs`는 인증된 현재 사용자의 문제 열람 권한과 허용 언어를 확인하고 `{language,sourceCode,cases:[{input,expected}]}`를 별도 DB 큐에 접수해 ID를 반환합니다. 테스트는 최대 3개, 코드·각 입력·각 예상값은 UTF-8 64KiB, 직렬화한 전체 입력 목록은 512KiB까지입니다. 범용 함수는 공개 서명과 인자/반환값 타입을 검증합니다. 진행 중 사용자당 2개·전체 60개, 사용자당 분당 10회 제한이며 시험에 연결된 문제는 이 API로 우회 실행할 수 없습니다.
+
+`GET /api/test-runs/{id}`는 **본인만** 현재 문제 열람 권한을 다시 검사한 뒤 `{id,problemNumber,language,status,results}`를 반환합니다. 상태는 QUEUED/RUNNING/COMPLETED/SYSTEM_ERROR이며 각 결과는 사용자 입력의 `input`, `expected`, `actual`, `status`, `timeMs`, 안전한 `diagnostic`입니다. 정식 제출·해결·문제 통계와 별개이며 비공개 테스트 테이블은 읽지 않습니다. 웹은 Docker를 실행하지 않고 별도 워커만 기존 격리 실행기를 사용합니다. 입력·예상값을 컨테이너에 함께 주지 않으며 예상값은 호스트 비교에만 사용합니다. RUNNING의 4분 lease와 fencing token으로 늦은 완료를 거절하고 중단된 테스트는 SYSTEM_ERROR로 마감합니다. 사용자 테스트 출력만 최대 64KiB 수집하며 정식 채점 경로의 실제 출력은 공개하지 않습니다.
 
 `reusedFromSubmissionId`는 이번 판정이 재사용한 본인 원본 제출 ID 또는 null입니다. 재사용해도 새 제출 ID와 이번 submitted_at/judged_at을
 유지하며, 케이스 결과와 execution_time_ms는 원본 측정값입니다. 일반 상세는 소스를 반환하지 않지만 시험 상세는 기존 다시보기/결과 권한 검사 후 `sourceCode`를 반환합니다.
@@ -703,7 +713,7 @@ API가 빈 코드·잘못된 유니코드·UTF-8 64KiB 초과를 거절하며, V
 
 컴파일 단계는 메모리 1024MiB, CPU soft limit 60초·hard limit 61초, 명령 wall timeout 65초, `/tmp` 256MiB입니다. 이는 프로세스 CPU ulimit과 컨테이너 제한의 조합이지 전체 컴파일 프로세스 트리의 정밀한 합산 CPU 계측은 아닙니다.
 
-실행 단계의 메모리는 문제 memory_limit_mb입니다. 컨테이너 내부의 `timeout`이 Python·SQL을 포함한 모든 언어의 실행을 문제의 `time_limit_ms` 벽시계 시간으로 제한합니다. CPU soft limit은 보조 장치로 `max(1, ceil(time_limit_ms / 1000))`초, hard limit은 그보다 1초 큽니다. 호스트 Docker 명령의 `time_limit_ms + 5000`ms 대기는 인프라 정체 시 최종 안전망이며 `/tmp`는 32MiB입니다. 컴파일·실행의 /tmp 모두 noexec·nosuid입니다. Java와 Node의 heap 및 .NET GC heap 상한은 대략 문제 메모리의 절반으로 제한하며 컨테이너 전체 메모리에는 런타임 자체 메모리도 포함됩니다.
+실행 단계의 메모리는 문제 memory_limit_mb입니다. 컨테이너 내부의 `timeout`이 Python·SQL을 포함한 모든 언어의 실행을 문제의 `time_limit_ms` 벽시계 시간으로 제한합니다. CPU soft limit은 보조 장치로 `max(1, ceil(time_limit_ms / 1000))`초, hard limit은 그보다 1초 큽니다. 호스트 Docker 명령의 `time_limit_ms + 5000`ms 대기는 인프라 정체 시 최종 안전망이며 `/tmp`는 일반32MiB·범용 함수96MiB입니다. 컴파일·실행의 /tmp 모두 noexec·nosuid입니다. Java와 Node의 heap 및 .NET GC heap 상한은 대략 문제 메모리의 절반으로 제한하며 컨테이너 전체 메모리에는 런타임 자체 메모리도 포함됩니다.
 
 시간 측정은 Docker 실행 시작 전부터 명령 종료 후 판정 처리까지의 벽시계 시간이므로 컨테이너 준비 비용을 포함합니다. 경쟁 프로그래밍용 정확한 CPU 실행 시간이나 최대 메모리 사용량을 측정하는 구현은 아닙니다. stdout·stderr·stdin 파이프는 별도 virtual-thread executor로 처리하여 공용 풀 정체를 피합니다.
 
@@ -730,7 +740,7 @@ Docker는 현재의 격리 수단이며 커널 수준 취약점까지 차단하�
 
 solvedProblems는 해결 시각 내림차순 최근 100개이며 현재 PUBLISHED·PUBLIC인 문제만 포함합니다. 사용자 solved_count는 비공개로 바뀐 해결 문제도 포함할 수 있어 배열 크기와 같지 않을 수 있습니다. 이메일, 비밀번호, 토큰, 로그인 로그, 내부 사용자 ID, 역할은 반환하지 않습니다.
 
-프로필 조회에는 사용자 status 조건이 없으므로 정지된 계정도 존재하면 공개 프로필 조회 대상입니다. `GET /api/me`는 인증한 사용자의 username으로 같은 프로필 함수를 호출하므로 이메일이나 role을 추가로 내려주지 않습니다.
+프로필 조회에는 사용자 status 조건이 없으므로 정지된 계정도 존재하면 공개 프로필 조회 대상입니다. `GET /api/me`는 현재 인증된 principal의 ID로 조회하고 본인의 불변 `id`를 10진 문자열로 추가합니다. BIGINT를 JavaScript Number로 반올림해 다른 계정의 초안과 섞지 않도록 하며, 공개 `/api/profiles` 경로에는 ID를 추가하지 않습니다. 이메일이나 role은 추가로 내려주지 않습니다.
 
 `PATCH /api/me`는 다음 두 필드를 모두 받습니다. PATCH라는 이름이지만 필드별 생략 업데이트가 아닙니다.
 
@@ -851,7 +861,17 @@ V16은 user_id·problem_id·language·contest_id·source_sha256·judge_context_s
 - V15는 공개 시작 코드 전용 `problem_starter_codes` 테이블만 추가합니다. 기존 문제·참고 정답·테스트·허용 언어 행은 변경하지 않고, 정답 코드에서 시작 코드를 backfill하지 않습니다. 기존 적용된 V1–V14 파일과 체크섬도 바꾸지 않습니다.
 - V16은 제출 원문 UTF-8 바이트 CHECK와 동일 코드 판정 재사용용 해시·컨텍스트·원본 ID·인덱스를 추가합니다. 기존 판정 컨텍스트를 추정하거나 원문을 정리하지 않습니다. 기존 위반 원문이 있으면 제약 추가를 중단합니다.
 - V17은 내장 `COBWEB GROUP`의 고유 system_key, 기존/신규 회원 MEMBER 자동 가입, 내장 정체성/소속/OWNER 보호 트리거를 추가합니다. 기존 일반 그룹을 내장 그룹으로 바꾸거나 이름 충돌 그룹을 임의로 개명하지 않습니다.
-- `demo.seed=true`이면 DemoData가 문제 번호 1000의 존재를 먼저 확인합니다. 있으면 아무 시드도 실행하지 않습니다. 없으면 체인 레이저 본문·예제·비공개 테스트 10개와 STOPPED인 cobweb-system 작성자를 넣습니다.
+- V19는 nullable `problems.function_signature` JSON과 `curriculum_problem_entries` 등록 원장을 추가합니다. 기존 체인 레이저 함수 규격은 NULL로 보존합니다.
+- V20은 최대 8192바이트의 안전한 `submissions.diagnostic_json`을 추가합니다. 원문 stderr 컬럼은 만들지 않습니다.
+- V21은 정식 제출 통계와 분리된 `user_test_runs` 큐 및 접수 상한 잠금 행을 추가합니다. 사용자 입력 목록은 512KiB, 결과 JSON은 2MiB 이하이며 사용자/문제 FK와 lease·토큰을 보관합니다.
+- 기본 웹 기동의 `curriculum.level0.enabled=true`는 Level0Data가 1000~1099 입문 문제를 하나의 트랜잭션으로 등록합니다. 5개 단계에 INITIATE 5~1을 각 20개 배정합니다. 번호/일반 문제 제목 충돌과 불완전한 등록 원장은 전체 거절하며 사용자 자료를 덮어쓰지 않습니다.
+- 기존 시스템 작성자의 1000번 체인 레이저는 Level0Data에서 1100 이상의 빈 번호로 보존합니다. 후속 AlgorithmData는 1100번만 허용하고 같은 ID로 한 번 공개를 복구하며, 다른 번호이면 임의 변경하지 않고 전체 신규 등록을 거절합니다. 문제 ID·제출·테스트·시험 연결은 유지합니다. 재기동은 등록 원장과 카탈로그 지문을 확인하며 관리자의 이후 편집을 덮어쓰지 않습니다.
+- 같은 활성화 설정에서 AlgorithmData가 SKILLED 75개(1101~1175), ELITE 90개(1176~1265)와 체인 공개 복구를 한 트랜잭션으로 등록합니다. `level1-v1`, `level2-v1`, `elite-chain-v1` 원장은 중복·불완전 등록·원본 변경을 거절합니다. 최초 신규 DB에서만 비어 있는 1100번에 기존 체인 시드를 사용합니다. 두 과정 사이의 제목 중복과 기존 번호·일반 제목 충돌을 먼저 검사하며 이후 관리자 편집/비공개 전환을 덮어쓰지 않습니다.
+- 범용 함수 서명은 `name`(sol/solution), `parameters`(이름·타입 최대 6개), `returnType`입니다. 타입은 int/float/bool/string/int[]/string[]/int[][]/string[][]이며 정수는 32비트, 문자열은 ASCII입니다. 입력 `{ "args": [...] }`와 기대값의 JSON 타입·크기를 검증합니다. 함수 식별자는 허용 목록과 예약어·길이 파생 이름 충돌 검사를 통과해야 합니다. 중첩 배열은 비정방/빈 행을 허용합니다. JSON 입력·기대값은 각각16MiB, 모든 인자의 배열 슬롯(바깥 행+내부 원소) 합은100만, 문자열 하나는16KiB입니다. 문제 제작의 전체 함수 테스트 묶음은32MiB로 제한합니다.
+- 일반/시험 상세는 공개 `functionSignature`와 `functionAbi=GENERIC_V1`만 제공하며 15개 언어의 시작 코드는 공개 서명에서 생성합니다. 비공개 테스트·정답은 일반 응답에 포함하지 않습니다. 서명은 동일 코드 판정 재사용 컨텍스트에도 포함됩니다.
+- DockerJudge는 서명을 읽기 전용 파일로 전달하며 각 언어 어댑터 생성·컴파일·실행은 기존 제한 컨테이너 안에서만 수행합니다. 반환값을 JSON으로 비교하고 정수·불리언·문자열·배열 순서는 정확히, 실수는 절대/상대 오차 1e-9로 비교합니다. 기존 STDIN·SQL·체인 레이저 판정은 유지합니다.
+- `curriculum.level0.enabled=false`일 때만 기존 `demo.seed=true`로 DemoData를 사용할 수 있습니다. 1000번이나 이미 보관된 시스템 체인 레이저가 있으면 데모를 중복 등록하지 않습니다.
+- 익명 `GET /api/ready`는 ApplicationAvailability가 ACCEPTING_TRAFFIC일 때만 200 `{ready:true}`를 반환하고, 기동 중/종료 중에는 503 `SERVICE_NOT_READY`를 반환합니다. 등록 Runner가 커밋하기 전 HTTP 리스너가 열리는 순서 때문에 `run.sh`는 상수 언어 목록이 아니라 이 준비 상태를 검사합니다. 분리된 Compose 워커도 `CURRICULUM_LEVEL0_ENABLED=false`로 설정해 문제 등록을 수행하지 않습니다.
 - 시드 SQL은 DemoData를 통한 개발용 실행을 전제로 합니다. 임의의 부분 데이터가 있는 DB에 직접 반복 실행하는 범용 마이그레이션이 아닙니다.
 - 체인 레이저는 ELITE 5, 1000ms, 256MB, PUBLISHED·PUBLIC·FUNCTION이며 SQL·엄랭을 제외한 15개 언어를 허용합니다. 시드의 judge_type SPECIAL은 범용 특별 채점기 구현을 의미하지 않습니다.
 - 기존 DB를 자동 baseline 처리하거나 기존 데이터의 중복을 자동 정리하지 않습니다. 적용된 마이그레이션을 바꾸는 대신 신규 버전을 추가해야 합니다.
@@ -1036,7 +1056,7 @@ Node 인증, Compose를 검사하고 judge-full은 채점 이미지를 빌드해
 - 좋아요 관리, 태그·난이도 검색, 일반 문제 상태 이력 조회 API(커뮤니티 수정 이력 조회는 구현).
 - 사용자 역할·상태 관리, 회원 탈퇴, 이메일·아이디 변경, 프로필 이미지.
 - 임의 시그니처의 범용 함수형 문제, 사용자 지정 검사기, 부분 점수, 부동소수 허용 오차, 효율성 평가.
-- 다중 소스 업로드와 외부 패키지 설치, 컴파일 진단·소스·실제 출력 조회 API.
+- 다중 소스 업로드와 외부 패키지 설치, 원문 컴파일 로그·정식 비공개 채점의 소스/실제 출력 조회 API. 안전한 오류 분류와 사용자 입력 테스트 출력은 위 별도 경로에서 제공합니다.
 - 재채점·취소·큐 운영 API, SSE·WebSocket, 정밀 CPU·최대 메모리 계측.
 - 세션 목록·다중 기기 관리, 로그인 존재 여부 통일 응답, 분산 SMTP 발송 outbox.
 - 네이버 신규 가입용 이메일 소유권 확인, OAuth 계정 연결·해제, PKCE, 운영용 토큰 전달 방식.
@@ -1058,7 +1078,7 @@ Node 인증, Compose를 검사하고 judge-full은 채점 이미지를 빌드해
 | 언어와 제출 | `src/main/java/com/drewdrew0414/domain/submission/Language.java`, `LanguageController.java`, `SubmissionController.java`, `SubmissionService.java` |
 | 워커와 격리 | `src/main/java/com/drewdrew0414/domain/submission/JudgeWorker.java`, `DockerJudge.java`, `judge/runner.py`, `judge/function/`, `judge/Dockerfile`, `judge/csharp/` |
 | 프로필과 랭킹 | `src/main/java/com/drewdrew0414/domain/user/controller/ProfileController.java` |
-| 물리 스키마 | `src/main/resources/db/migration/V1__initial_schema.sql`부터 `V18__problem_author_visibility.sql`까지의 순차 마이그레이션 |
+| 물리 스키마 | `src/main/resources/db/migration/V1__initial_schema.sql`부터 `V21__user_test_runs.sql`까지의 순차 마이그레이션 |
 | 그룹/시험 | `src/main/java/com/drewdrew0414/domain/group/`, `domain/submission/ContestSubmissionController.java` |
 | 커뮤니티/공지/보존 | `src/main/java/com/drewdrew0414/domain/community/`, `V12__community_history.sql` |
 | 데모 | `src/main/java/com/drewdrew0414/global/config/DemoData.java`, `src/main/resources/demo/chain-laser.sql` |

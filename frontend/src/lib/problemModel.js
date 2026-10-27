@@ -1,6 +1,7 @@
 // 서버가 제공하는 언어 목록이 실제 허용 범위입니다. 이 표는 파일명과 함수 안내에만 씁니다.
 import {formatServerDate} from './date.js';
 import {RequestError} from './errors.js';
+import {genericFunctionStarter,validFunctionSignature} from './genericFunction.js';
 export const FILE_NAMES={PYTHON:'main.py',C:'main.c',CPP:'main.cpp',JAVA:'Main.java',JAVASCRIPT:'main.js',TYPESCRIPT:'main.ts',CSHARP:'Main.cs',GO:'main.go',RUST:'main.rs',KOTLIN:'Main.kt',SQL:'query.sql',RUBY:'main.rb',LLVM_IR:'main.ll',PASCAL:'main.pas',PHP:'main.php',DART:'main.dart',UMJUNSIK:'main.umm'};
 export const RANKS=['INITIATE','SKILLED','ELITE','EXPERT','LEGEND','MYTHIC','ABSOLUTE'];
 export const STATUS={QUEUED:{label:'대기 중',tone:'gray'},RUNNING:{label:'채점 중',tone:'blue'},ACCEPTED:{label:'정답',tone:'green'},WRONG_ANSWER:{label:'오답',tone:'red'},TIME_LIMIT_EXCEEDED:{label:'시간 초과',tone:'yellow'},MEMORY_LIMIT_EXCEEDED:{label:'메모리 초과',tone:'yellow'},RUNTIME_ERROR:{label:'실행 오류',tone:'red'},COMPILATION_ERROR:{label:'컴파일 오류',tone:'red'},SYSTEM_ERROR:{label:'시스템 오류',tone:'red'}};
@@ -49,6 +50,7 @@ export function starterCode(problem,language){
   if(!supported)return '';
   const custom=Array.isArray(problem?.starterCodes)?problem.starterCodes.find(row=>row?.language===language):null;
   if(typeof custom?.sourceCode==='string'&&custom.sourceCode.trim()&&sourceBytes(custom.sourceCode)<=65536)return custom.sourceCode;
+  if(mode==='FUNCTION'&&problem?.functionAbi==='GENERIC_V1')return genericFunctionStarter(problem.functionSignature,language);
   // 레거시 Python FUNCTION은 별도 입력 규격일 수 있습니다. 공개 ABI 표시가
   // 없는 문제에 matrix/target 서명을 추정해 넣지 않습니다.
   if(mode==='FUNCTION'&&problem?.functionAbi!=='CHAIN_LASER_V1')return '';
@@ -62,6 +64,10 @@ export const formatDate=formatServerDate;
 export const sourceBytes=source=>new TextEncoder().encode(source||'').length;
 export function languageHelp(language,mode,problem){
   if(mode==='FUNCTION'){
+    if(problem?.functionAbi==='GENERIC_V1'&&validFunctionSignature(problem.functionSignature)){
+      const signature=problem.functionSignature;
+      return `${signature.name}(${signature.parameters.map(p=>`${p.name}: ${p.type}`).join(', ')}) → ${signature.returnType} · 함수 반환값을 채점합니다. main·입출력 처리는 작성하지 않습니다. 실수 허용 오차는 1e-9입니다.${language==='C'||language==='LLVM_IR'?' 문자열·배열은 포인터와 길이를 사용하며 반환 길이도 지정해야 합니다.':''}`;
+    }
     const custom=Array.isArray(problem?.starterCodes)&&problem.starterCodes.some(row=>row?.language===language&&typeof row.sourceCode==='string'&&row.sourceCode.trim()&&sourceBytes(row.sourceCode)<=65536);
     if(custom)return '문제에 등록된 공개 시작 코드의 함수 선언·매개변수를 유지하세요. 불리언을 반환하고 main은 작성하지 않습니다. 시작 코드는 채점 입력 규격을 변경하지 않습니다.';
     if(problem&&problem.functionAbi!=='CHAIN_LASER_V1')return '문제의 함수 형식을 확인하세요. 공개 입력 규격이 확인되지 않아 매개변수를 자동 추정하지 않습니다. 불리언을 반환하고 main은 작성하지 않습니다.';
@@ -69,7 +75,7 @@ export function languageHelp(language,mode,problem){
   }
   return mode==='SQL'?'SQLite 단일 읽기 쿼리. 각 케이스는 별도 메모리 DB이며 결과는 헤더 없는 TSV입니다.':`${FILE_NAMES[language]||language} · 표준 입력과 출력을 사용하세요. 외부 패키지 설치는 지원하지 않습니다.`;
 }
-export function emptyProblem(){return {title:'',description:'',inputDescription:'',outputDescription:'',constraints:'',rankType:'INITIATE',rankInt:5,timeLimitMs:1000,memoryLimitMb:256,executionMode:'STDIN',examples:[{input:'',output:'',explanation:''}],tests:[{input:'',expected:''}],languages:[],tags:[],sourceName:'',sourceUrl:'',referenceSolutions:[],starterCodes:[],groupId:null,visibility:'PUBLIC',authorPublic:false};}
+export function emptyProblem(){return {title:'',description:'',inputDescription:'',outputDescription:'',constraints:'',rankType:'INITIATE',rankInt:5,timeLimitMs:1000,memoryLimitMb:256,executionMode:'STDIN',functionSignature:null,examples:[{input:'',output:'',explanation:''}],tests:[{input:'',expected:''}],languages:[],tags:[],sourceName:'',sourceUrl:'',referenceSolutions:[],starterCodes:[],groupId:null,visibility:'PUBLIC',authorPublic:false};}
 export function problemPayload(form,catalog){
   const result={...form,title:form.title.trim(),rankInt:Number(form.rankInt),timeLimitMs:Number(form.timeLimitMs),memoryLimitMb:Number(form.memoryLimitMb),groupId:form.groupId?Number(form.groupId):null,sourceName:form.sourceName?.trim()||null,sourceUrl:form.sourceUrl?.trim()||null,authorPublic:form.authorPublic===true};
   if(!result.title||!result.description.trim())throw new RequestError('제목과 문제 본문을 입력하세요.');
@@ -94,8 +100,11 @@ export function problemPayload(form,catalog){
     return {language:row.language,sourceCode:row.sourceCode};
   });
   result.visibility=result.groupId?'GROUP':result.visibility;
+  if(result.executionMode!=='FUNCTION')result.functionSignature=null;
+  else if(result.functionSignature!=null&&!validFunctionSignature(result.functionSignature))throw new RequestError('함수 서명의 이름·매개변수·반환형을 확인하세요.');
   for(const key of ['number','status','currentVisibility','canEdit','usedInContest','groupName','functionAbi','authorUsername','authorId','author_id','author_username','author_public'])delete result[key];
-  if(sourceBytes(JSON.stringify(result))>2*1024*1024)throw new RequestError('문제 전체 입력은 UTF-8 2 MiB 이하여야 합니다.');
+  const requestLimitMb=result.executionMode==='FUNCTION'&&result.functionSignature?40:2;
+  if(sourceBytes(JSON.stringify(result))>requestLimitMb*1024*1024)throw new RequestError(`문제 전체 입력은 UTF-8 ${requestLimitMb} MiB 이하여야 합니다.`);
   return result;
 }
 export async function readSourceFile(file){

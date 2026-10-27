@@ -82,7 +82,9 @@ class ProblemAuthorVisibilityTest {
             clearInvocations(db);
             assertEquals(1001,service.create(write(flag),user(5)));
             var args=argumentsOf("INSERT INTO problems(");
-            assertEquals(Boolean.TRUE.equals(flag),args.getLast());
+            assertEquals(20,args.size());
+            assertEquals(Boolean.TRUE.equals(flag),args.get(18)); // author_public, 함수 계약 앞의 독립 필드
+            assertNull(args.get(19)); // STDIN 문제에는 함수 계약을 저장하지 않습니다.
             assertEquals(5L,args.get(11)); // 클라이언트가 아닌 로그인한 원저작자 ID
         }
     }
@@ -93,7 +95,9 @@ class ProblemAuthorVisibilityTest {
             clearInvocations(db);
             service.update(1001,write(flag),user(5));
             var args=argumentsOf("UPDATE problems SET");
-            assertEquals(flag,args.get(args.size()-2));
+            assertEquals(17,args.size());
+            assertEquals(flag,args.get(14)); // COALESCE의 nullable author_public 값
+            assertNull(args.get(15)); // function_signature와 제작자 공개 동의는 별도 값입니다.
             assertEquals(77L,args.getLast());
             var sql=mockingDetails(db).getInvocations().stream()
                 .map(i->i.getArgument(0)).filter(v->v instanceof String s && s.stripLeading().startsWith("UPDATE problems SET"))

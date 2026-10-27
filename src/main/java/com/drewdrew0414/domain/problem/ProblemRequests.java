@@ -9,8 +9,8 @@ import java.util.List;
 public class ProblemRequests {
     public record Example(@NotNull @Size(max=65535) String input,
                           @NotNull @Size(max=65535) String output, @Size(max=65535) String explanation) {}
-    public record TestCase(@NotNull @Size(max=1000000) String input,
-                           @NotNull @Size(max=1000000) String expected) {}
+    public record TestCase(@NotNull @Size(max=FunctionSignature.MAX_JSON_BYTES) String input,
+                           @NotNull @Size(max=FunctionSignature.MAX_JSON_BYTES) String expected) {}
     public record ReferenceSolution(@NotBlank String language,
                                     @NotBlank @Size(max=120) String fileName,
                                     @NotBlank String sourceCode) {}
@@ -38,8 +38,20 @@ public class ProblemRequests {
         @Pattern(regexp="PUBLIC|PRIVATE|GROUP") String visibility,
         @Size(max=Language.CATALOG_SIZE) List<@NotNull @Valid StarterCode> starterCodes,
         // 문제 공개 범위와 별개인 제작자 표시 동의입니다. 생략은 생성 시 비공개, 수정 시 기존 값 보존입니다.
-        Boolean authorPublic
+        Boolean authorPublic,
+        @Valid FunctionSignature functionSignature
     ) {
+        /** 일반 함수 계약 도입 전의 전체 생성자를 보존합니다. */
+        public Write(String title,String description,String inputDescription,String outputDescription,
+                     String constraints,String rankType,int rankInt,int timeLimitMs,int memoryLimitMb,
+                     String executionMode,List<Example> examples,List<TestCase> tests,
+                     List<String> languages,List<String> tags,String sourceName,String sourceUrl,
+                     List<ReferenceSolution> referenceSolutions,Long groupId,String visibility,
+                     List<StarterCode> starterCodes,Boolean authorPublic) {
+            this(title,description,inputDescription,outputDescription,constraints,rankType,rankInt,
+                timeLimitMs,memoryLimitMb,executionMode,examples,tests,languages,tags,sourceName,sourceUrl,
+                referenceSolutions,groupId,visibility,starterCodes,authorPublic,null);
+        }
         /** 제작자 공개 설정 도입 전의 시작 코드 포함 생성자를 유지합니다. */
         public Write(String title,String description,String inputDescription,String outputDescription,
                      String constraints,String rankType,int rankInt,int timeLimitMs,int memoryLimitMb,

@@ -35,12 +35,21 @@ public class DockerJudge {
     public Prepared prepare(Language language,String code,String mode) {
         return preparePinned(language,code,mode,image);
     }
+    /** 범용 함수의 공개 서명만 전달합니다. 정답·비공개 테스트는 준비 단계에 넘기지 않습니다. */
+    public Prepared prepare(Language language,String code,String mode,String signature) {
+        return preparePinned(language,code,mode,image,signature);
+    }
     /** 태그가 채점 중 다른 이미지로 바뀌어도 동일한 immutable image ID만 실행합니다. */
     public Prepared preparePinned(Language language,String code,String mode,String imageId) {
+        return preparePinned(language,code,mode,imageId,null);
+    }
+    public Prepared preparePinned(Language language,String code,String mode,String imageId,String signature) {
         language.requireMode(mode);
+        if(signature!=null && (!"FUNCTION".equals(mode) || signature.getBytes(StandardCharsets.UTF_8).length>8192))
+            throw new IllegalArgumentException("Invalid generic function signature");
         if(imageId==null || !(image.equals(imageId) || imageId.matches("sha256:[0-9a-f]{64}")))
             throw new IllegalArgumentException("Invalid judge image identity");
-        var prepared=new Prepared(language,mode,imageId);
+        var prepared=new Prepared(language,mode,imageId,signature!=null,code);
         try {
             Files.createDirectories(root);
             prepared.dir=Files.createTempDirectory(root,"submission-");
@@ -48,6 +57,11 @@ public class DockerJudge {
             prepared.source=prepared.dir.resolve(language.fileName());
             Files.writeString(prepared.source,code,StandardCharsets.UTF_8);
             Files.setPosixFilePermissions(prepared.source,java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));
+            if(signature!=null) {
+                prepared.signature=prepared.dir.resolve("signature.json");
+                Files.writeString(prepared.signature,signature,StandardCharsets.UTF_8);
+                Files.setPosixFilePermissions(prepared.signature,java.nio.file.attribute.PosixFilePermissions.fromString("rw-r--r--"));
+            }
             if(language.compiled()) {
                 prepared.volume="cobweb-artifacts-"+UUID.randomUUID();
                 requireSuccess(execute(List.of("docker","volume","create","--driver","local",
@@ -69,6 +83,8 @@ public class DockerJudge {
                     prepared.failure="SYSTEM_ERROR";
                 else if(result.timedOut || result.exit!=0 || result.output.exceeded || result.error.exceeded)
                     prepared.failure="COMPILATION_ERROR";
+                if("COMPILATION_ERROR".equals(prepared.failure))
+                    prepared.publicDiagnostic=JudgeDiagnostic.compilation(language,code,result.error.text()+"\n"+result.output.text());
             }
         } catch(Exception e) {
             if(e instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -82,28 +98,61 @@ public class DockerJudge {
         private final Language language;
         private final String mode;
         private final String imageId;
-        private Path dir,source;
+        private final boolean generic;
+        private final String submittedSource;
+        private Path dir,source,signature;
         private String volume,compiler,failure,diagnostic="";
+        private JudgeDiagnostic publicDiagnostic;
+        private String testOutput;
+        private boolean captureTestOutput;
         private boolean closed;
-        private Prepared(Language language,String mode,String imageId) {
-            this.language=language;this.mode=mode;this.imageId=imageId;
+        private Prepared(Language language,String mode,String imageId,boolean generic,String submittedSource) {
+            this.language=language;this.mode=mode;this.imageId=imageId;this.generic=generic;this.submittedSource=submittedSource;
         }
         public String failure() { return failure; }
         /** 운영 API로 노출하지 않습니다. 테스트/운영 진단용 컴파일 메시지이며 최대 64KiB입니다. */
         public String diagnostic() { return diagnostic; }
+        /** 원문 대신 허용 목록으로 만든 안전한 컴파일 오류 정보입니다. */
+        public JudgeDiagnostic publicDiagnostic() {return publicDiagnostic;}
+        public record TestOutput(SubmissionService.JudgeResult result,String actual) {}
+        /** 사용자 제공 입력 전용입니다. 비공개 채점 경로는 stdout을 수집/반환하지 않습니다. */
+        public TestOutput runForTesting(String input,String expected,int millis,int memory) {
+            testOutput=null;captureTestOutput=true;
+            try {
+                var result=run(input,expected,millis,memory,null);
+                // 손상된 UTF-8의 대체 문자도 응답에서는 UTF-8 바이트 상한을 지킵니다.
+                // 원시 바이트 64KiB가 디코딩 뒤 192KiB로 팽창하는 경우를 제한합니다.
+                if(testOutput!=null && testOutput.getBytes(StandardCharsets.UTF_8).length>65536) {
+                    int offset=0,bytes=0;
+                    while(offset<testOutput.length()) {
+                        int point=testOutput.codePointAt(offset),size=point<=0x7f?1:point<=0x7ff?2:point<=0xffff?3:4;
+                        if(bytes+size>65536)break;
+                        bytes+=size;offset+=Character.charCount(point);
+                    }
+                    testOutput=testOutput.substring(0,offset);
+                    result=new SubmissionService.JudgeResult(null,"RUNTIME_ERROR",result.elapsedMs(),
+                        new JudgeDiagnostic("RUN",JudgeDiagnostic.Kind.OUTPUT_LIMIT,List.of()));
+                }
+                return new TestOutput(result,testOutput);
+            }
+            finally {captureTestOutput=false;testOutput=null;}
+        }
         private List<String> mounts(boolean readOnly) {
             var result=new ArrayList<>(List.of("--mount","type=bind,src="+source.toAbsolutePath()+
                 ",dst=/source/"+language.fileName()+",readonly"));
+            if(signature!=null) result.addAll(List.of("--mount","type=bind,src="+signature.toAbsolutePath()+
+                ",dst=/source/signature.json,readonly"));
             if(volume!=null) result.addAll(List.of("--mount","type=volume,src="+volume+",dst=/work,volume-nocopy"+(readOnly?",readonly":"")));
             return result;
         }
         public SubmissionService.JudgeResult run(String input,String expected,int millis,int memory,Long caseId) {
             if(closed) throw new IllegalStateException("Closed submission");
-            if(failure!=null) return new SubmissionService.JudgeResult(caseId,failure,0);
+            if(failure!=null) return new SubmissionService.JudgeResult(caseId,failure,0,publicDiagnostic);
             String name="cobweb-run-"+UUID.randomUUID();
             long start=System.nanoTime();
             try {
-                var command=container(name,memory,Math.max(1,(millis+999)/1000),32);
+                // 숫자 토큰으로 확장된 최대64MiB 함수 입력도 읽기 전용 root 대신 제한 tmpfs에만 둡니다.
+                var command=container(name,memory,Math.max(1,(millis+999)/1000),generic?96:32);
                 command.add("-i");
                 command.addAll(mounts(true));
                 // timeout은 컨테이너가 시작한 뒤에 실행되어 Docker 기동 시간과 관계없이
@@ -112,7 +161,8 @@ public class DockerJudge {
                     "-e","DOTNET_PROCESSOR_COUNT=1","--entrypoint","/usr/bin/timeout",imageId,
                     "--signal=KILL",Double.toString(millis/1000.0)+"s",
                     "python3","-I","/opt/judge/runner.py","run",language.name(),mode,String.valueOf(memory)));
-                var result=execute(command,input,millis+5000L);
+                // 대용량 함수 결과만 16MiB까지 받습니다. 일반 입출력/진단·컴파일 로그는 64KiB를 유지합니다.
+                var result=execute(command,input,millis+5000L,generic?16*1024*1024:65536);
                 diagnostic=result.error.text();
                 String status;
                 if(result.timedOut) status="TIME_LIMIT_EXCEEDED";
@@ -121,9 +171,13 @@ public class DockerJudge {
                 else if(result.exit==137) status=oomKilled(name)?"MEMORY_LIMIT_EXCEEDED":"TIME_LIMIT_EXCEEDED";
                 else if(result.exit==124 || result.exit==152) status="TIME_LIMIT_EXCEEDED";
                 else if(result.exit!=0) status="RUNTIME_ERROR";
-                else status=result.output.text.strip().equals(expected.strip())?"ACCEPTED":"WRONG_ANSWER";
+                else status=(generic?matchesGenericResult(result.output.text,expected)
+                    :result.output.text.strip().equals(expected.strip()))?"ACCEPTED":"WRONG_ANSWER";
+                if(captureTestOutput && !"SYSTEM_ERROR".equals(status))testOutput=result.output.text();
+                JudgeDiagnostic safe="RUNTIME_ERROR".equals(status)?JudgeDiagnostic.runtime(language,submittedSource,
+                    result.error.text(),result.output.exceeded || result.error.exceeded):null;
                 return new SubmissionService.JudgeResult(caseId,status,
-                    (int)Math.min(Integer.MAX_VALUE,(System.nanoTime()-start)/1000000));
+                    (int)Math.min(Integer.MAX_VALUE,(System.nanoTime()-start)/1000000),safe);
             } catch(Exception e) {
                 if(e instanceof InterruptedException) Thread.currentThread().interrupt();
                 diagnostic=e.toString();
@@ -138,9 +192,49 @@ public class DockerJudge {
             if(volume!=null) cleanup("docker","volume","rm",volume);
             if(dir!=null) try {
                 if(source!=null) Files.deleteIfExists(source);
+                if(signature!=null) Files.deleteIfExists(signature);
                 Files.deleteIfExists(dir);
             } catch(IOException ignored) { /* 컨테이너는 호스트 디렉터리에 쓸 수 없습니다. */ }
         }
+    }
+    /** 문자열·배열 순서는 정확하게, 유한한 실수만 절대/상대 오차 1e-9 이내로 비교합니다. */
+    static boolean matchesGenericResult(String actual,String expected) {
+        try {
+            var mapper=new tools.jackson.databind.ObjectMapper();
+            // 큰 배열을 EOF 검사 때문에 두 번 트리로 만들지 않습니다. 두 값 모두 같은 파서로 끝까지 검사합니다.
+            var left=singleGenericJson(mapper,actual);
+            var right=singleGenericJson(mapper,expected);
+            return sameGenericValue(left,right);
+        } catch(Exception invalidOutput) { return false; }
+    }
+    private static tools.jackson.databind.JsonNode singleGenericJson(tools.jackson.databind.ObjectMapper mapper,String text) {
+        if(text==null || text.length()>16*1024*1024) throw new IllegalArgumentException("Invalid generic JSON size");
+        try(var parser=mapper.reader().with(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).createParser(text)) {
+            var value=mapper.readTree(parser);
+            if(value==null || parser.nextToken()!=null) throw new IllegalArgumentException("Expected one generic JSON value");
+            return value;
+        }
+    }
+    private static boolean sameGenericValue(tools.jackson.databind.JsonNode actual,tools.jackson.databind.JsonNode expected) {
+        if(actual==null || expected==null || actual.isNull() || expected.isNull()) return false;
+        if(expected.isNumber()) {
+            if(!actual.isNumber()) return false;
+            // 32비트 정수의 큰 값에서 상대 오차로 1~2 차이를 정답 처리하지 않습니다.
+            if(actual.isIntegralNumber() && expected.isIntegralNumber())
+                return actual.bigIntegerValue().equals(expected.bigIntegerValue());
+            double a=actual.doubleValue(),e=expected.doubleValue();
+            if(!Double.isFinite(a) || !Double.isFinite(e)) return false;
+            return Math.abs(a-e)<=1e-9*Math.max(1,Math.max(Math.abs(a),Math.abs(e)));
+        }
+        if(expected.isString()) return actual.isString() && actual.stringValue().equals(expected.stringValue());
+        if(expected.isBoolean()) return actual.isBoolean() && actual.booleanValue()==expected.booleanValue();
+        if(expected.isArray()) {
+            if(!actual.isArray() || actual.size()!=expected.size()) return false;
+            for(int index=0;index<expected.size();index++)
+                if(!sameGenericValue(actual.get(index),expected.get(index))) return false;
+            return true;
+        }
+        return false;
     }
     /** inspect 실패 시에는 캐시를 끄고 원래 격리 채점 경로를 유지합니다. 네트워크 조회는 하지 않습니다. */
     public String imageIdentity() {
@@ -162,8 +256,9 @@ public class DockerJudge {
             digest.update(System.getProperty("java.vendor","").getBytes(StandardCharsets.UTF_8));
             var classes=new TreeMap<String,Class<?>>();
             var pending=new ArrayDeque<Class<?>>(List.of(DockerJudge.class,JudgeWorker.class,
-                SubmissionService.class,JudgeLease.class,Language.class,
-                com.drewdrew0414.domain.problem.ProblemService.class));
+                SubmissionService.class,JudgeLease.class,Language.class,JudgeDiagnostic.class,
+                com.drewdrew0414.domain.problem.ProblemService.class,
+                com.drewdrew0414.domain.problem.FunctionSignature.class));
             while(!pending.isEmpty()) {
                 var type=pending.removeFirst();
                 if(classes.putIfAbsent(type.getName(),type)==null) pending.addAll(List.of(type.getDeclaredClasses()));
@@ -189,12 +284,15 @@ public class DockerJudge {
     private record CapturedOutput(String text,boolean exceeded) {}
     private record ProcessResult(int exit,boolean timedOut,CapturedOutput output,CapturedOutput error) {}
     private static ProcessResult execute(List<String> command,String input,long timeout) throws Exception {
+        return execute(command,input,timeout,65536);
+    }
+    private static ProcessResult execute(List<String> command,String input,long timeout,int outputLimit) throws Exception {
         Process child=new ProcessBuilder(command).start();
-        // 블로킹 파이프는 공용 풀과 분리합니다. 출력이 커져도 저장량은 스트림당 64KiB입니다.
+        // 블로킹 파이프는 공용 풀과 분리하고, stderr는 항상 64KiB만 보관합니다.
         ExecutorService io=Executors.newVirtualThreadPerTaskExecutor();
         try {
-            var out=CompletableFuture.supplyAsync(()->bounded(child.getInputStream()),io);
-            var err=CompletableFuture.supplyAsync(()->bounded(child.getErrorStream()),io);
+            var out=CompletableFuture.supplyAsync(()->bounded(child.getInputStream(),outputLimit),io);
+            var err=CompletableFuture.supplyAsync(()->bounded(child.getErrorStream(),65536),io);
             CompletableFuture.runAsync(()-> {
                 try(var stdin=child.getOutputStream()) { stdin.write(input.getBytes(StandardCharsets.UTF_8)); }
                 catch(IOException ignored) { /* 제출이 입력을 읽기 전에 종료할 수 있습니다. */ }
@@ -204,12 +302,12 @@ public class DockerJudge {
             return new ProcessResult(child.exitValue(),false,out.get(2,TimeUnit.SECONDS),err.get(2,TimeUnit.SECONDS));
         } finally { child.destroyForcibly();io.shutdownNow(); }
     }
-    private static CapturedOutput bounded(InputStream stream) {
+    private static CapturedOutput bounded(InputStream stream,int maximum) {
         try(stream) {
             var saved=new ByteArrayOutputStream();
             byte[] buffer=new byte[4096];int n;
             while((n=stream.read(buffer))!=-1) {
-                if(saved.size()+n>65536) return new CapturedOutput("",true);
+                if(saved.size()+n>maximum) return new CapturedOutput("",true);
                 saved.write(buffer,0,n);
             }
             return new CapturedOutput(saved.toString(StandardCharsets.UTF_8),false);

@@ -6,7 +6,7 @@ FROM golang:1.26.8-bookworm AS go
 # 공식 SDK의 고정 버전만 가져옵니다. 제출 시 pub get이나 SDK 다운로드는 하지 않습니다.
 FROM dart:3.13.5-sdk AS dart
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble
-LABEL org.cobweb.judge.language-set="17-v1"
+LABEL org.cobweb.judge.language-set="17-v3-generic-nested"
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /opt/typescript /opt/typescript
 COPY --from=go /usr/local/go /usr/local/go
@@ -27,6 +27,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     NUGET_PACKAGES=/tmp/nuget GOCACHE=/tmp/go-cache GOPATH=/tmp/go GO111MODULE=off GOTOOLCHAIN=local \
     PUB_CACHE=/tmp/pub-cache DASH__SUPPRESS_ANALYTICS=true
 COPY runner.py /opt/judge/runner.py
+COPY generic_function.py /opt/judge/generic_function.py
 COPY umjunsik_cli.py /opt/judge/umjunsik_cli.py
 COPY vendor/umjunsik/ /opt/judge/vendor/umjunsik/
 COPY function/ /opt/judge/function/

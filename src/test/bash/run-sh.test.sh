@@ -274,6 +274,8 @@ assert_equal "$(< "$CASE_DIR/state/migrate.jar")" "$web_jar" '단발 마이그�
 assert_file "$CASE_DIR/state/migrate.credentials-checked"
 assert_file "$CASE_DIR/state/web.credentials-checked"
 assert_file "$CASE_DIR/state/worker.credentials-checked"
+for kind in migrate web worker; do assert_file "$CASE_DIR/state/$kind.jvm-options-checked"; done
+assert_event '<-Xms64m> <-Xmx512m> <-XX:+ExitOnOutOfMemoryError> <-jar>'
 assert_no_event 'fake-root-password'
 case "$web_jar" in "$CASE_DIR/.local/run/$PROJECT/logs/"*/app.jar) ;; *) fail "immutable JAR 경로 아님: $web_jar" ;; esac
 assert_file "$web_jar"

@@ -30,6 +30,20 @@ class ContestAuthorVisibilityTest {
         assertEquals(true,result.get("authorPublic"));assertEquals("contest-maker",result.get("authorUsername"));
         assertFalse(result.containsKey("author_id"));
     }
+    @Test void genericFunctionContractAndAllAllowedLanguagesReachContestReadersWithoutPrivateTests() {
+        prepare(false);
+        var signature=new com.drewdrew0414.domain.problem.FunctionSignature("solution",List.of(
+            new com.drewdrew0414.domain.problem.FunctionSignature.Parameter("value","int")),"int");
+        var p=new HashMap<String,Object>();p.put("id",77L);p.put("author_id",42L);p.put("execution_mode","FUNCTION");
+        p.put("function_signature",signature.toJson(new tools.jackson.databind.ObjectMapper()));
+        when(db.queryForList(contains("FROM contest_problems cp JOIN problems p"),eq(5L),eq(1001),eq(9L))).thenReturn(List.of(p));
+        when(db.queryForList("SELECT language FROM problem_languages WHERE problem_id=? ORDER BY language",String.class,77L))
+            .thenReturn(com.drewdrew0414.domain.submission.Language.forMode("FUNCTION"));
+        var result=contests.problem(9,5,1001,user());
+        assertEquals("GENERIC_V1",result.get("functionAbi"));assertEquals(signature,result.get("functionSignature"));
+        assertEquals(15,((List<?>)result.get("languages")).size());
+        assertFalse(result.containsKey("tests"));assertFalse(result.containsKey("referenceSolutions"));
+    }
 
     private void prepare(boolean visible) {
         when(db.queryForList("SELECT * FROM group_contests WHERE group_id=? AND id=?",9L,5L))

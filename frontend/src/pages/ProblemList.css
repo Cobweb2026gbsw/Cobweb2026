@@ -29,11 +29,25 @@
   justify-content: space-between;
   cursor: pointer;
   list-style: none;
+  /* 공통 select 배경 화살표 대신 하나의 동일한 도형만 그립니다. */
+  background-image: none;
+  padding-right: 14px;
+  gap: 12px;
 }
 
-.pl-difficulty summary::after { content: '⌄'; }
+.pl-difficulty summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  margin-right: 3px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+.pl-difficulty summary::marker { content: ''; }
 .pl-difficulty summary::-webkit-details-marker { display: none; }
-.pl-difficulty[open] summary::after { content: '⌃'; }
+.pl-difficulty[open] summary::after { transform: translateY(2px) rotate(225deg); }
 
 .pl-difficulty-options {
   position: absolute;

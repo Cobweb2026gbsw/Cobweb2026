@@ -32,6 +32,7 @@ jobs:
       GITHUB_CLIENT_ID: unused
       GITHUB_CLIENT_SECRET: unused
       DOCKER_JUDGE_TEST: 'false'
+      GENERIC_CATALOG_DOCKER_TEST: 'false'
     services:
       mysql:
         image: mysql:8.4
@@ -95,8 +96,13 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/check-compose-config.sh 2>&1 | tee ci-logs/compose.log
-      - name: Verify pinned umjunsik runtime and adapter
-        run: python3 -I -B -m unittest discover -s src/test/python -p 'test_umjunsik*.py'
+      - name: Verify Python judge adapters and the Lv.0 catalog
+        run: |
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_umjunsik*.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_function.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_algorithm_catalog.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_judge_results_guard.py'
       - name: Run Gradle tests
         shell: bash
         run: |
@@ -137,6 +143,8 @@ jobs:
       NAVER_CLIENT_SECRET: unused
       GITHUB_CLIENT_ID: unused
       GITHUB_CLIENT_SECRET: unused
+      DOCKER_JUDGE_TEST: 'true'
+      GENERIC_CATALOG_DOCKER_TEST: 'true'
     services:
       mysql:
         image: mysql:8.4
@@ -175,7 +183,12 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          DOCKER_JUDGE_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
+          DOCKER_JUDGE_TEST=true GENERIC_CATALOG_DOCKER_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
+      - name: Check nested arrays and million-item inputs in all 15 function languages
+        shell: bash
+        run: |
+          set -o pipefail
+          GENERIC_NESTED_DOCKER_TEST=true GENERIC_RUNTIME_TIMEOUT_SECONDS=10 GENERIC_JUDGE_IMAGE=cobweb-languages:local python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_nested_docker.py' -v 2>&1 | tee ci-logs/nested-scale.log
       - name: Assert that all Docker judge tests ran
         shell: bash
         run: |

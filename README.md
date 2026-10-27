@@ -70,10 +70,45 @@ ZIP 기반 새 화면 소스는 `frontend/src/`이며 Gradle이 잠금 파일로
 [보안 검토 기록](docs/security/REVIEW.md)을 참고하세요.
 전체 API의 요청·응답·권한, DB와 채점 동작은 [백엔드 구현 명세](docs/BACKEND_SPEC.md)에 정리했습니다.
 
-local 프로필은 3307 포트의 새 DB를 사용하고 Flyway V1–V18을 적용합니다.
-데모 옵션은 1000번이 없을 때만 체인 레이저와 비공개 10개 테스트를 추가합니다.
-작성자는 로그인할 수 없는 `cobweb-system` 계정입니다. 기존 1000번을 덮어쓰지 않습니다.
+local 프로필은 3307 포트의 DB를 사용하고 Flyway V1–V21을 적용합니다.
+기본 웹 기동에서는 Lv.0 입문 100문제와 Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제를 등록합니다. 기존 사용자 문제의 번호·제목과 충돌하면
+트랜잭션 전체를 중단하며 덮어쓰지 않습니다. 기존 체인 레이저는 ID·제출·테스트를 보존한 채
+1100번으로 보존한 뒤 ELITE 과정 등록 시 같은 ID로 공개를 복구합니다. SKILLED는 1101~1175, 새 ELITE는 1176~1265입니다.
+전체 기본 과정을 끄려면 `--curriculum.level0.enabled=false`를 명시합니다. 이때만 `demo.seed=true`의
+기존 체인 레이저 데모가 동작하며, 이미 보관한 체인 레이저를 1000번에 다시 만들지는 않습니다.
+작성자는 로그인할 수 없는 `cobweb-system` 계정입니다. 실제 사용자 계정과의 충돌은 거절합니다.
 정답 코드와 테스트 입력은 공개 API로 반환하지 않습니다.
+
+### OJ Level 0 — 기초 문법 100문제
+
+문제의 단일 원본은 `src/main/resources/problems/level0.json`입니다. `1000~1099` 전부 INITIATE이며,
+Lv.0-1~5를 각각 INITIATE 5~1로 나눕니다. 199개 공개 예제, 812개 비공개 테스트와 Python 정답 100개를 포함합니다.
+첫 Hello World도 표준 출력 대신 인자 없는 함수가 문자열을 반환합니다. 1097·1098번은 요청한 대로 `solution`,
+나머지는 `sol`을 사용합니다. 반복문·함수 사용은 학습 목표이며 채점기는 특정 구문 사용을 강제하지 않습니다.
+
+SQL·엄랭을 제외한 15개 언어에 공개 서명 기반 시작 코드를 제공합니다. `GENERIC_V1`은 인자 0~6개와
+`int`·`float`·`bool`·`string`·`int[]`·`string[]`·`int[][]`·`string[][]`을 지원합니다. 정수는 32비트, 문자열은 ASCII이며
+테스트 입력은 `{"args":[...]}`입니다. JSON 반환값의 문자열·배열 순서·불리언·정수는 정확히 비교하고,
+실수에는 절대/상대 오차 1e-9를 적용합니다. C·LLVM IR의 포인터/길이 규약은 `judge/function/GENERIC.md`를 참고하세요.
+공개 서명만 API로 전달하며 참고 정답·비공개 테스트는 기존 관리 권한 경계 안에 둡니다.
+가져오기 이력으로 재시작 때 중복을 막고 등록 후 관리자가 바꾼 문제 내용·공개 상태를 덮어쓰지 않습니다.
+
+추가 과정의 원본은 `problems/level1.json`, `level2.json`입니다. 각 영역의 SKILLED 등급은 5·4·3·2·1,
+ELITE의 여섯 영역은 5·4·3·3·2·1로 배정합니다. 채점기는 알고리즘 선택이나 특정 구문 사용 자체를 강제하지 않습니다.
+일반 함수 입력·정답 JSON은 각각 UTF-8 16MiB, 모든 인자에 걸친 배열 슬롯(바깥 행+내부 원소) 합은 100만 개까지입니다.
+행 길이가 다른 중첩 배열과 빈 행을 지원합니다. 문자열 하나는 16KiB ASCII, private 테스트 묶음은 32MiB,
+범용 함수 제작 JSON 전체는40MiB까지입니다(일반 문제 제작은 기존2MiB).
+수동 테스트는 입력·예상값·표시 출력마다 64KiB를 유지하며, 테스트 케이스/실행 출력을 같은 내부 스크롤 영역의 탭으로 전환합니다.
+
+문제 제작 HTTP 본문은 스트리밍40MiB 상한과 JVM당 동시1개 제한으로 보호합니다. 웹·워커·단발 마이그레이션의
+JVM 힙은 각각64MiB로 시작해512MiB까지만 사용하며 OOM 시 종료합니다. 이는 Docker·DB·JVM 비힙을 포함한 전체 메모리 상한은 아닙니다.
+
+콘텐츠 독립 검증은 `python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'`,
+실제 15언어 ABI 검증은 `DOCKER_JUDGE_TEST=true`, 100개 정답 전체 Docker 검증은
+`GENERIC_CATALOG_DOCKER_TEST=true`를 추가해 Gradle 테스트를 실행합니다. 새 이미지는 `17-v3-generic-nested`로 구분해 이전 캐시를 무효화합니다.
+`GET /api/ready`는 ApplicationRunner와 문제 등록 트랜잭션이 끝나기 전 503, 트래픽 수신 가능 상태가 된 뒤
+200을 반환합니다. `run.sh`도 이 응답을 확인하므로 HTTP 포트가 먼저 열렸다는 이유만으로 준비 완료를 선언하지 않습니다.
+분리된 `compose.worker.yaml`의 워커는 입문 과정 가져오기를 끄며 웹만 등록을 담당합니다.
 
 ### 2026-10-26 문제별 시작 코드와 코드 편집기
 
@@ -88,9 +123,9 @@ local 프로필은 3307 포트의 새 DB를 사용하고 Flyway V1–V18을 적�
   자동 들여쓰기는 Python 블록·중괄호 등 언어 구문에 맞춰 동작합니다. Tab은 공백 4개, Shift+Tab은 내어쓰기이며 Esc 다음 Tab으로 포커스를 이동합니다.
 - 설정은 `localStorage`의 `cobweb.editor.preferences.v1`에 boolean 네 개만 저장합니다. 답안·참고 정답·시작 코드의 편집 내용이나 인증 토큰은 저장하지 않습니다.
 
-기본 FUNCTION 시작 코드는 공개 `functionAbi=CHAIN_LASER_V1`인 문제의 15개 호환 언어에만 제공합니다. 규격이 확인되지 않은
-레거시 FUNCTION은 매개변수를 추측하지 않습니다. **시작 코드 등록은 채점 ABI 변경 기능이 아닙니다.** 현재 FUNCTION 채점은
-15×15 `matrix`, `target` 좌표, 불리언 반환에 고정되어 있으며, STDIN 문제는 입력을 읽고 정답을 출력하는 프로그램이 필요합니다.
+기본 FUNCTION 시작 코드는 공개 `GENERIC_V1` 서명 또는 기존 `CHAIN_LASER_V1` 규격을 사용합니다. 규격이 확인되지 않은
+레거시 FUNCTION은 매개변수를 추측하지 않습니다. **시작 코드 등록 자체는 채점 ABI 변경 기능이 아닙니다.** 범용 규격은
+별도의 공개 `functionSignature`에서 인자·반환형을 지정하며, STDIN은 입력을 읽고 정답을 출력하는 프로그램이 필요합니다.
 `starterCodes`는 언어당 하나, 허용 언어 내 최대 17개, 코드마다 UTF-8 64KiB 이내입니다. 생략한 수정 요청은 기존 시작 코드를
 유지하고 `[]`는 명시적으로 비웁니다. V15는 시작 코드 전용 테이블만 추가하고 기존 문제·정답·테스트를 덮어쓰지 않습니다.
 
@@ -116,7 +151,7 @@ Docker 테스트는 `DOCKER_JUDGE_TEST=true`일 때 실제 컨테이너를 사�
 ### CI와 같은 로컬 검증
 
 `bash scripts/verify-ci-local.sh static`은 Node 인증·세션 경합·문제 편집·그룹·커뮤니티·코드 들여쓰기·Markdown의 7종 회귀와 개발·웹·워커 Compose 설정을 검사합니다.
-`static`에는 React 회귀, 엄랭 원본 해시·입출력·오류 처리 Python 회귀 23개와 `run.sh` 격리 회귀 43개도 포함합니다.
+`static`에는 React 회귀, Python 회귀 43개(엄랭 원본 해시·입출력·오류 처리 23개, 범용 함수 13개, Lv.0 카탈로그 7개)와 `run.sh` 격리 회귀 43개도 포함합니다.
 런처 회귀는 모의 명령을 사용하므로 실제 Docker·DB·서비스를 변경하지 않습니다. 별도 실행은 `bash src/test/bash/run-sh.test.sh`입니다.
 `quick`은 여기에 MySQL 연동 테스트를 추가하고, `full`은 채점 이미지를 빌드한 뒤 Docker를 포함한
 전체 빌드와 결과 검사를 실행합니다. `all`은 두 경로를 순서대로 실행합니다. 이 스크립트는
@@ -125,14 +160,16 @@ Docker 테스트는 `DOCKER_JUDGE_TEST=true`일 때 실제 컨테이너를 사�
 재검증용 새 DB `jdbc:mysql://127.0.0.1:13309/cobweb_revalidation_test`도 허용합니다.
 기존 테스트 DB에 중복 제목이 있으면 V10이 중단합니다. 기존 데이터를 임의로 고치지 말고 새 테스트 DB를 사용하세요.
 
-별도 웹/자동 워커의 실제 HTTP 연동 검사는 `python3 scripts/verify-local-linkage.py`입니다.
-이 스크립트는 서버나 DB를 만들지 않습니다. 전용 컨테이너 `cobweb-feature-verify-mysql`의
-`cobweb_linkage_test`에 V1–V18과 1000번 시드를 먼저 적용하고, 웹을 `127.0.0.1:18083`(채점 OFF),
-동일 DB의 별도 워커를 non-web·채점 ON·Flyway OFF로 실행해야 합니다. JAR에는 test 프로필 설정이 포함되지 않으므로
-`.env` 없는 임시 실행 디렉터리와 테스트 DB/JWT/메일/OAuth 값을 명시합니다. 실제 외부 연동은 사용하지 않습니다.
-검증 계정의 임시 해시는 앞서 전체 테스트를 실행한 `cobweb_revalidation_test`에서 복사하며 실제 사용자 계정은 쓰지 않습니다.
-앱 URL/컨테이너/DB는 고정 검사하고 프록시·리다이렉트를 차단합니다. 테스트 시간창만 SQL로 조정하고,
-나머지 제작/공개/커뮤니티·그룹/시험·답안/다시보기는 HTTP로 검사합니다. 콘텐츠·이력·DB는 삭제하지 않습니다.
+`scripts/verify-local-linkage.py`는 **과거 V17·체인 레이저 환경용** 별도 웹/자동 워커 HTTP 연동 검사입니다.
+서버나 DB를 만들지 않으며, 대상은 전용 컨테이너 `cobweb-feature-verify-mysql`의 `cobweb_linkage_test`와
+`127.0.0.1:18083`으로 고정합니다. 스크립트가 요구하는 스키마는 최소 V17이 아니라 **V1–V17 모두 성공·최대 버전 정확히 17**입니다.
+1000번이 공개 체인 레이저 FUNCTION이고 비공개 10케이스를 갖는 당시 fixture가 필요합니다.
+Lv.0 가져오기를 끈 웹/워커와 해당 스키마에 맞는 앱을 사용하는 격리된 레거시 검증에만 적용하세요.
+현재 V21·Lv.0 기본 환경에는 그대로 실행할 수 없으며, 맞추려고 기존 DB를 다운그레이드하거나 문제를 되돌리지 마세요.
+현재 범용 함수의 HTTP→DB 큐→실제 워커·판정 재사용은 전체 Gradle 검사의 `Level0GenericWorkerIntegrationTest`로 확인합니다.
+레거시 검사는 `.env` 없는 임시 디렉터리와 테스트용 DB/JWT/메일/OAuth 설정·검증 계정을 사용하며 실제 외부 연동을 사용하지 않습니다.
+프록시·리다이렉트를 차단하고 테스트 시간창만 SQL로 조정하며, 제작/공개/커뮤니티·그룹/시험·답안/다시보기는 HTTP로 검사합니다.
+콘텐츠·이력·DB는 삭제하지 않습니다.
 2026-10-21 최종 로컬 결과는 Java/MySQL/Docker 221개(실패·오류·건너뜀 0), React 76개, 런처 격리 27개,
 엄랭 Python 23개, 레거시 Node 7종 및 Compose 3종 통과입니다. React 테스트 그룹의 관측 최대 RSS는 221MiB였으며 npm 감사의 알려진 취약점은 0개였습니다.
 실제 외부 OAuth·SMTP, 운영 배포·부하, AMD64 실행과 원격 CI는 별도 검증입니다.
@@ -247,17 +284,17 @@ MIT 라이선스·출처·원본 해시와 채점용 CLI의 보완 내역은 `ju
 ## 채점 규칙
 
 - STDIN: SQL 이외 16개 언어. 표준 입력을 읽고 표준 출력으로 답을 반환합니다.
-- FUNCTION: 현재 고정 입력 규격에 맞는 문제는 SQL·엄랭을 제외한 15개 언어에서 `sol` 함수를 제출할 수 있습니다.
-  1000번 체인 레이저도 같은 언어 목록을 허용합니다. 기존 비정형 함수형 문제는 데이터 수정 없이
-  Python만 노출합니다. 제출 파일에 `main`을 작성하지 말고 아래 고정 시그니처를 사용하세요.
+- FUNCTION: `GENERIC_V1` 공개 서명이 있는 문제와 기존 체인 레이저 규격은 SQL·엄랭을 제외한 15개 언어를 지원합니다.
+  서명이 없는 기존 비정형 문제는 데이터 수정 없이 Python만 노출합니다. 제출 파일에는 `main`을 작성하지 않고
+  문제에 표시된 함수 이름과 인자·반환형을 사용하세요. 아래 고정 시그니처는 보관한 체인 레이저 전용입니다.
 - SQL: SQLite만 허용합니다. 테스트 입력은 `CREATE TABLE`/`INSERT` 초기화 SQL이고 제출은
   `SELECT`/`WITH` 등 단일 읽기 쿼리입니다. 매 케이스마다 새 메모리 DB를 만들어 원래 서비스 DB와 격리합니다.
   결과는 헤더 없는 TSV, NULL은 `NULL`, 개행은 LF입니다. 탭/개행/따옴표가 든 값은 CSV 방식으로 인용합니다.
   순서가 중요한 문제는 `ORDER BY`를 명시하세요. 쓰기/ATTACH/확장 로딩/CLI 명령은 거절합니다.
-- 새 FUNCTION 문제의 각 테스트 입력은 `{"matrix":[...],"target":[행,열]}`이며 `matrix`는
+- 공개 `functionSignature`가 없는 FUNCTION 문제의 각 테스트 입력은 `{"matrix":[...],"target":[행,열]}`이며 `matrix`는
   0/1 값으로 이뤄진 정확한 15×15 배열, target의 두 좌표는 각각 0–14여야 합니다. 정답은 정확히
   JSON `true` 또는 `false`입니다. 생성·수정 시 규격 위반 테스트는 400으로 거절합니다.
-- 현재 비교는 양 끝 공백을 제거한 문자열 일치입니다. EFFICIENCY/사용자 지정 검사기는 아직 지원하지 않습니다.
+- 범용 함수 이외의 비교는 양 끝 공백을 제거한 문자열 일치입니다. EFFICIENCY/사용자 지정 검사기는 아직 지원하지 않습니다.
 
 함수형 테스트 입력은 기존 JSON 형식을 유지합니다. 고정 실행기가 행렬과 목표 좌표를 각 언어의
 자료형으로 변환한 뒤 함수를 한 번 호출하며, 결과는 반드시 불리언이어야 합니다. JavaScript는
@@ -290,8 +327,9 @@ Pascal FUNCTION의 `TMatrix = array[0..14,0..14] of LongInt`와 `TTarget = array
 - 컴파일은 제출당 한 번, 최대 CPU 60초/벽시계 65초/메모리 1GiB를 사용합니다.
   컴파일 실패·컴파일 제한 초과는 COMPILATION_ERROR, Docker 준비 실패는 SYSTEM_ERROR입니다.
 - 산출물은 256MiB tmpfs 볼륨에만 저장하고 매 케이스의 새 컨테이너에는 읽기 전용으로 제공합니다.
-  컴파일 임시 공간은 256MiB, 실행 임시 공간은 32MiB이며 둘 다 noexec/nosuid입니다.
-  컨테이너당 프로세스/스레드 제한은 JVM/.NET을 고려해 128개, 출력 저장량은 스트림당 64KiB입니다.
+  컴파일 임시 공간은256MiB, 실행 임시 공간은 일반32MiB·범용 함수96MiB이며 모두 noexec/nosuid입니다.
+  컨테이너당 프로세스/스레드 제한은 JVM/.NET을 고려해 128개입니다. stderr/일반 stdout은 64KiB,
+  범용 함수 stdout만 16MiB까지 보관합니다. 수동 테스트 응답의 실제 출력은 여전히 64KiB입니다.
   정답은 어떤 컨테이너에도 전달하지 않습니다. 메모리 제한에는 런타임 자체의 메모리도 포함됩니다.
 - 정상 종료 시 컴파일 컨테이너/볼륨/소스를 정리합니다. 워커 비정상 종료 시 유지 컨테이너는
   30분 후 종료하지만 볼륨 메타데이터·로컬 소스가 남을 수 있으므로 운영 정리 정책이 필요합니다.
@@ -319,13 +357,13 @@ Pascal FUNCTION의 `TMatrix = array[0..14,0..14] of LongInt`와 `TTarget = array
 
 새 DB의 기준은 `src/main/resources/db/migration/`입니다. 중복된 루트의 `table.sql`은
 제거하고 Flyway 파일만 유지합니다. 이미 적용된 마이그레이션은 수정하지 않고 새 버전을 추가합니다.
-문제 시드 역시 `src/main/resources/demo/chain-laser.sql` 한곳에서 관리합니다.
+입문 과정은 `src/main/resources/problems/level0.json`, 보존한 체인 레이저 데모는 `src/main/resources/demo/chain-laser.sql`에서 각각 관리합니다.
 Flyway 기본값은 기존 로컬 DB 자동 변경 방지를 위해 꺼져 있고 local/prod/test에서 켜집니다.
 `baseline-on-migrate`는 자동 활성화하지 않습니다.
 
 1. 기존 DB를 백업하고 복제 DB에서 검증합니다.
 2. V1의 18개 테이블·제약·인덱스를 기존 구조와 비교합니다.
-3. 기존 테이블이 V1과 정확히 일치할 때만 Flyway baseline을 버전 1로 기록한 뒤 V2–V18을 적용합니다.
+3. 기존 테이블이 V1과 정확히 일치할 때만 Flyway baseline을 버전 1로 기록한 뒤 V2–V21을 적용합니다.
 4. 인증 테이블 5개만 있는 구형 DB는 바로 baseline 1 처리하면 안 됩니다. 누락 테이블 생성과
    이메일 중복/토큰 중복 정리 등 별도 전환이 먼저 필요합니다.
 

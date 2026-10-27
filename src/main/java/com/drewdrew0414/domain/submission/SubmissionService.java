@@ -11,8 +11,9 @@ import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import java.util.*;
 import java.nio.charset.StandardCharsets;
-import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.io.OutputStream;
+import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 
 /** 제출 접수와 DB 큐를 관리합니다. 사용자 코드는 HTTP 요청 스레드에서 실행하지 않습니다. */
@@ -102,7 +103,7 @@ public class SubmissionService {
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id FROM submissions WHERE id=?",id);
+        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id,diagnostic_json FROM submissions WHERE id=?",id);
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
         if(result.get("contest_id")!=null) {
@@ -112,7 +113,10 @@ public class SubmissionService {
         } else if(((Number)result.get("user_id")).longValue()!=uid && !ProblemService.operator(user))
                 throw new ApiException(HttpStatus.NOT_FOUND);
         result.put("reusedFromSubmissionId",result.remove("reused_from_submission_id"));
-        // 입력과 정답은 반환하지 않습니다. 사용자는 판정과 소요 시간만 확인합니다.
+        // 권한 검사 뒤에만 안전한 고정 설명을 반환하며 DB의 원문/임의 문자열은 복사하지 않습니다.
+        var diagnostic=JudgeDiagnostic.fromJson(result.remove("diagnostic_json"),(String)result.get("status"));
+        result.put("diagnostic",diagnostic==null?null:diagnostic.publicValue());
+        // 입력·정답·stderr 원문은 반환하지 않습니다.
         result.put("cases",db.queryForList("SELECT status,execution_time_ms FROM submission_test_case_results WHERE submission_id=? ORDER BY id",id));
         return result;
     }
@@ -156,7 +160,7 @@ public class SubmissionService {
             """,submission.get("id"),submission.get("judge_token"))==1;
     }
     public Map<String,Object> problem(Object id) {
-        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible FROM problems WHERE id=?",id);
+        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible,function_signature FROM problems WHERE id=?",id);
     }
     public List<Map<String,Object>> cases(Object pid) {
         return db.queryForList("SELECT id,input_data,expected_output,compare_type,display_order FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE ORDER BY display_order,id",pid);
@@ -177,17 +181,21 @@ public class SubmissionService {
     static String contextDigest(Map<String,Object> problem,List<Map<String,Object>> tests,String imageId,String engine) {
         if(imageId==null || !imageId.matches("sha256:[0-9a-f]{64}") || engine==null || !engine.matches("[0-9a-f]{64}"))
             return null;
+        MessageDigest hash;
+        try {hash=MessageDigest.getInstance("SHA-256");}
+        catch(java.security.NoSuchAlgorithmException error) {throw new IllegalStateException("SHA-256 unavailable",error);}
         try {
-            var bytes=new ByteArrayOutputStream();
-            var data=new DataOutputStream(bytes);
+            // 대용량 케이스 묶음을 통째로 두 번 복사하지 않고 기존 바이트 형식 그대로 해시에 흘려보냅니다.
+            var data=new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(),hash));
             for(Object value:List.of("COBWEB_JUDGEMENT_V1",imageId,engine,
                     problem.get("execution_mode"),problem.get("time_limit_ms"),problem.get("memory_limit_mb"),
                     ProblemService.functionAbiCompatible(problem))) writeField(data,value);
+            writeField(data,problem.get("function_signature"));
             data.writeInt(tests.size());
             for(var test:tests) for(String key:List.of("id","input_data","expected_output","compare_type","display_order"))
                 writeField(data,test.get(key));
             data.flush();
-            return digest(bytes.toByteArray());
+            return HexFormat.of().formatHex(hash.digest());
         } catch(java.io.IOException | IllegalArgumentException | NullPointerException ignored) {
             // 선택적 캐시의 불완전 메타데이터만 miss로 처리합니다. 해시 엔진/프로그래밍 장애는
             // 숨기지 않고 워커의 SYSTEM_ERROR 경계로 전파합니다.
@@ -225,7 +233,7 @@ public class SubmissionService {
         if(context==null) return false;
         String code=(String)current.get("source_code");
         var candidates=db.queryForList("""
-            SELECT id,source_code,status,score,execution_time_ms FROM submissions
+            SELECT id,source_code,status,score,execution_time_ms,diagnostic_json FROM submissions
             WHERE user_id=? AND problem_id=? AND language=? AND contest_id <=> ?
               AND id<? AND source_sha256=? AND judge_context_sha256=?
               AND status IN ('ACCEPTED','WRONG_ANSWER','TIME_LIMIT_EXCEEDED','MEMORY_LIMIT_EXCEEDED','RUNTIME_ERROR','COMPILATION_ERROR')
@@ -280,6 +288,12 @@ public class SubmissionService {
         String combined=results.stream().map(JudgeResult::status).filter(value->!"ACCEPTED".equals(value)).findFirst().orElse("ACCEPTED");
         if(!status.equals(combined) || !(original.get("score") instanceof Number score) || score.intValue()!=("ACCEPTED".equals(status)?100:0) ||
             !(original.get("execution_time_ms") instanceof Number elapsed) || elapsed.intValue()!=results.stream().mapToInt(JudgeResult::elapsedMs).max().orElse(0)) return null;
+        var diagnostic=JudgeDiagnostic.fromJson(original.get("diagnostic_json"),status);
+        if(diagnostic!=null) for(int index=0;index<results.size();index++) if(status.equals(results.get(index).status())) {
+            var result=results.get(index);
+            results.set(index,new JudgeResult(result.caseId(),result.status(),result.elapsedMs(),diagnostic));
+            break;
+        }
         return List.copyOf(results);
     }
     @Transactional
@@ -297,6 +311,10 @@ public class SubmissionService {
             s.get("id"),r.caseId(),r.status(),r.elapsedMs());
         db.update("UPDATE submissions SET status=?,score=?,execution_time_ms=?,judged_at=IF(contest_id IS NULL,CURRENT_TIMESTAMP(6),UTC_TIMESTAMP(6)),judge_heartbeat_at=NULL,judge_token=NULL WHERE id=?",
             status,"ACCEPTED".equals(status)?100:0,elapsed,s.get("id"));
+        // 최종 판정과 같은 종류의 첫 진단만 보관합니다. 다른 케이스의 성공/시스템 출력은 남기지 않습니다.
+        var diagnostic=results.stream().filter(r->status.equals(r.status())).map(JudgeResult::diagnostic)
+            .filter(Objects::nonNull).filter(value->value.matches(status)).findFirst().orElse(null);
+        db.update("UPDATE submissions SET diagnostic_json=? WHERE id=?",diagnostic==null?null:diagnostic.toJson(),s.get("id"));
         String context=null;
         if(REUSABLE_STATUSES.contains(status) && s.get("judge_context") instanceof String expected) {
             String actual=contextDigest(problem(s.get("problem_id")),cases(s.get("problem_id")),
@@ -319,5 +337,7 @@ public class SubmissionService {
             }
         }
     }
-    public record JudgeResult(Long caseId,String status,int elapsedMs) {}
+    public record JudgeResult(Long caseId,String status,int elapsedMs,JudgeDiagnostic diagnostic) {
+        public JudgeResult(Long caseId,String status,int elapsedMs){this(caseId,status,elapsedMs,null);}
+    }
 }

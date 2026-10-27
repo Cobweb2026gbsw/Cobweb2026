@@ -39,17 +39,22 @@ static_checks() {
   node src/test/js/code-editor.test.cjs
   node src/test/js/markdown.test.cjs
   PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m unittest discover -s src/test/python -p 'test_umjunsik*.py'
+  PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_function.py'
+  PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'
+  PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m unittest discover -s src/test/python -p 'test_algorithm_catalog.py'
+  PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m unittest discover -s src/test/python -p 'test_judge_results_guard.py'
   bash scripts/check-compose-config.sh
 }
 
 quick_checks() {
   static_checks
-  DOCKER_JUDGE_TEST=false ./gradlew --no-daemon --console=plain test
+  DOCKER_JUDGE_TEST=false GENERIC_CATALOG_DOCKER_TEST=false ./gradlew --no-daemon --console=plain test
 }
 
 full_checks() {
   docker build -t cobweb-languages:local judge
-  DOCKER_JUDGE_TEST=true ./gradlew --no-daemon --console=plain clean build
+  DOCKER_JUDGE_TEST=true GENERIC_CATALOG_DOCKER_TEST=true ./gradlew --no-daemon --console=plain clean build
+  GENERIC_NESTED_DOCKER_TEST=true GENERIC_RUNTIME_TIMEOUT_SECONDS=10 GENERIC_JUDGE_IMAGE=cobweb-languages:local python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_nested_docker.py' -v
   python3 scripts/check-judge-results.py build/test-results/test
 }
 

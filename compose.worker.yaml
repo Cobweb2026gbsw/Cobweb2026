@@ -14,6 +14,7 @@ services:
       DB_PASSWORD: ${WORKER_DB_PASSWORD:?WORKER_DB_PASSWORD required}
       # DB 마이그레이션은 웹 호스트에서 먼저 적용합니다. prod 프로필의 true보다 직접 설정을 우선합니다.
       SPRING_FLYWAY_ENABLED: 'false'
+      CURRICULUM_LEVEL0_ENABLED: 'false'
       JUDGE_ENABLED: 'true'
       SPRING_MAIN_WEB_APPLICATION_TYPE: none
       JUDGE_WORKSPACE: /tmp/cobweb-judge

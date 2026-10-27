@@ -69,7 +69,7 @@ class SecurityConfig implements WebMvcConfigurer {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, SpaController.PUBLIC_ROUTES).permitAll()
                         .requestMatchers(HttpMethod.GET, "/ui/index.html", "/ui/assets/**", "/react-bridge.js", "/legacy").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/ready", "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()
                         .requestMatchers(HttpMethod.GET,"/api/groups","/api/community/notices","/api/community/posts",
                             "/api/community/posts/*","/api/community/posts/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET,"/app.html","/create","/admin","/groups","/community","/notices",

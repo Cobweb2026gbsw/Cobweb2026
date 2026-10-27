@@ -10,7 +10,7 @@ class LocalMigrationModeTest {
     private static final String[] VALID = {
         "--local.migrate-only=true", "--spring.profiles.active=local",
         "--spring.main.web-application-type=none", "--spring.flyway.enabled=true",
-        "--judge.enabled=false", "--demo.seed=false"
+        "--judge.enabled=false", "--demo.seed=false", "--curriculum.level0.enabled=false"
     };
     private static final String DATABASE = "jdbc:mysql://127.0.0.1:3307/cobweb2026?serverTimezone=UTC";
 
@@ -75,7 +75,7 @@ class LocalMigrationModeTest {
 
     @Test void resolvedFlagsCannotEnableWebJudgingDemoOrDisableFlyway() {
         for (String key : new String[]{"local.migrate-only", "spring.main.web-application-type",
-                "spring.flyway.enabled", "judge.enabled", "demo.seed"}) {
+                "spring.flyway.enabled", "judge.enabled", "demo.seed", "curriculum.level0.enabled"}) {
             var environment = environment().withProperty(key, "invalid");
             assertThrows(IllegalArgumentException.class, () -> LocalMigrationMode.validateEnvironment(environment));
         }

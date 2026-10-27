@@ -42,6 +42,10 @@ judge:
   image: ${JUDGE_IMAGE:cobweb-languages:local}
   workspace: ${JUDGE_WORKSPACE:/tmp/cobweb-judge}
 
+curriculum:
+  level0:
+    enabled: ${CURRICULUM_LEVEL0_ENABLED:true}
+
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 1800000     # 30분 (ms)

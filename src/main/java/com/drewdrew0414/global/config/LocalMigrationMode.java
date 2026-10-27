@@ -12,7 +12,8 @@ public final class LocalMigrationMode {
         "spring.main.web-application-type", "none",
         "spring.flyway.enabled", "true",
         "judge.enabled", "false",
-        "demo.seed", "false");
+        "demo.seed", "false",
+        "curriculum.level0.enabled", "false");
     private static final String LOCAL_DATABASE = "jdbc:mysql://127.0.0.1:3307/cobweb2026?serverTimezone=UTC";
 
     private LocalMigrationMode() {}

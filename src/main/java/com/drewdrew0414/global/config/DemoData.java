@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import javax.sql.DataSource;
 
@@ -18,7 +19,14 @@ import javax.sql.DataSource;
 public class DemoData implements ApplicationRunner {
     private final JdbcTemplate db;
     private final DataSource dataSource;
+    @Value("${curriculum.level0.enabled:true}") private boolean curriculumEnabled;
     @Override @Transactional public void run(ApplicationArguments arguments) {
+        if(curriculumEnabled) return;
+        // 이전에 보관한 데모가 있으면 1000번에 다시 생성하지 않습니다.
+        if(db.queryForObject("""
+            SELECT COUNT(*) FROM problems p JOIN users u ON u.id=p.author_id
+            WHERE p.problem_title='체인 레이저' AND u.username='cobweb-system'
+            """,Long.class)>0) return;
         if(db.queryForObject("SELECT COUNT(*) FROM problems WHERE problem_number=1000",Long.class)>0) return;
         var connection=DataSourceUtils.getConnection(dataSource);
         try { ScriptUtils.executeSqlScript(connection,new ClassPathResource("demo/chain-laser.sql")); }
