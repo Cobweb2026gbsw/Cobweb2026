@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   quick:
-    name: API, browser auth, and Compose
+    name: API, browser auth, launcher, and Compose
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -60,6 +60,13 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Verify launcher rollback without live services
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          bash -n run.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh
+          bash src/test/bash/run-sh.test.sh 2>&1 | tee ci-logs/launcher.log
       - name: Check browser auth flow
         shell: bash
         run: |
@@ -69,17 +76,27 @@ jobs:
             node --check src/main/resources/static/app.js &&
             node --check src/main/resources/static/groups.js &&
             node --check src/main/resources/static/community.js &&
+            node --check src/main/resources/static/code-editor.js &&
+            node --check src/main/resources/static/markdown.js &&
             node src/test/js/app-auth.test.cjs &&
             node src/test/js/app-session.test.cjs &&
             node src/test/js/problem-editor.test.cjs &&
             node src/test/js/groups.test.cjs &&
-            node src/test/js/community.test.cjs
+            node src/test/js/community.test.cjs &&
+            node src/test/js/code-editor.test.cjs &&
+            node src/test/js/markdown.test.cjs
           } 2>&1 | tee ci-logs/browser-auth.log
+      - name: Verify React UI contracts and components
+        run: |
+          npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix frontend test
       - name: Validate Compose configurations
         shell: bash
         run: |
           set -o pipefail
           bash scripts/check-compose-config.sh 2>&1 | tee ci-logs/compose.log
+      - name: Verify pinned umjunsik runtime and adapter
+        run: python3 -I -B -m unittest discover -s src/test/python -p 'test_umjunsik*.py'
       - name: Run Gradle tests
         shell: bash
         run: |
@@ -99,7 +116,7 @@ jobs:
           retention-days: 7
 
   judge-full:
-    name: Full 13-language Docker judge
+    name: Full 17-language Docker judge
     needs: quick
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -143,6 +160,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Set up Node 24 for the packaged React UI
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Build the judge image
         shell: bash
         run: |

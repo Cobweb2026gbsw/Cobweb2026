@@ -9,8 +9,9 @@ from pathlib import Path
 
 LANGUAGES = (
     "PYTHON", "C", "CPP", "JAVA", "JAVASCRIPT", "TYPESCRIPT", "CSHARP",
-    "GO", "RUST", "KOTLIN", "SQL", "RUBY", "LLVM_IR",
+    "GO", "RUST", "KOTLIN", "SQL", "RUBY", "LLVM_IR", "PASCAL", "PHP", "DART", "UMJUNSIK",
 )
+FUNCTION_LANGUAGES = tuple(language for language in LANGUAGES if language not in {"SQL", "UMJUNSIK"})
 SUITES = (
     "com.drewdrew0414.domain.submission.DockerJudgeTest",
     "com.drewdrew0414.domain.submission.MultiLanguageJudgeTest",
@@ -53,19 +54,20 @@ def main(result_dir: Path) -> None:
     required_multi = {
         f"{language}: compile once, run isolated cases" for language in LANGUAGES
     } | {
-        f"{language}: FUNCTION adapter" for language in LANGUAGES if language != "SQL"
+        f"{language}: FUNCTION adapter" for language in FUNCTION_LANGUAGES
     }
     required_http = {
         "chainLaserHttpSubmissionRunsAllPrivateCases()",
         "realWorkerHandlesCompiledSqlAndCompilationFailure()",
+        "newLanguagesRunThroughHttpAndWorker()",
     }
     if not docker:
         raise ValueError("DockerJudgeTest did not execute")
     if missing := required_multi - multi:
-        raise ValueError(f"Missing 13-language judge cases: {sorted(missing)}")
+        raise ValueError(f"Missing {len(LANGUAGES)}-language judge cases: {sorted(missing)}")
     if missing := required_http - http:
         raise ValueError(f"Missing Docker-backed HTTP/worker cases: {sorted(missing)}")
-    print("Docker judge gate: 13 languages, FUNCTION adapters, and HTTP/worker cases ran")
+    print(f"Docker judge gate: {len(LANGUAGES)} languages, {len(FUNCTION_LANGUAGES)} FUNCTION adapters, and HTTP/worker cases ran")
 
 
 if __name__ == "__main__":

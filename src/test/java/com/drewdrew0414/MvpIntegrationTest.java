@@ -82,6 +82,15 @@ class MvpIntegrationTest {
             r.examples(),List.of(new ProblemRequests.TestCase(input,expected)),null,null,null,null,
             r.referenceSolutions(),null,"PUBLIC");
     }
+    @Test void editorAndMarkdownAssetsArePublicButPrivateLocalFilesAreNot() throws Exception {
+        for (String path:List.of("/code-editor.js","/markdown.js","/vendor/marked.umd.js")) {
+            var response=get(path,null);
+            assertEquals(200,response.statusCode(),path);
+            assertTrue(response.body().length()>100,path);
+        }
+        for (String path:List.of("/pw.txt","/.local/run/cobweb-local/config.env"))
+            assertEquals(401,get(path,null).statusCode(),path);
+    }
     @Test void functionTestsRequireTheSharedLanguageInputContract() {
         int number=problems.create(draft(),author);
         for (var invalid:List.of(
@@ -97,7 +106,8 @@ class MvpIntegrationTest {
         assertEquals("FUNCTION",problems.load(number,author).get("execution_mode"));
     }
     @Test void legacyFunctionTestsStayPythonOnlyWhileCompatibleProblemsKeepAllLanguages() throws Exception {
-        assertEquals(12,((List<?>)problems.detail(1000,other).get("languages")).size());
+        assertEquals(new HashSet<>(Language.forMode("FUNCTION")),
+            new HashSet<>((List<?>)problems.detail(1000,other).get("languages")));
         int number=problems.create(draft(),author);
         long pid=((Number)problems.load(number,author).get("id")).longValue();
         db.update("UPDATE problem_test_cases SET input_data=? WHERE problem_id=?",
@@ -158,17 +168,24 @@ class MvpIntegrationTest {
         assertEquals(2,db.queryForObject("SELECT submit_count FROM users WHERE id=?",Integer.class,other.getUserId()));
     }
     @Test void publicEntryPointsUseTheSameSinglePage() throws Exception {
-        // 실제 정적 파일은 하나만 있어야 하며 이전 주소도 같은 화면으로 연결되어야 합니다.
-        var canonical=get("/index.html",null);
+        // 프로덕션 React 산출물을 실제 HTTP로 확인합니다. API 인증은 그대로 유지합니다.
+        var canonical=get("/ui/index.html",null);
         assertEquals(200,canonical.statusCode());
-        assertTrue(canonical.body().contains("name=\"verificationCode\""));
-        assertTrue(canonical.body().contains("src=\"/app.js\""));
-        for(String path:List.of("/","/app.html","/create","/admin","/groups","/community","/notices")) {
+        assertTrue(canonical.body().contains("/ui/assets/"));
+        assertTrue(canonical.body().contains("id=\"root\""));
+        for(String path:List.of("/","/app.html","/create","/admin","/groups","/community","/notices",
+                "/login","/problems/1000","/groups/1/contests/1","/admin/community/1","/submissions/1")) {
             var response=get(path,null);
             assertEquals(200,response.statusCode(),path);
             assertEquals(canonical.body(),response.body(),path);
         }
         assertFalse(new org.springframework.core.io.ClassPathResource("static/app.html").exists());
+        assertEquals(200,get("/legacy",null).statusCode());
+        var asset=java.util.regex.Pattern.compile("src=\"(/ui/assets/[^\"]+\\.js)\"").matcher(canonical.body());
+        assertTrue(asset.find());
+        assertEquals(200,get(asset.group(1),null).statusCode());
+        assertEquals(401,get("/api/admin/problems",null).statusCode());
+        assertEquals(401,get("/pw.txt",null).statusCode());
     }
     @Test void unauthenticatedSubmissionAndInvalidInputAreRejected()throws Exception{
         var request=HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/submissions"))
@@ -488,7 +505,7 @@ class MvpIntegrationTest {
     @Test void languageCatalogAndModeChangesStayConsistent() throws Exception {
         var response=get("/api/languages",null);
         assertEquals(200,response.statusCode());
-        assertEquals(13,json.readTree(response.body()).get("data").size());
+        assertEquals(Language.values().length,json.readTree(response.body()).get("data").size());
         int number=problems.create(languageDraft("STDIN"),author);
         for(String mode:List.of("STDIN","SQL","FUNCTION","STDIN")) {
             problems.update(number,languageDraft(mode),author);
@@ -512,6 +529,7 @@ class MvpIntegrationTest {
             assertEquals(400,submitLanguage(stdin,invalid,"test").statusCode());
         assertEquals(400,submitLanguage(stdin,"SQL","SELECT 1").statusCode());
         assertEquals(400,submitLanguage(sql,"JAVA","test").statusCode());
+        assertEquals(400,submitLanguage(function,"UMJUNSIK","어떻게\n이 사람이름이냐ㅋㅋ").statusCode());
         var functionCpp=submitLanguage(function,"CPP","test");
         assertEquals(200,functionCpp.statusCode(),functionCpp.body());
         db.update("UPDATE submissions SET status='SYSTEM_ERROR' WHERE id=?",
@@ -521,6 +539,69 @@ class MvpIntegrationTest {
         long id=json.readTree(legacy.body()).get("data").asLong();
         assertEquals("PYTHON",db.queryForObject("SELECT language FROM submissions WHERE id=?",String.class,id));
         db.update("UPDATE submissions SET status='SYSTEM_ERROR' WHERE id=?",id);
+    }
+    @Test void allSixteenStdinReferenceSolutionsSurviveHttpValidationAndPrivateEditorRoundTrip() throws Exception {
+        var base=languageDraft("STDIN");
+        var allowed=Language.forMode("STDIN");
+        var references=allowed.stream().map(language->new ProblemRequests.ReferenceSolution(
+            language,Language.parse(language).fileName(),"reference source")).toList();
+        var draft=new ProblemRequests.Write(base.title(),base.description(),base.inputDescription(),base.outputDescription(),
+            base.constraints(),base.rankType(),base.rankInt(),base.timeLimitMs(),base.memoryLimitMb(),base.executionMode(),
+            base.examples(),base.tests(),allowed,base.tags(),base.sourceName(),base.sourceUrl(),references,null,"PUBLIC");
+        var request=HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/problems"))
+            .header("Content-Type","application/json")
+            .header("Authorization","Bearer "+jwt.generateAccessToken(author.getUserId(),author.getUsername(),"USER",0))
+            .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(draft))).build();
+        var response=HttpClient.newHttpClient().send(request,HttpResponse.BodyHandlers.ofString());
+        assertEquals(200,response.statusCode(),response.body());
+        int number=json.readTree(response.body()).get("data").asInt();
+        var edit=json.readTree(get("/api/problems/"+number+"/edit",author).body()).get("data");
+        assertEquals(16,edit.get("languages").size());
+        assertEquals(16,edit.get("referenceSolutions").size());
+        var filenames=new HashSet<String>();
+        edit.get("referenceSolutions").forEach(reference->filenames.add(reference.get("fileName").asText()));
+        assertTrue(filenames.containsAll(List.of("main.pas","main.php","main.dart","main.umm")));
+    }
+
+    @Test void additionalLanguageMigrationPreservesFunctionAndSqlBoundaries() {
+        assertEquals(1,db.queryForObject(
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE version='14' AND success=TRUE",Integer.class));
+        assertEquals(3,db.queryForObject("""
+            SELECT COUNT(*) FROM problem_languages l JOIN problems p ON p.id=l.problem_id
+            WHERE p.problem_number=1000 AND l.language IN ('PASCAL','PHP','DART')
+            """,Integer.class));
+        assertEquals(0,db.queryForObject("""
+            SELECT COUNT(*) FROM problem_languages l JOIN problems p ON p.id=l.problem_id
+            WHERE l.language='UMJUNSIK' AND p.execution_mode<>'STDIN'
+            """,Integer.class));
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named="DOCKER_JUDGE_TEST",matches="true")
+    void newLanguagesRunThroughHttpAndWorker() throws Exception {
+        int stdin=publishedLanguageProblem("STDIN"),function=publishedLanguageProblem("FUNCTION");
+        var worker=new JudgeWorker(submissions,dockerJudge);
+        record Sample(String mode,Language language,String source) {}
+        for(var sample:List.of(
+            new Sample("STDIN",Language.PASCAL,"program Main; var a,b: LongInt; begin Read(a,b); WriteLn(a+b); end."),
+            new Sample("STDIN",Language.PHP,"<?php $v=preg_split('/\\s+/',trim(stream_get_contents(STDIN))); echo ((int)$v[0]+(int)$v[1]).PHP_EOL;"),
+            new Sample("STDIN",Language.DART,"import 'dart:io'; void main(){final v=stdin.readLineSync()!.trim().split(RegExp(r'\\s+')).map(int.parse).toList(); print(v[0]+v[1]);}"),
+            new Sample("STDIN",Language.UMJUNSIK,"어떻게\n엄식?\n어엄식?\n동탄어어?준........\n엄어.\n어엄어어,\n준....\n식어!\n이 사람이름이냐ㅋㅋ"),
+            new Sample("FUNCTION",Language.PASCAL,"function sol(const matrix: TMatrix; const target: TTarget): Boolean; begin sol := True; end;"),
+            new Sample("FUNCTION",Language.PHP,"<?php function sol(array $matrix,array $target): bool { return true; }"),
+            new Sample("FUNCTION",Language.DART,"bool sol(List<List<int>> matrix,List<int> target) => true;"))) {
+            var response=submitLanguage(sample.mode().equals("STDIN")?stdin:function,sample.language().name(),sample.source());
+            assertEquals(200,response.statusCode(),response.body());
+            long id=json.readTree(response.body()).get("data").asLong();
+            tickUntilTerminal(worker,id);
+            var detail=json.readTree(get("/api/submissions/"+id,other).body()).get("data");
+            assertEquals("ACCEPTED",detail.get("status").asText(),sample.language()+" "+sample.mode()+": "+detail);
+            assertEquals("ACCEPTED",detail.get("cases").get(0).get("status").asText());
+            var lease=db.queryForMap("SELECT judge_attempts,judge_token,judge_heartbeat_at FROM submissions WHERE id=?",id);
+            assertEquals(1,((Number)lease.get("judge_attempts")).intValue());
+            assertNull(lease.get("judge_token"));
+            assertNull(lease.get("judge_heartbeat_at"));
+        }
     }
     @Test
     @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named="DOCKER_JUDGE_TEST",matches="true")

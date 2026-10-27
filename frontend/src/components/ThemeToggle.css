@@ -1,0 +1,32 @@
+.cw-theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 10;
+
+  height: 38px;
+  padding: 0 18px;
+
+  border-radius: 999px;
+  border: 1px solid #505050;
+
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.cw-theme-toggle.dark {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+.cw-theme-toggle.light {
+  background-color: #f4fffe;
+  color: #121414;
+  border-color: #8ea5a3;
+}
+
+.cw-theme-toggle:hover {
+  border-color: #13fff3;
+}

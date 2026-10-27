@@ -3,6 +3,7 @@ package com.drewdrew0414.domain.problem;
 import com.drewdrew0414.domain.group.ContestService;
 import com.drewdrew0414.domain.group.GroupPermission;
 import com.drewdrew0414.domain.group.GroupService;
+import com.drewdrew0414.domain.submission.Language;
 import com.drewdrew0414.domain.user.entity.Role;
 import com.drewdrew0414.domain.user.entity.User;
 import com.drewdrew0414.global.security.CustomUserDetails;
@@ -125,6 +126,35 @@ class ProblemServiceTest {
     @Test void adminListingRequiresOperatorOnTheServer() {
         var error=assertThrows(ResponseStatusException.class,()->service.adminList(0,"","","",user(5,"USER")));
         assertEquals(403,error.getStatusCode().value());
+        verifyNoInteractions(db);
+    }
+
+    @Test void allSixteenStdinLanguagesAndTheirReferencesPassTheOldThirteenEntryLimit() {
+        var user=user(5,"USER");
+        allowUserLock();
+        var languages=Language.forMode("STDIN");
+        var references=languages.stream().map(language->new ProblemRequests.ReferenceSolution(
+            language,Language.parse(language).fileName(),"source")).toList();
+        when(db.queryForObject(contains("title_scope=?"),eq(Long.class),eq(0L),eq("Languages")))
+            .thenReturn(1L);
+
+        var error=assertThrows(ResponseStatusException.class,
+            ()->service.create(write("Languages",null,null,languages,references),user));
+
+        // 제목 중복 검사까지 도달하면 언어/정답 검증은 모두 통과한 것입니다. DB 쓰기는 하지 않습니다.
+        assertEquals(409,error.getStatusCode().value());
+        verify(db,never()).queryForObject(contains("next_number"),eq(Integer.class));
+    }
+
+    @Test void oversizedLanguageAndReferenceListsAreRejectedBeforeAnyDbAccess() {
+        var user=user(5,"USER");
+        var languages=java.util.Collections.nCopies(Language.values().length+1,"PYTHON");
+        var references=java.util.Collections.nCopies(Language.values().length+1,
+            new ProblemRequests.ReferenceSolution("PYTHON","main.py","print(1)"));
+        assertEquals(400,assertThrows(ResponseStatusException.class,
+            ()->service.create(write("Languages",null,null,languages,null),user)).getStatusCode().value());
+        assertEquals(400,assertThrows(ResponseStatusException.class,
+            ()->service.create(write("References",null,null,List.of("PYTHON"),references),user)).getStatusCode().value());
         verifyNoInteractions(db);
     }
 

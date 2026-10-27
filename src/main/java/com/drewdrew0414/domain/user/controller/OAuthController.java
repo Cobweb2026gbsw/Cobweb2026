@@ -55,10 +55,10 @@ public class OAuthController {
         TokenResponse tokenResponse = oAuthService.loginOrSignup(p, code, state, savedState, httpResponse);
 
         String accessToken = URLEncoder.encode(tokenResponse.getAccessToken(), StandardCharsets.UTF_8);
-        // 쿼리 파라미터로 실어 보내는 값이라 URL 인코딩 필수 (JWT에는 '.' 등 특수문자가 섞여 있음)
-        // URL 쿼리는 서버 접근 로그와 Referer 헤더에 남을 수 있으므로 브라우저가 서버로 전송하지 않는 fragment(#)에 담습니다.
-        // 이 방식은 개발용 테스트 페이지를 위한 임시 전달 방식이며, 운영 프론트에서는 1회용 교환 코드 방식이 더 안전합니다.
-        httpResponse.sendRedirect("/index.html#accessToken=" + accessToken);
+        // React의 전용 콜백 화면으로 복귀합니다. AuthContext가 토큰을 읽은 즉시 주소에서 fragment를 지웁니다.
+        // 토큰에 fragment 구분자가 섞여도 파라미터를 나누지 못하도록 값을 URL 인코딩합니다.
+        // 쿼리와 달리 fragment(#)는 서버 요청·Referer에 실리지 않지만, 운영 환경은 1회용 교환 코드 방식을 권장합니다.
+        httpResponse.sendRedirect("/oauth/callback#accessToken=" + accessToken);
     }
 
     private Provider parseProvider(String provider) {

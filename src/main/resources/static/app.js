@@ -82,8 +82,8 @@ async function openProblem(number){
     const shownView=await show('problem');if(!currentView('problem',shownView,session))return;
     currentProblem=number;
     $('#problem-title').textContent=number+'. '+p.problem_title;$('#problem-meta').textContent=p.rank_type+' '+p.rank_int+' · '+p.time_limit_ms+' ms · '+p.memory_limit_mb+' MB';
-    for(const [id,key] of [['description','description'],['input-description','input_description'],['output-description','output_description'],['constraints','constraints_text']])$('#'+id).textContent=p[key]||'';
-    $('#examples').replaceChildren();p.examples.forEach((e,i)=>{const pre=document.createElement('pre');pre.textContent='예제 '+(i+1)+'\n'+e.input_text+'\n→ '+e.output_text+'\n'+(e.explanation||'');$('#examples').append(pre);});
+    for(const [id,key] of [['description','description'],['input-description','input_description'],['output-description','output_description'],['constraints','constraints_text']])renderMarkdown($('#'+id),p[key]||'');
+    $('#examples').replaceChildren();p.examples.forEach((e,i)=>renderExample($('#examples'),e,i));
     executionMode=p.execution_mode;
     const select=$('#submission-language'), previous=select.value;
     select.replaceChildren();
@@ -91,6 +91,14 @@ async function openProblem(number){
     if(p.languages.includes(previous))select.value=previous;
     updateLanguageHelp();$('#judge-result').textContent='';
   }catch(e){if(currentSession(session)&&originView===viewEpoch&&!e.stale)notice(e.message);}
+}
+function renderMarkdown(box,content){
+  if(typeof CobwebMarkdown==='object')return CobwebMarkdown.render(box,content);
+  box.textContent=content??'';return box;
+}
+function renderExample(box,item,index){
+  if(typeof CobwebMarkdown==='object')return CobwebMarkdown.example(box,item,index);
+  const pre=document.createElement('pre');pre.textContent='예제 '+(index+1)+'\n'+(item.input_text??item.input??'')+'\n→ '+(item.output_text??item.output??'')+'\n'+(item.explanation||'');box.append(pre);return pre;
 }
 function form(id,action){$('#'+id).onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;
   try{await action(Object.fromEntries(new FormData(e.target)));}catch(e){notice(e.message);}finally{b.disabled=false;}};}
@@ -130,11 +138,15 @@ const functionSignatures={
   RUST:'fn sol(matrix: Vec<Vec<i32>>, target: (usize,usize)) -> bool',
   KOTLIN:'fun sol(matrix: Array<IntArray>, target: Pair<Int,Int>): Boolean',
   RUBY:'def sol(matrix, target)',
-  LLVM_IR:'define i1 @sol(ptr %matrix, i32 %target_row, i32 %target_col) — matrix는 행 우선 i32[225]'
+  LLVM_IR:'define i1 @sol(ptr %matrix, i32 %target_row, i32 %target_col) — matrix는 행 우선 i32[225]',
+  PASCAL:'function sol(const matrix: TMatrix; const target: TTarget): Boolean; — TMatrix=array[0..14,0..14] of LongInt, TTarget=array[0..1] of LongInt는 제공됨',
+  PHP:'<?php function sol(array $matrix, array $target): bool',
+  DART:'bool sol(List<List<int>> matrix, List<int> target)'
 };
 function updateLanguageHelp(){
   const id=$('#submission-language').value;
-  const names={JAVA:'Main.java / public class Main',KOTLIN:'Main.kt / fun main()',CSHARP:'Main.cs / Main 또는 최상위 문장',LLVM_IR:'LLVM 18 텍스트 IR / main 진입점'};
+  const names={JAVA:'Main.java / public class Main',KOTLIN:'Main.kt / fun main()',CSHARP:'Main.cs / Main 또는 최상위 문장',LLVM_IR:'LLVM 18 텍스트 IR / main 진입점',
+    PASCAL:'main.pas / Free Pascal 프로그램',PHP:'main.php / <?php로 시작하는 CLI 프로그램',DART:'main.dart / void main()',UMJUNSIK:'main.umm / 엄랭 v2 표준 입출력 프로그램'};
   $('#language-help').textContent=executionMode==='FUNCTION'?(functionSignatures[id]||'지원하지 않는 함수형 언어')+' · true/false를 반환하세요. main은 작성하지 않습니다.':
     executionMode==='SQL'?'SQLite 읽기 쿼리 한 개를 제출하세요. 각 케이스는 별도의 DB이며 결과는 헤더 없는 TSV입니다.':
     (names[id]||languageLabel(id))+' · 표준 입력을 읽고 표준 출력에 답을 쓰세요. 외부 패키지 설치는 지원하지 않습니다.';
@@ -150,19 +162,20 @@ async function poll(id,request=pollRequest,session=sessionEpoch,view=viewEpoch){
     $('#judge-result').textContent='제출 #'+id+' · '+languageLabel(r.language)+' · '+r.status+(r.score===null?'':' · '+r.score+'점');
     if(['QUEUED','RUNNING'].includes(r.status))polling=setTimeout(()=>poll(id,request,session,view),1500);
   }catch(e){if(currentView('problem',view,session)&&request===pollRequest&&!e.stale)notice(e.message);}}
-const MAX_EXAMPLES=20, MAX_TESTS=50, MAX_SOLUTIONS=13, MAX_CODE_BYTES=64*1024;
-const defaultFileNames={PYTHON:'main.py',C:'main.c',CPP:'main.cpp',JAVA:'Main.java',JAVASCRIPT:'main.js',TYPESCRIPT:'main.ts',CSHARP:'Main.cs',GO:'main.go',RUST:'main.rs',KOTLIN:'Main.kt',SQL:'query.sql',RUBY:'main.rb',LLVM_IR:'main.ll'};
-function supportedLanguages(mode){return languages.filter(l=>Array.isArray(l.modes)?l.modes.includes(mode):(mode==='SQL'?l.id==='SQL':l.id!=='SQL'));}
+const MAX_EXAMPLES=20, MAX_TESTS=50, MAX_CODE_BYTES=64*1024;
+const defaultFileNames={PYTHON:'main.py',C:'main.c',CPP:'main.cpp',JAVA:'Main.java',JAVASCRIPT:'main.js',TYPESCRIPT:'main.ts',CSHARP:'Main.cs',GO:'main.go',RUST:'main.rs',KOTLIN:'Main.kt',SQL:'query.sql',RUBY:'main.rb',LLVM_IR:'main.ll',PASCAL:'main.pas',PHP:'main.php',DART:'main.dart',UMJUNSIK:'main.umm'};
+const MAX_SOLUTIONS=Object.keys(defaultFileNames).length;
+function supportedLanguages(mode){return languages.filter(l=>Array.isArray(l.modes)?l.modes.includes(mode):(mode==='SQL'?l.id==='SQL':l.id!=='SQL'&&(mode!=='FUNCTION'||l.id!=='UMJUNSIK')));}
 function buildProblemPayload(fields,examples,tests,allowedLanguages,solutions,catalog=languages){
   const title=String(fields.title||'').trim(), description=String(fields.description||'');
   if(!title||!description.trim())throw Error('제목과 문제 본문을 입력해 주세요.');
   if(examples.length>MAX_EXAMPLES)throw Error('예제는 최대 20개까지 추가할 수 있습니다.');
   if(tests.length<1||tests.length>MAX_TESTS)throw Error('비공개 테스트는 1~50개가 필요합니다.');
   const mode=fields.executionMode;
-  const compatible=new Set(catalog.filter(l=>Array.isArray(l.modes)?l.modes.includes(mode):(mode==='SQL'?l.id==='SQL':l.id!=='SQL')).map(l=>l.id));
+  const compatible=new Set(catalog.filter(l=>Array.isArray(l.modes)?l.modes.includes(mode):(mode==='SQL'?l.id==='SQL':l.id!=='SQL'&&(mode!=='FUNCTION'||l.id!=='UMJUNSIK'))).map(l=>l.id));
   if(!allowedLanguages.length||new Set(allowedLanguages).size!==allowedLanguages.length||allowedLanguages.some(id=>!compatible.has(id)))
     throw Error('실행 방식에 맞는 허용 언어를 하나 이상 선택해 주세요.');
-  if(solutions.length>MAX_SOLUTIONS)throw Error('정답 코드는 최대 13개까지 추가할 수 있습니다.');
+  if(solutions.length>MAX_SOLUTIONS)throw Error('정답 코드는 최대 '+MAX_SOLUTIONS+'개까지 추가할 수 있습니다.');
   const used=new Set();
   for(const solution of solutions){
     if(!allowedLanguages.includes(solution.language)||used.has(solution.language))throw Error('정답 코드는 허용 언어별로 하나만 등록할 수 있습니다.');
@@ -223,7 +236,7 @@ function addTextRow(kind,data={}){
   box.append(row);updateRepeatCounts();return row;
 }
 function addSolutionRow(data={}){
-  const box=$('#solution-rows');if(box.children.length>=MAX_SOLUTIONS)throw Error('정답 코드는 최대 13개입니다.');
+  const box=$('#solution-rows');if(box.children.length>=MAX_SOLUTIONS)throw Error('정답 코드는 최대 '+MAX_SOLUTIONS+'개입니다.');
   const used=new Set([...box.children].map(row=>row.querySelector('[data-field=language]').value));
   const languageId=data.language||supportedLanguages(editorMode()).find(l=>!used.has(l.id))?.id;
   if(!languageId)throw Error('추가할 수 있는 언어가 없습니다.');
@@ -241,10 +254,10 @@ function addSolutionRow(data={}){
   const fileLabel=document.createElement('label');fileLabel.textContent='파일명';
   const fileName=document.createElement('input');fileName.type='text';fileName.dataset.field='fileName';fileName.maxLength=120;
   fileName.value=data.fileName||defaultFileNames[languageId]||'solution.txt';fileLabel.append(fileName);grid.append(languageLabel,fileLabel);row.append(grid);
-  const codeLabel=textField('정답 코드','sourceCode',data.sourceCode,10);codeLabel.className='code-field';row.append(codeLabel);
+  const codeLabel=textField('정답 코드','sourceCode',data.sourceCode,10);codeLabel.className='code-field';codeLabel.querySelector('textarea').dataset.codeEditor='';codeLabel.querySelector('textarea').spellcheck=false;row.append(codeLabel);
   const fileActions=document.createElement('div');fileActions.className='file-actions';
   const uploadLabel=document.createElement('label');uploadLabel.textContent='코드 파일 첨부';
-  const file=document.createElement('input');file.type='file';file.accept='text/*,.py,.c,.cpp,.java,.js,.ts,.cs,.go,.rs,.kt,.rb,.sql,.ll';
+  const file=document.createElement('input');file.type='file';file.accept='text/*,.py,.c,.cpp,.java,.js,.ts,.cs,.go,.rs,.kt,.rb,.sql,.ll,.pas,.pp,.php,.dart,.umm';
   file.onchange=async()=>{if(!file.files?.[0])return;try{const loaded=await readSolutionFile(file.files[0]);fileName.value=loaded.fileName;codeLabel.querySelector('textarea').value=loaded.sourceCode;notice('파일 내용을 정답 코드에 불러왔습니다. 저장 버튼으로 서버에 반영하세요.');}catch(e){notice(e.message);}finally{file.value='';}};
   uploadLabel.append(file);
   const download=document.createElement('button');download.type='button';download.textContent='코드 다운로드';download.className='secondary';
@@ -393,9 +406,9 @@ async function listAdmin(){
     row.append(summary,button);box.append(row);}
   $('#admin-previous').disabled=adminPage===0;$('#admin-next').disabled=items.length<30;
 }
-function addReviewSection(box,title,content){
+function addReviewSection(box,title,content,markdown=false){
   const section=document.createElement('section');const heading=document.createElement('h3');heading.textContent=title;
-  const pre=document.createElement('pre');pre.className='prose';pre.textContent=content??'';section.append(heading,pre);box.append(section);
+  const pre=document.createElement(markdown?'div':'pre');pre.className='prose';if(markdown)renderMarkdown(pre,content);else pre.textContent=content??'';section.append(heading,pre);box.append(section);
 }
 function renderAdminProblem(detail){
   const number=detail.number??detail.problem_number;adminProblem={...detail,number};
@@ -405,10 +418,10 @@ function renderAdminProblem(detail){
     (detail.usedInContest?' · 시험에 사용된 문제는 복제하여 수정해 주세요.':'');
   $('#admin-edit').disabled=Boolean(detail.usedInContest);
   const box=$('#admin-preview');box.replaceChildren();
-  addReviewSection(box,'문제 본문',detail.description);addReviewSection(box,'입력 설명',detail.inputDescription);
-  addReviewSection(box,'출력 설명',detail.outputDescription);addReviewSection(box,'제한 사항',detail.constraints);
+  addReviewSection(box,'문제 본문',detail.description,true);addReviewSection(box,'입력 설명',detail.inputDescription,true);
+  addReviewSection(box,'출력 설명',detail.outputDescription,true);addReviewSection(box,'제한 사항',detail.constraints,true);
   addReviewSection(box,'설정',[(detail.rankType||'')+' '+(detail.rankInt||''),(detail.timeLimitMs||'')+' ms / '+(detail.memoryLimitMb||'')+' MB',detail.executionMode,(detail.languages||[]).join(', '),(detail.tags||[]).join(', '),detail.sourceName||'',detail.sourceUrl||''].join('\n'));
-  (detail.examples||[]).forEach((item,index)=>addReviewSection(box,'예제 '+(index+1),'입력\n'+item.input+'\n\n출력\n'+item.output+'\n\n설명\n'+(item.explanation||'')));
+  (detail.examples||[]).forEach((item,index)=>renderExample(box,item,index));
   (detail.tests||[]).forEach((item,index)=>addReviewSection(box,'비공개 테스트 '+(index+1),'입력\n'+item.input+'\n\n기대 출력\n'+item.expected));
   (detail.referenceSolutions||[]).forEach((item,index)=>addReviewSection(box,'정답 코드 '+(index+1)+' · '+item.language+' · '+item.fileName,item.sourceCode));
   $('#visibility-form [name=visibility]').value=actual==='PUBLIC'||(group&&detail.status==='PUBLISHED')?'PUBLIC':'PRIVATE';
@@ -493,7 +506,8 @@ form('visibility-form',async data=>{
   await openAdminProblem(number);await listAdmin();if(currentView('admin',view,session))notice('공개 범위를 변경했습니다.');
 });
 document.querySelectorAll('[data-oauth]').forEach(b=>b.onclick=async()=>{try{const r=await api('/api/auth/oauth/'+b.dataset.oauth+'/authorize-url');location.href=r.authorizeUrl;}catch(e){notice(e.message);}});
-CobwebGroups.init({api,notice,show,isAuthenticated:()=>Boolean(token),languageLabel,languages:()=>languages,openProblem,openEditor,startGroupProblem});
+if(typeof CobwebCodeEditor==='object')CobwebCodeEditor.install(document);
+CobwebGroups.init({api,notice,show,isAuthenticated:()=>Boolean(token),languageLabel,languages:()=>languages,openProblem,openEditor,startGroupProblem,renderMarkdown,renderExample});
 CobwebCommunity.init({api,notice,show,isAuthenticated:()=>Boolean(token),isOperator:()=>permissions.canManage,openProblem});
 (async()=>{const fragment=new URLSearchParams(location.hash.slice(1));token=fragment.get('accessToken');if(token){sessionEpoch++;history.replaceState({},'',location.pathname);}
   const session=sessionEpoch;languages=await api('/api/languages');if(!currentSession(session))return;

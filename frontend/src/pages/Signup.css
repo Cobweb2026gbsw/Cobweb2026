@@ -1,0 +1,191 @@
+.SignupPage {
+  width: 100%;
+  min-height: 100vh;
+
+  background-color: #121414;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  color: white;
+}
+
+.SignupBox {
+  width: 460px;
+  padding: 40px 50px 30px;
+
+  background-color: #121414;
+
+  border: 1px solid #505050;
+  border-radius: 16px;
+
+  box-sizing: border-box;
+}
+
+.SignupBox h1 {
+  margin: 0 0 35px;
+
+  text-align: center;
+  font-size: 32px;
+}
+
+.SignupBox p {
+  margin: 18px 0 8px;
+
+  font-size: 14px;
+  color: #d7d7d7;
+}
+
+.SignupBox input {
+  width: 100%;
+  height: 42px;
+
+  background-color: transparent;
+
+  border: none;
+  border-bottom: 1px solid #777;
+
+  color: white;
+
+  font-size: 15px;
+
+  outline: none;
+
+  box-sizing: border-box;
+}
+
+.SignupBox input::placeholder {
+  color: #777;
+}
+
+.SignupBox input:focus {
+  border-bottom: 1px solid #64e6ca;
+}
+
+/* 이메일 / 인증번호 한 줄 */
+.signup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.signup-row input {
+  flex: 1;
+}
+
+.signup-row button {
+  width: 110px;
+  height: 38px;
+
+  margin-top: 0;
+
+  border: 1px solid #64e6ca;
+  border-radius: 6px;
+
+  background-color: transparent;
+  color: #64e6ca;
+
+  font-size: 12px;
+
+  cursor: pointer;
+}
+
+.signup-row button:hover {
+  background-color: #64e6ca;
+  color: #121414;
+}
+
+/* 회원가입 메인 버튼 */
+.SignupBox > button {
+  width: 100%;
+  height: 45px;
+
+  margin-top: 30px;
+
+  border: none;
+  border-radius: 6px;
+
+  background-color: #000000;
+  color: #ffffff;
+
+  font-size: 16px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.SignupBox > button:hover {
+  opacity: 0.85;
+}
+
+.SignupBox a {
+  text-decoration: none;
+}
+
+.SignupBox a p {
+  text-align: center;
+
+  margin-top: 20px;
+
+  color: #aaaaaa;
+}
+
+.SignupBox a span {
+  margin-left: 5px;
+
+  color: #64e6ca;
+  font-weight: 600;
+}
+
+.SignupBox .signup-logo {
+  margin: 28px 0 0;
+
+  text-align: center;
+
+  color: #64e6ca;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.SignupPage.light {
+  background-color: #dbfffd;
+  color: #121414;
+}
+
+.SignupPage.light .SignupBox {
+  background-color: #f4fffe;
+  border-color: #9dbab8;
+}
+
+.SignupPage.light .SignupBox p {
+  color: #536260;
+}
+.SignupPage.light .SignupBox input {
+  border-bottom-color: #9dbab8;
+  color: #121414;
+}
+.SignupPage.light .SignupBox input::placeholder {
+  color: #71807e;
+}
+.SignupPage.light .SignupBox > button {
+  background-color: #121414;
+  color: #ffffff;
+}
+.SignupPage.light .signup-row button {
+  border-color: #121414;
+  color: #121414;
+}
+.SignupPage.light .signup-row button:hover {
+  background-color: #121414;
+  color: #ffffff;
+}
+
+.SignupBox > label { display: block; margin: 18px 0 8px; font-size: 14px; }
+.SignupBox .auth-error { color: #ff7a8a; line-height: 1.6; }
+.SignupBox .auth-notice { color: #64e6ca; line-height: 1.6; }
+.SignupBox button:disabled { opacity: .45; cursor: not-allowed; }
+.SignupPage.light .SignupBox .auth-error { color: #c4263c; }
+.SignupPage.light .SignupBox .auth-notice { color: #0a7f76; }
+.SignupBox input:focus-visible,.SignupBox button:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
+@media(max-width: 540px) { .SignupPage { padding: 28px 14px; box-sizing: border-box; }.SignupBox { width: 100%; padding: 34px 24px; }.signup-row input { min-width: 0; }.signup-row button { flex: none; width: 102px; } }

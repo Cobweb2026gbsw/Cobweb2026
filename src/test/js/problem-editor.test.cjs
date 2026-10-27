@@ -69,7 +69,8 @@ function fixture() {
     ['JAVA', ['STDIN', 'FUNCTION']], ['JAVASCRIPT', ['STDIN', 'FUNCTION']], ['TYPESCRIPT', ['STDIN', 'FUNCTION']],
     ['CSHARP', ['STDIN', 'FUNCTION']], ['GO', ['STDIN', 'FUNCTION']], ['RUST', ['STDIN', 'FUNCTION']],
     ['KOTLIN', ['STDIN', 'FUNCTION']], ['RUBY', ['STDIN', 'FUNCTION']], ['LLVM_IR', ['STDIN', 'FUNCTION']],
-    ['SQL', ['SQL']]
+    ['SQL', ['SQL']], ['PASCAL', ['STDIN', 'FUNCTION']], ['PHP', ['STDIN', 'FUNCTION']],
+    ['DART', ['STDIN', 'FUNCTION']], ['UMJUNSIK', ['STDIN']]
   ].map(([id, modes]) => ({id, label: id, modes}));
   const notices = [], downloads = [];
   const context = {
@@ -86,7 +87,7 @@ function fixture() {
   vm.runInContext(
     `let languages=${JSON.stringify(catalog)}; const $=selector=>nodes[selector]; function notice(text){notices.push(text);}\n` +
     section('const MAX_EXAMPLES=', "\n$('#new-problem').onclick=") +
-    '\nthis.editor={buildProblemPayload,readSolutionFile,addTextRow,addSolutionRow,editorRows,updateRepeatCounts};',
+    '\nthis.editor={buildProblemPayload,readSolutionFile,addTextRow,addSolutionRow,editorRows,updateRepeatCounts,supportedLanguages,defaultFileNames};',
     Object.assign(context, {nodes, notices}));
   return {editor: context.editor, nodes, notices, downloads, catalog};
 }
@@ -130,7 +131,19 @@ async function main() {
   assert.throws(() => editor.buildProblemPayload(fields, examples, tests, ['PYTHON'], [{...solutions[0], fileName: '../escape.py'}]), /경로 없이/);
   assert.throws(() => editor.buildProblemPayload(fields, examples, tests, ['PYTHON'], [{...solutions[0], fileName: 'a'.repeat(121)}]), /120자/);
   assert.throws(() => editor.buildProblemPayload(fields, examples, tests, ['PYTHON'], [{...solutions[0], sourceCode: 'x'.repeat(65537)}]), /64 KiB/);
-  assert.throws(() => editor.buildProblemPayload(fields, examples, tests, ['PYTHON'], Array(14).fill(solutions[0])), /최대 13개/);
+  assert.throws(() => editor.buildProblemPayload(fields, examples, tests, ['PYTHON'], Array(18).fill(solutions[0])), /최대 17개/);
+  const allStdin = catalog.filter(language => language.modes.includes('STDIN')).map(language => language.id);
+  const allReferences = allStdin.map(language => ({language, fileName: editor.defaultFileNames[language], sourceCode: 'source'}));
+  assert.equal(editor.buildProblemPayload(fields, examples, tests, allStdin, allReferences).referenceSolutions.length, 16,
+    'the old thirteen-reference cap must not reject all sixteen STDIN languages');
+  const functionFields = {...fields, executionMode: 'FUNCTION'};
+  for (const language of ['PASCAL', 'PHP', 'DART']) {
+    assert.deepEqual(plain(editor.buildProblemPayload(functionFields, examples, tests, [language], []).languages), [language]);
+  }
+  assert.throws(() => editor.buildProblemPayload(functionFields, examples, tests, ['UMJUNSIK'], []), /허용 언어/);
+  assert.equal(editor.supportedLanguages('STDIN').length, 16);
+  assert.equal(editor.supportedLanguages('FUNCTION').length, 15);
+  assert.equal(editor.supportedLanguages('SQL').length, 1);
   assert.throws(() => editor.buildProblemPayload({...fields, tags: Array.from({length: 11}, (_, i) => 'tag' + i).join(',')}, examples, tests, ['PYTHON'], []), /태그는 최대 10개/);
 
   const unicode = new TextEncoder().encode('print("안녕")\n');
@@ -165,9 +178,15 @@ async function main() {
   const download = solutionRow.querySelectorAll('button').find(button => button.textContent === '코드 다운로드');
   download.onclick();
   assert.deepEqual(downloads, [{name: 'upload.py', href: 'blob:test'}]);
-  assert.match(nodes['#solution-count'].textContent, /1\/13/);
+  assert.match(nodes['#solution-count'].textContent, /1\/17/);
+  for (const [language, filename] of [['PASCAL', 'main.pas'], ['PHP', 'main.php'], ['DART', 'main.dart'], ['UMJUNSIK', 'main.umm']]) {
+    const row = editor.addSolutionRow({language, sourceCode: 'source'});
+    assert.equal(row.querySelector('[data-field=fileName]').value, filename);
+    const upload = row.querySelectorAll('input').find(input => input.type === 'file');
+    assert.ok(upload.accept.includes('.' + filename.split('.').at(-1)));
+  }
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.equal(catalog.length, 13);
+  assert.equal(catalog.length, 17);
   console.log('problem editor: payload, limits, row order, UTF-8 upload/download passed');
 }
 

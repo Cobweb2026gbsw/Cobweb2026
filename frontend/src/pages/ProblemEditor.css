@@ -1,0 +1,367 @@
+.pe-page .cw-wrap {
+  max-width: 1180px;
+}
+.pe-fieldset{margin:0;padding:0;border:0;min-width:0}.pe-fieldset:disabled{opacity:.72}.pe-field{display:block}.pe-section .pd-editor{margin:12px 0}.pe-section .cw-hint{line-height:1.7}.pe-section .cw-check-grid{margin-top:12px}.pe-section h3{font-size:15px}.pe-modal-box>.pd-statement{padding:0;border:0}.pe-grid-limits{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.pe-section {
+  margin-top: 20px;
+}
+
+.pe-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pe-field + .pe-field {
+  margin-top: 16px;
+}
+
+.pe-field .cw-textarea.tall {
+  min-height: 140px;
+}
+
+/* ---------- 상태 배너 ---------- */
+.pe-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 12px 18px;
+
+  color: var(--accent-text);
+  background-color: color-mix(in srgb, var(--accent-text) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-text) 45%, transparent);
+  border-radius: 12px;
+
+  font-size: 13px;
+}
+
+.pe-draft-banner small {
+  margin-left: auto;
+
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pe-reject {
+  padding: 20px 22px;
+
+  background-color: color-mix(in srgb, var(--red) 6%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 14px;
+}
+
+.pe-reject-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.pe-reject-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin: 0;
+
+  color: var(--red);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pe-reject-head span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pe-reject-reason {
+  margin-top: 14px;
+  padding: 14px 16px;
+
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  border-radius: 10px;
+}
+
+.pe-reject-reason strong {
+  color: var(--red);
+  font-size: 11px;
+}
+
+.pe-reject-reason p {
+  margin: 8px 0 0;
+
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.pe-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+
+  margin: 14px 0 0;
+  padding: 0;
+
+  list-style: none;
+  font-size: 11px;
+}
+
+.pe-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pe-checklist li.done { color: var(--green); }
+.pe-checklist li.todo { color: var(--yellow); }
+
+/* ---------- 레이아웃 ---------- */
+.pe-grid-basic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px 200px;
+  gap: 14px;
+
+  margin-bottom: 16px;
+}
+
+.pe-grid-basic .pe-field + .pe-field {
+  margin-top: 0;
+}
+
+.pe-grid-limits {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+
+  margin-bottom: 16px;
+}
+
+.pe-grid-limits .pe-field + .pe-field {
+  margin-top: 0;
+}
+
+.pe-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.pe-two > .pe-section {
+  margin-top: 20px;
+}
+
+.pe-two > .pe-example {
+  margin-top: 0;
+}
+
+.pe-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pe-pair .pe-field + .pe-field {
+  margin-top: 0;
+}
+
+/* ---------- 예제 ---------- */
+.pe-example {
+  padding: 16px;
+
+  background-color: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pe-example-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  margin-bottom: 12px;
+
+  font-size: 13px;
+}
+
+.pe-example .cw-textarea {
+  min-height: 80px;
+  background-color: var(--card);
+}
+
+.pe-example .pe-pair + .pe-field {
+  margin-top: 14px;
+}
+
+/* ---------- 테스트케이스 ---------- */
+.pe-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin: 0 0 14px;
+  padding: 10px 14px;
+
+  color: var(--blue);
+  background-color: color-mix(in srgb, var(--blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, transparent);
+  border-radius: 10px;
+
+  font-size: 12px;
+}
+
+.pe-tests {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pe-test {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1.4fr) minmax(0, 1fr) 90px auto;
+  align-items: end;
+  gap: 12px;
+
+  padding: 14px 16px;
+
+  background-color: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pe-test .pe-field + .pe-field {
+  margin-top: 0;
+}
+
+.pe-test-no {
+  display: grid;
+  place-items: center;
+
+  width: 36px;
+  height: 36px;
+
+  color: var(--accent-text);
+  background-color: var(--card);
+  border-radius: 8px;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pe-test .cw-input {
+  background-color: var(--card);
+}
+
+.pe-test-del {
+  height: 42px;
+}
+
+.pe-warn {
+  color: var(--yellow);
+  font-weight: 700;
+}
+
+/* ---------- 하단 액션 ---------- */
+.pe-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+
+  margin-top: 24px;
+}
+
+.pe-missing {
+  max-width: 560px;
+  margin: 0;
+
+  color: var(--yellow);
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.pe-missing.ok {
+  color: var(--green);
+}
+
+.pe-footer-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------- 미리보기 모달 ---------- */
+.pe-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+
+  display: grid;
+  place-items: center;
+
+  padding: 24px;
+
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+.pe-modal-box {
+  width: min(760px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.pe-preview h3 {
+  margin: 22px 0 8px;
+
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pe-preview p {
+  margin: 0;
+
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.pe-pre {
+  white-space: pre-wrap;
+}
+
+.pe-preview pre {
+  margin: 0 0 8px;
+  padding: 12px 14px;
+
+  background-color: var(--field);
+  border-radius: 10px;
+
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .pe-grid-basic,
+  .pe-grid-limits,
+  .pe-two,
+  .pe-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .pe-test {
+    grid-template-columns: 40px 1fr;
+  }
+
+  .pe-test > :nth-child(n + 2) {
+    grid-column: 2;
+  }
+
+  .pe-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

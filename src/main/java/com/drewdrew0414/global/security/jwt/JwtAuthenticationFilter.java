@@ -1,6 +1,8 @@
 package com.drewdrew0414.global.security.jwt;
 
 import com.drewdrew0414.global.security.CustomUserDetailsService;
+import com.drewdrew0414.global.exception.ApiErrorWriter;
+import org.springframework.dao.DataAccessException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,6 +61,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                  org.springframework.security.core.userdetails.UsernameNotFoundException e) {
             // 무효 토큰/삭제된 계정은 미인증으로 진행합니다. 공개 API까지 500으로 실패하지 않게 합니다.
             SecurityContextHolder.clearContext();
+        } catch(DataAccessException error) {
+            // 인증 DB 장애를 익명/정상 요청으로 바꾸지 않습니다. 필터 예외는 MVC advice 밖이므로
+            // SQL·사용자명·토큰을 포함하지 않는 같은 JSON 오류 계약으로 즉시 종료합니다.
+            SecurityContextHolder.clearContext();
+            ApiErrorWriter.write(response,503,"SERVICE_UNAVAILABLE","인증 서비스를 일시적으로 사용할 수 없습니다.");
+            return;
         }
         // 토큰이 없거나 유효하지 않으면 그냥 통과 (permitAll 경로일 수도 있으니 여기서 막지 않음)
 

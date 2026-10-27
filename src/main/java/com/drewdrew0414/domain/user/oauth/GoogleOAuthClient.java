@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /*
@@ -54,6 +55,7 @@ public class GoogleOAuthClient implements OAuthClient {
 
     @Override
     public OAuthUserInfo fetchUserInfo(String code, String state) {
+        try {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         // 구글 토큰 엔드포인트는 JSON이 아니라 application/x-www-form-urlencoded 형식을 요구함
         form.add("code", code);
@@ -69,6 +71,8 @@ public class GoogleOAuthClient implements OAuthClient {
                 .retrieve() // 응답을 받아와서 상태코드 확인 + 역직렬화 준비
                 .body(TokenResponse.class); // JSON 응답 바디를 TokenResponse 레코드로 역직렬화
 
+        OAuthResponseValidation.requireToken(token==null?null:token.accessToken());
+
         UserInfoResponse userInfo = restClient.get()
                 .uri("https://openidconnect.googleapis.com/v1/userinfo")
                 .header("Authorization", "Bearer " + token.accessToken())
@@ -77,8 +81,12 @@ public class GoogleOAuthClient implements OAuthClient {
                 .body(UserInfoResponse.class);
 
         // 프로필 이메일이 존재하는 것과 소유권 검증은 다릅니다. 미검증 이메일은 가입 근거로 사용하지 않습니다.
-        return new OAuthUserInfo(Provider.GOOGLE, userInfo.sub(),
-                Boolean.TRUE.equals(userInfo.emailVerified()) ? userInfo.email() : null, userInfo.name());
+        if(userInfo==null) throw OAuthResponseValidation.unavailable(null);
+        return OAuthResponseValidation.requireIdentity(Provider.GOOGLE,new OAuthUserInfo(Provider.GOOGLE, userInfo.sub(),
+                Boolean.TRUE.equals(userInfo.emailVerified()) ? userInfo.email() : null, userInfo.name()));
+        } catch(RestClientException error) {
+            throw OAuthResponseValidation.unavailable(error);
+        }
     }
 
     // 구글 토큰 응답 중 우리가 필요로 하는 access_token 하나만 뽑아 받는 record.

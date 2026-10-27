@@ -46,3 +46,23 @@ tasks.withType<Test> {
     // 작은 서버의 공용 풀에서도 채점 stdin/stdout/stderr가 교착되지 않는지 항상 검증합니다.
     systemProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "2")
 }
+
+// ZIP 기반 React UI도 JAR의 일부입니다. run.sh/bootJar/CI가 동일한 잠금 파일로 빌드합니다.
+val frontendInstall by tasks.registering(Exec::class) {
+    workingDir("frontend")
+    commandLine("npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund")
+    inputs.files("frontend/package.json", "frontend/package-lock.json")
+    outputs.dir("frontend/node_modules")
+}
+val frontendBuild by tasks.registering(Exec::class) {
+    dependsOn(frontendInstall)
+    workingDir("frontend")
+    commandLine("npm", "run", "build")
+    inputs.dir("frontend/src")
+    inputs.files("frontend/index.html", "frontend/vite.config.js", "frontend/package-lock.json")
+    outputs.dir(layout.buildDirectory.dir("generated-frontend"))
+}
+tasks.processResources {
+    dependsOn(frontendBuild)
+    from(layout.buildDirectory.dir("generated-frontend"))
+}

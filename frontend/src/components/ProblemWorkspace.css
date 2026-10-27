@@ -1,0 +1,8 @@
+.pd-grid.pd-resizable{grid-template-columns:minmax(0,var(--pd-left-share,50fr)) 16px minmax(0,var(--pd-right-share,50fr));column-gap:8px}
+.pd-resizable>.pd-statement,.pd-resizable>.pd-side{min-width:0}
+.pd-splitter{display:flex;align-items:center;justify-content:center;align-self:stretch;min-height:180px;cursor:col-resize;touch-action:none;border-radius:8px;outline-offset:1px}
+.pd-splitter>span{display:block;width:4px;height:54px;border-radius:999px;background:var(--line-strong,var(--line));transition:background .15s,height .15s}
+.pd-splitter:hover>span,.pd-splitter:focus-visible>span,.pd-resizable.is-resizing>.pd-splitter>span{background:var(--accent-text);height:76px}
+.pd-splitter:focus-visible{outline:2px solid var(--accent-text)}
+.pd-resizable.is-resizing{user-select:none;cursor:col-resize}
+@media(max-width:1100px){.pd-grid.pd-resizable{grid-template-columns:minmax(0,1fr);gap:20px}.pd-resizable>.pd-splitter{display:none}}

@@ -7,6 +7,8 @@ import com.drewdrew0414.domain.user.exception.BannedUserException;
 import com.drewdrew0414.domain.user.exception.InvalidOAuthStateException;
 import com.drewdrew0414.domain.user.exception.OAuthEmailNotFoundException;
 import com.drewdrew0414.domain.user.exception.OAuthSignupUnavailableException;
+import com.drewdrew0414.domain.user.exception.UnsupportedOAuthProviderException;
+import com.drewdrew0414.global.exception.ApiException;
 import com.drewdrew0414.domain.user.oauth.OAuthClient;
 import com.drewdrew0414.domain.user.oauth.OAuthUserInfo;
 import com.drewdrew0414.domain.user.repository.UserRepository;
@@ -25,6 +27,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -134,5 +138,39 @@ class OAuthServiceTest {
 
         oAuthService.loginOrSignup(Provider.NAVER, "code", "same-state", "same-state", new MockHttpServletResponse());
         verify(authService).issueTokens(org.mockito.ArgumentMatchers.eq(existing), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test void invalidProviderIdentitiesNeverReachAccountLookupOrTokenIssuance() {
+        for(OAuthUserInfo info:java.util.Arrays.asList(null,
+                new OAuthUserInfo(Provider.GOOGLE,null,"user@example.invalid","name"),
+                new OAuthUserInfo(Provider.GOOGLE," ","user@example.invalid","name"),
+                new OAuthUserInfo(Provider.GOOGLE,"x".repeat(256),"user@example.invalid","name"),
+                new OAuthUserInfo(Provider.GITHUB,"wrong-provider","user@example.invalid","name"))) {
+            when(oAuthClient.fetchUserInfo("code","same-state")).thenReturn(info);
+            var error=assertThrows(ApiException.class,()->oAuthService.loginOrSignup(
+                Provider.GOOGLE,"code","same-state","same-state",new MockHttpServletResponse()));
+            assertEquals(502,error.getStatusCode().value());
+        }
+        verifyNoInteractions(userRepository,authService,passwordEncoder);
+    }
+
+    @Test void matchingBlankStatesDoNotAuthorizeAnOAuthCallback() {
+        assertThrows(InvalidOAuthStateException.class,()->oAuthService.loginOrSignup(
+            Provider.GOOGLE,"code"," "," ",new MockHttpServletResponse()));
+        verify(oAuthClient,never()).fetchUserInfo(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        verifyNoInteractions(userRepository,authService);
+    }
+
+    @Test void blankAuthorizationCodeDoesNotCallTheProvider() {
+        var error=assertThrows(ApiException.class,()->oAuthService.loginOrSignup(
+            Provider.GOOGLE," ","same-state","same-state",new MockHttpServletResponse()));
+        assertEquals(400,error.getStatusCode().value());
+        verify(oAuthClient,never()).fetchUserInfo(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test void anUnavailableProviderIsRejectedWithoutSettingAnOAuthCookie() {
+        var response=new MockHttpServletResponse();
+        assertThrows(UnsupportedOAuthProviderException.class,()->oAuthService.buildAuthorizeUrl(Provider.NAVER,response));
+        assertTrue(response.getHeaders("Set-Cookie").isEmpty());
     }
 }

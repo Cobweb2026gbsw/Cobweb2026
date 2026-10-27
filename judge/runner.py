@@ -16,6 +16,10 @@ memory = int(memory)
 heap = max(16, memory // 2)
 java = ["java", "-XX:+UseSerialGC", "-XX:ActiveProcessorCount=1", f"-Xmx{heap}m", "-Xss512k"]
 node = ["node", f"--max-old-space-size={heap}"]
+# CLI 전용 PHP입니다. php.ini/외부 URL include를 사용하지 않으며 Docker 제한도 그대로 적용됩니다.
+php = ["php", "-n", "-d", f"memory_limit={heap}M", "-d", "display_errors=stderr",
+       "-d", "log_errors=0", "-d", "html_errors=0", "-d", "allow_url_fopen=0",
+       "-d", "allow_url_include=0", "-d", "expose_php=0"]
 compilers = {
     "C": ["gcc", "-std=c17", "-O2", "/source/main.c", "-o", "/work/main", "-lm"],
     "CPP": ["g++", "-std=c++20", "-O2", "/source/main.cpp", "-o", "/work/main"],
@@ -30,6 +34,8 @@ compilers = {
     "RUST": ["rustc", "--edition=2021", "-O", "/source/main.rs", "-o", "/work/main"],
     "KOTLIN": ["/opt/kotlinc/bin/kotlinc", "-J-Xmx512m", "/source/Main.kt", "-include-runtime", "-d", "/work/main.jar"],
     "LLVM_IR": ["clang-18", "-O2", "/source/main.ll", "-o", "/work/main"],
+    "PASCAL": ["fpc", "-Mobjfpc", "-O2", "-FE/work", "-FU/work", "-o/work/main", "/source/main.pas"],
+    "DART": ["dart", "compile", "exe", "/source/main.dart", "-o", "/work/main"],
 }
 runners = {
     "PYTHON": ["python3", "-I", "/source/main.py"],
@@ -42,6 +48,10 @@ runners = {
     "KOTLIN": java + ["-jar", "/work/main.jar"],
     "RUBY": ["ruby", "--disable-gems", "/source/main.rb"],
     "LLVM_IR": ["/work/main"],
+    "PASCAL": ["/work/main"],
+    "PHP": php + ["/source/main.php"],
+    "DART": ["/work/main"],
+    "UMJUNSIK": ["python3", "-I", "-B", "/opt/judge/umjunsik_cli.py", "/source/main.umm"],
 }
 
 function_compilers = {
@@ -57,6 +67,9 @@ function_compilers = {
     "KOTLIN": ["/opt/kotlinc/bin/kotlinc", "-J-Xmx512m", "/source/Main.kt",
                "/opt/judge/function/KotlinHarness.kt", "-include-runtime", "-d", "/work/main.jar"],
     "LLVM_IR": ["clang-18", "-O2", "/source/main.ll", "/opt/judge/function/llvm_harness.c", "-o", "/work/main"],
+    "PASCAL": ["fpc", "-Mobjfpc", "-O2", "-FE/work", "-FU/work", "-o/work/main",
+               "/opt/judge/function/pascal_harness.pas"],
+    "DART": ["dart", "compile", "exe", "/opt/judge/function/dart_harness.dart", "-o", "/work/main"],
 }
 function_runners = {
     **runners,
@@ -65,6 +78,7 @@ function_runners = {
     "TYPESCRIPT": node + ["/opt/judge/function/ts_harness.js"],
     "CSHARP": ["dotnet", "/work/Function.dll"],
     "RUBY": ["ruby", "--disable-gems", "/opt/judge/function/ruby_harness.rb"],
+    "PHP": php + ["/opt/judge/function/php_harness.php"],
 }
 
 def function_input(args):
@@ -101,7 +115,7 @@ elif mode == "FUNCTION" and language == "PYTHON":
         raise TypeError("sol must return bool")
     print(json.dumps(value))
     sys.exit(0)
-elif mode == "FUNCTION" and language != "SQL":
+elif mode == "FUNCTION" and language not in ("SQL", "UMJUNSIK"):
     args = json.load(sys.stdin)
     matrix, target = function_input(args)
     # 고정 어댑터는 모두 행 우선 225개 원소와 목표 행·열을 공백 구분 정수로 받습니다.

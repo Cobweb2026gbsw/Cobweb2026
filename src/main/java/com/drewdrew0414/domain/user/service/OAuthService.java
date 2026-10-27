@@ -7,8 +7,11 @@ import com.drewdrew0414.domain.user.exception.InvalidOAuthStateException;
 import com.drewdrew0414.domain.user.exception.BannedUserException;
 import com.drewdrew0414.domain.user.exception.OAuthEmailNotFoundException;
 import com.drewdrew0414.domain.user.exception.OAuthSignupUnavailableException;
+import com.drewdrew0414.domain.user.exception.UnsupportedOAuthProviderException;
 import com.drewdrew0414.domain.user.oauth.OAuthClient;
 import com.drewdrew0414.domain.user.oauth.OAuthUserInfo;
+import com.drewdrew0414.domain.user.oauth.OAuthResponseValidation;
+import com.drewdrew0414.global.exception.ApiException;
 import com.drewdrew0414.domain.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,6 +19,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 
@@ -62,11 +66,12 @@ public class OAuthService {
     }
 
     public String buildAuthorizeUrl(Provider provider, HttpServletResponse response) {
+        OAuthClient client=resolveClient(provider);
         String state = UUID.randomUUID().toString();
         // CSRF 방지용 임의값을 매 요청마다 새로 만들고, 브라우저만 다시 보낼 수 있는 HttpOnly 쿠키에도 저장합니다.
         // 제공자가 callback으로 돌려주는 state와 이 쿠키를 비교해야 state가 실제 방어 수단으로 동작합니다.
         setOAuthStateCookie(response, state);
-        return resolveClient(provider).buildAuthorizeUrl(state);
+        return client.buildAuthorizeUrl(state);
     }
 
     @Transactional
@@ -74,10 +79,12 @@ public class OAuthService {
     public TokenResponse loginOrSignup(Provider provider, String code, String state, String savedState,
                                        HttpServletResponse response) {
         validateState(state, savedState);
+        if(code==null || code.isBlank())
+            throw new ApiException(HttpStatus.BAD_REQUEST,"소셜 로그인 인가 코드가 필요합니다.");
         clearOAuthStateCookie(response);
         // 검증이 끝난 state 쿠키는 즉시 만료시켜 한 번 시작한 OAuth 흐름에서만 사용되도록 함
 
-        OAuthUserInfo info = resolveClient(provider).fetchUserInfo(code, state);
+        OAuthUserInfo info = OAuthResponseValidation.requireIdentity(provider,resolveClient(provider).fetchUserInfo(code, state));
 
         User user = userRepository.findLockedByProviderAndProviderId(provider, info.providerId())
                 .orElseGet(() -> {
@@ -91,6 +98,7 @@ public class OAuthService {
                         // 이미 가입된 소셜 계정은 DB에 보관된 정보를 사용하므로 제공자가 이번에 이메일을 생략해도 로그인할 수 있습니다.
                         throw new OAuthEmailNotFoundException();
                     }
+                    // V17 users AFTER INSERT 트리거가 로컬 가입과 동일하게 기본 그룹 MEMBER 가입을 원자적으로 보장합니다.
                     return userRepository.save(createUser(provider, info));
                 });
         // 이미 가입된 (provider, providerId) 조합이면 그대로 조회, 처음 보는 조합이면 즉시 회원가입
@@ -133,11 +141,13 @@ public class OAuthService {
     }
 
     private OAuthClient resolveClient(Provider provider) {
-        return clientsByProvider.get(provider);
+        OAuthClient client=provider==null || clientsByProvider==null?null:clientsByProvider.get(provider);
+        if(client==null) throw new UnsupportedOAuthProviderException();
+        return client;
     }
 
     private void validateState(String returnedState, String savedState) {
-        if (returnedState == null || savedState == null) {
+        if (returnedState == null || savedState == null || returnedState.isBlank() || savedState.isBlank()) {
             throw new InvalidOAuthStateException();
         }
 

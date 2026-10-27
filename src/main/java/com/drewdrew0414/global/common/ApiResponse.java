@@ -14,21 +14,33 @@ public class ApiResponse<T> {
     private final boolean success;
     private final T data;
     private final String message;
+    // 오류 분기는 번역된 message가 아니라 안정적인 errorCode로 판단합니다.
+    // errorId는 예상 못 한 서버 오류를 로그와 연결하는 불투명한 식별자이며 비밀값을 담지 않습니다.
+    private final String errorCode;
+    private final String errorId;
 
-    private ApiResponse(boolean success, T data, String message) {
+    private ApiResponse(boolean success, T data, String message,String errorCode,String errorId) {
         // private 생성자 -> 바깥에서는 new로 못 만들고, 반드시 아래 success/error 정적 팩토리로만 만들게 강제
         this.success = success;
         this.data = data;
         this.message = message;
+        this.errorCode = errorCode;
+        this.errorId = errorId;
     }
 
     public static <T> ApiResponse<T> success(T data) {
         // 성공 응답: success=true, message는 비워둠
-        return new ApiResponse<>(true, data, null);
+        return new ApiResponse<>(true, data, null,null,null);
     }
 
     public static <T> ApiResponse<T> error(String message) {
         // 실패 응답: success=false, data는 비워둠 (GlobalExceptionHandler가 여기로 감쌈)
-        return new ApiResponse<>(false, null, message);
+        return error("REQUEST_FAILED",message);
+    }
+    public static <T> ApiResponse<T> error(String errorCode,String message) {
+        return error(errorCode,message,null);
+    }
+    public static <T> ApiResponse<T> error(String errorCode,String message,String errorId) {
+        return new ApiResponse<>(false,null,message,errorCode,errorId);
     }
 }

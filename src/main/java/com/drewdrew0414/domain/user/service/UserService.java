@@ -59,6 +59,8 @@ public class UserService {
                 // 평문 비밀번호를 절대 그대로 저장하지 않고 BCrypt로 해시해서 저장
                 .build();
 
+        // V17 users AFTER INSERT 트리거가 기본 그룹 MEMBER 가입도 같은 DB 트랜잭션으로 처리합니다.
+        // 그룹 가입에 실패하면 계정 저장과 인증 기록 소비도 함께 롤백되므로 반쪽 계정이 남지 않습니다.
         return userRepository.save(user).getId();
     }
 }

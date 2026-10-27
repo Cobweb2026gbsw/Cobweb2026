@@ -1,0 +1,35 @@
+.OAuthPage {
+  width: 100%;
+  min-height: 100vh;
+
+  background-color: #121414;
+  color: white;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.OAuthPage h1 {
+  margin: 0;
+
+  color: #64e6ca;
+  font-size: 36px;
+}
+
+.OAuthPage p {
+  margin-top: 15px;
+
+  color: #bdbdbd;
+  font-size: 16px;
+}
+
+.OAuthPage.light {
+  background-color: #dbfffd;
+  color: #121414;
+}
+
+.OAuthPage.light p {
+  color: #536260;
+}

@@ -1,60 +1,138 @@
 package com.drewdrew0414.global.exception;
 
 import com.drewdrew0414.global.common.ApiResponse;
+import java.util.Arrays;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.*;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.validation.BindException;
+import org.springframework.web.*;
+import org.springframework.web.bind.*;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/*
- * 애플리케이션 전역에서 발생하는 예외를 한 곳에서 처리하는 클래스입니다.
- * 컨트롤러마다 try-catch를 반복하지 않아도, 여기서 CustomException이나 검증 실패 예외를 잡아서
- * 일관된 형식(ApiResponse)의 에러 응답으로 변환해주는 역할을 합니다.
+/**
+ * API 경계에서 예외 타입을 상태·공개 코드로 변환합니다. 컨트롤러마다 catch를 반복하지 않습니다.
+ * DB/외부 제공자/예상 못 한 실패의 원문·입력·토큰·소스 코드는 응답과 진단 로그에 복사하지 않습니다.
  */
 @RestControllerAdvice
-// 모든 컨트롤러에서 발생하는 예외를 여기 한 곳에서 잡음
 public class GlobalExceptionHandler {
-    // 숫자 경로나 페이지에 문자열을 보낸 경우도 500이 아니라 잘못된 요청입니다.
-    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e) {
-        return ResponseEntity.badRequest().body(ApiResponse.error("요청 매개변수 형식을 확인해주세요."));
+    private static final Logger LOG=LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiResponse<Void>> handleApi(ApiException error) {
+        var type=error.getErrorType();
+        // 5xx reason에는 외부 라이브러리의 원문이 섞일 수 있어 항상 고정 공개 안내를 사용합니다.
+        String message=error.getStatusCode().is5xxServerError()?type.message():error.getReason();
+        return ResponseEntity.status(error.getStatusCode()).body(ApiResponse.error(type.name(),message));
     }
-    // JSON 문법이나 필드 타입이 잘못된 요청은 서버 장애가 아닌 클라이언트 오류입니다.
-    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
-    public ResponseEntity<ApiResponse<Void>> handleUnreadable(org.springframework.http.converter.HttpMessageNotReadableException e) {
-        return ResponseEntity.badRequest().body(ApiResponse.error("요청 JSON 형식을 확인해주세요."));
-    }
-    // 새 API의 400/403/404/409 상태를 일반 500 처리에 흡수하지 않고 그대로 전달합니다.
-    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
-    public ResponseEntity<ApiResponse<Void>> handleStatus(org.springframework.web.server.ResponseStatusException e) {
-        return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.error(
-            e.getReason() == null ? "요청을 처리할 수 없습니다." : e.getReason()));
-    }
-    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleConflict(org.springframework.dao.DataIntegrityViolationException e) {
-        return ResponseEntity.status(409).body(ApiResponse.error("중복되거나 참조 조건에 맞지 않는 데이터입니다."));
-    }
+
     @ExceptionHandler(CustomException.class)
-    // CustomException을 상속한 모든 하위 예외를 다 잡음
-    public ResponseEntity<ApiResponse<Void>> handleCustomException(CustomException e) {
-        return ResponseEntity
-                .status(e.getErrorCode().getStatus())    // 예외가 들고 있는 ErrorCode의 상태코드 그대로 사용
-                .body(ApiResponse.error(e.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleCustomException(CustomException error) {
+        var code=error.getErrorCode();
+        return ResponseEntity.status(code.getStatus()).body(ApiResponse.error(code.name(),code.getMessage()));
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    // @Valid가 붙은 DTO의 검증(예: @NotBlank, @Email)에 실패하면 스프링이 이 예외를 던짐
-    public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult().getFieldErrors().stream()
-                .findFirst()
-                .map(FieldError::getDefaultMessage) // @NotBlank(message = "...") 등에 적어둔 메시지
-                .orElse("Wrong Requestion.");
-        return ResponseEntity.badRequest().body(ApiResponse.error(message));
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Void>> handleStatus(ResponseStatusException error) {
+        var type=ApiException.Type.from(error.getStatusCode());
+        // 일반 라이브러리 reason도 안전한 메시지라고 가정하지 않습니다.
+        return ResponseEntity.status(error.getStatusCode()).body(ApiResponse.error(type.name(),type.message()));
     }
 
-    @ExceptionHandler(Exception.class) // 예상 못 한 예외까지 마지막에 다 받아서 500으로 응답
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        return ResponseEntity.internalServerError().body(ApiResponse.error("Internal Server Error."));
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class,HttpMessageNotReadableException.class,
+        MissingServletRequestParameterException.class,MissingServletRequestPartException.class,
+        MethodArgumentNotValidException.class,BindException.class,jakarta.validation.ConstraintViolationException.class})
+    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception error) {
+        return failure(ApiException.Type.INVALID_REQUEST);
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodValidation(HandlerMethodValidationException error) {
+        // 잘못된 입력은 400, 서버 반환값 검증 실패는 500입니다.
+        return error.getStatusCode().is4xxClientError()?failure(ApiException.Type.INVALID_REQUEST):internal(error);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethod(HttpRequestMethodNotSupportedException error) {
+        var builder=ResponseEntity.status(405);
+        var allowed=error.getSupportedHttpMethods();
+        if(allowed!=null)builder.allow(allowed.toArray(org.springframework.http.HttpMethod[]::new));
+        return builder.body(ApiResponse.error("METHOD_NOT_ALLOWED",ApiException.Type.METHOD_NOT_ALLOWED.message()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaType(HttpMediaTypeNotSupportedException error) {
+        return failure(ApiException.Type.UNSUPPORTED_MEDIA_TYPE);
+    }
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccept(HttpMediaTypeNotAcceptableException error) {
+        return failure(ApiException.Type.NOT_ACCEPTABLE);
+    }
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleSize(MaxUploadSizeExceededException error) {
+        return failure(ApiException.Type.PAYLOAD_TOO_LARGE);
+    }
+    @ExceptionHandler({NoHandlerFoundException.class,NoResourceFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> handleMissingResource(Exception error) {
+        return failure(ApiException.Type.RESOURCE_NOT_FOUND);
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthentication(AuthenticationException error) {
+        return failure(ApiException.Type.AUTHENTICATION_REQUIRED);
+    }
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException error) {
+        return failure(ApiException.Type.PERMISSION_DENIED);
+    }
+
+    @ExceptionHandler({DataIntegrityViolationException.class,ConcurrencyFailureException.class})
+    public ResponseEntity<ApiResponse<Void>> handleConflict(Exception error) {
+        return failure(ApiException.Type.STATE_CONFLICT);
+    }
+    @ExceptionHandler({DataAccessResourceFailureException.class,TransientDataAccessException.class,
+        AsyncRequestTimeoutException.class})
+    public ResponseEntity<ApiResponse<Void>> handleUnavailable(Exception error) {
+        return failure(ApiException.Type.SERVICE_UNAVAILABLE);
+    }
+    @ExceptionHandler(org.springframework.web.client.RestClientException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUpstream(Exception error) {
+        return failure(ApiException.Type.UPSTREAM_ERROR);
+    }
+    @ExceptionHandler(org.springframework.mail.MailException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMail(Exception error) {
+        return failure(ApiException.Type.SERVICE_UNAVAILABLE);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleException(Exception error) {return internal(error);}
+
+    private static ResponseEntity<ApiResponse<Void>> failure(ApiException.Type type) {
+        return ResponseEntity.status(type.status()).body(ApiResponse.error(type.name(),type.message()));
+    }
+    private static ResponseEntity<ApiResponse<Void>> internal(Exception error) {
+        String errorId=UUID.randomUUID().toString();
+        // 원문 메시지/원인/요청 경로에는 자격 증명이 포함될 수 있습니다. 타입과 코드 위치만 기록합니다.
+        String frames=Arrays.stream(error.getStackTrace()).limit(12)
+            .map(frame->frame.getClassName()+"."+frame.getMethodName()+":"+frame.getLineNumber())
+            .collect(Collectors.joining(" <- "));
+        LOG.error("API failure id={} type={} frames={}",errorId,error.getClass().getName(),frames);
+        return ResponseEntity.internalServerError().body(ApiResponse.error("INTERNAL_ERROR",
+            ApiException.Type.INTERNAL_ERROR.message(),errorId));
     }
 }

@@ -90,6 +90,39 @@ class JudgeWorkerLeaseTest {
         verify(submissions,times(3)).heartbeat(claim);
     }
 
+    @Test void anAlreadyInterruptedWorkerDoesNotClaimNewWork() {
+        var submissions=mock(SubmissionService.class);var runner=mock(DockerJudge.class);
+        Thread.currentThread().interrupt();
+        try {
+            new JudgeWorker(submissions,runner,60000).tick();
+            assertTrue(Thread.currentThread().isInterrupted());verifyNoInteractions(submissions,runner);
+        } finally {Thread.interrupted();}
+    }
+
+    @Test void interruptionDuringImageLookupStopsBeforeCacheProblemReadsAndFinish() {
+        var submissions=mock(SubmissionService.class);var runner=mock(DockerJudge.class);
+        var claim=claim();when(submissions.claim()).thenReturn(claim);when(submissions.heartbeat(claim)).thenReturn(true);
+        when(runner.imageIdentity()).thenAnswer(invocation->{Thread.currentThread().interrupt();return null;});
+        try {
+            new JudgeWorker(submissions,runner,60000).tick();
+            assertTrue(Thread.currentThread().isInterrupted());
+            verify(submissions,never()).problem(any());verify(submissions,never()).cases(any());
+            verify(submissions,never()).tryReuse(anyMap(),anyString(),anyString());
+            verify(submissions,never()).finish(anyMap(),anyList());
+        } finally {Thread.interrupted();}
+    }
+
+    @Test void interruptedLeaseDoesNotRenewOrReportItselfCurrent() {
+        var submissions=mock(SubmissionService.class);
+        try(var lease=new JudgeLease(submissions,claim(),60000)) {
+            Thread.currentThread().interrupt();
+            try {
+                assertFalse(lease.renew("shutdown"));assertFalse(lease.current());
+                verifyNoInteractions(submissions);assertTrue(Thread.currentThread().isInterrupted());
+            } finally {Thread.interrupted();}
+        }
+    }
+
     private static Map<String,Object> claim() {
         var claim=new HashMap<String,Object>();
         claim.put("id",1L);

@@ -7,14 +7,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
+import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import java.util.*;
 import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.security.MessageDigest;
 
 /** 제출 접수와 DB 큐를 관리합니다. 사용자 코드는 HTTP 요청 스레드에서 실행하지 않습니다. */
 @Service @RequiredArgsConstructor
 public class SubmissionService {
+    public static final int MAX_SOURCE_BYTES=65536;
+    private static final Set<String> REUSABLE_STATUSES=Set.of("ACCEPTED","WRONG_ANSWER","TIME_LIMIT_EXCEEDED",
+        "MEMORY_LIMIT_EXCEEDED","RUNTIME_ERROR","COMPILATION_ERROR");
     private final JdbcTemplate db;
     private final ProblemService problems;
     private final ContestService contests;
@@ -34,20 +40,20 @@ public class SubmissionService {
     }
     private long accept(Long contestId,int number,String code,Language language,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        if(code==null || code.isBlank() || code.getBytes(StandardCharsets.UTF_8).length>65536 || language==null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"소스 코드는 UTF-8 64KiB 이내여야 합니다.");
+        if(!validSource(code) || language==null)
+            throw new ApiException(HttpStatus.BAD_REQUEST,"소스 코드는 UTF-8 64KiB 이내여야 합니다.");
         // 시험 설정 변경도 시험→문제 순서로 잠급니다. 접수도 먼저 시험을 잠가 교착을 피합니다.
         if(contestId!=null && db.queryForList("SELECT id FROM group_contests WHERE id=? FOR UPDATE",contestId).isEmpty())
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
+            throw new ApiException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
         db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",uid);
         var rows=db.queryForList("SELECT * FROM problems WHERE problem_number=? FOR UPDATE",number);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"문제를 찾을 수 없습니다.");
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND,"문제를 찾을 수 없습니다.");
         Map<String,Object> p;
         if(contestId==null) {
             p=problems.load(number,user);
             // 시험에 쓰이는 문제는 일반 제출 경로로 우회해 풀거나 통계를 올릴 수 없습니다.
             if(db.queryForObject("SELECT COUNT(*) FROM contest_problems WHERE problem_id=?",Long.class,p.get("id"))>0)
-                throw new ResponseStatusException(HttpStatus.CONFLICT,"시험 문제는 해당 시험에서 제출해 주세요.");
+                throw new ApiException(HttpStatus.CONFLICT,"시험 문제는 해당 시험에서 제출해 주세요.");
         } else {
             p=rows.getFirst();
             contests.requireSubmission(contestId,((Number)p.get("id")).longValue(),user);
@@ -55,16 +61,16 @@ public class SubmissionService {
         language.requireMode((String)p.get("execution_mode"));
         if ("FUNCTION".equals(p.get("execution_mode")) && language!=Language.PYTHON &&
             !ProblemService.functionAbiCompatible(p))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"기존 함수형 테스트는 Python 제출만 지원합니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"기존 함수형 테스트는 Python 제출만 지원합니다.");
         if(db.queryForObject("SELECT COUNT(*) FROM problem_languages WHERE problem_id=? AND language=?",Integer.class,
                 p.get("id"),language.name())==0)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제에서 허용하지 않은 언어입니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"문제에서 허용하지 않은 언어입니다.");
         if (contestId==null && !"PUBLISHED".equals(p.get("status")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"공개된 문제만 제출할 수 있습니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"공개된 문제만 제출할 수 있습니다.");
         if (db.queryForObject("SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE",Long.class,p.get("id"))==0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"채점 데이터가 준비되지 않았습니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"채점 데이터가 준비되지 않았습니다.");
         if (db.queryForObject("SELECT COUNT(*) FROM submissions WHERE user_id=? AND status IN ('QUEUED','RUNNING')",Long.class,uid)>=5)
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"진행 중인 제출은 최대 5개입니다.");
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,"진행 중인 제출은 최대 5개입니다.");
         if(contestId==null) db.update("""
             INSERT INTO submissions(user_id,problem_id,language,source_code,contest_id)
             VALUES(?,?,?,?,NULL)
@@ -76,9 +82,10 @@ public class SubmissionService {
                 SELECT ?,?,?,?,id,UTC_TIMESTAMP(6) FROM group_contests
                 WHERE id=? AND starts_at<=UTC_TIMESTAMP(6) AND ends_at>UTC_TIMESTAMP(6)
                 """,uid,p.get("id"),language.name(),code,contestId);
-            if(inserted!=1) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
+            if(inserted!=1) throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
         }
         long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        db.update("UPDATE submissions SET source_sha256=? WHERE id=?",sourceDigest(code),id);
         if(contestId==null) {
             db.update("UPDATE users SET submit_count=submit_count+1 WHERE id=?",uid);
             db.update("UPDATE problems SET submission_count=submission_count+1 WHERE id=?",p.get("id"));
@@ -95,15 +102,16 @@ public class SubmissionService {
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at FROM submissions WHERE id=?",id);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id FROM submissions WHERE id=?",id);
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
         if(result.get("contest_id")!=null) {
             contests.requireSubmissionRead(((Number)result.get("contest_id")).longValue(),
                 ((Number)result.get("user_id")).longValue(),user);
             result.put("sourceCode",db.queryForObject("SELECT source_code FROM submissions WHERE id=?",String.class,id));
         } else if(((Number)result.get("user_id")).longValue()!=uid && !ProblemService.operator(user))
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+                throw new ApiException(HttpStatus.NOT_FOUND);
+        result.put("reusedFromSubmissionId",result.remove("reused_from_submission_id"));
         // 입력과 정답은 반환하지 않습니다. 사용자는 판정과 소요 시간만 확인합니다.
         result.put("cases",db.queryForList("SELECT status,execution_time_ms FROM submission_test_case_results WHERE submission_id=? ORDER BY id",id));
         return result;
@@ -148,10 +156,131 @@ public class SubmissionService {
             """,submission.get("id"),submission.get("judge_token"))==1;
     }
     public Map<String,Object> problem(Object id) {
-        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb FROM problems WHERE id=?",id);
+        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible FROM problems WHERE id=?",id);
     }
     public List<Map<String,Object>> cases(Object pid) {
-        return db.queryForList("SELECT id,input_data,expected_output FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE ORDER BY display_order",pid);
+        return db.queryForList("SELECT id,input_data,expected_output,compare_type,display_order FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE ORDER BY display_order,id",pid);
+    }
+    /** UTF-8 바이트 상한이며 공백/개행/유니코드를 정규화하거나 잘라서 저장하지 않습니다. */
+    static boolean validSource(String code) {
+        return code!=null && !code.isBlank() && StandardCharsets.UTF_8.newEncoder().canEncode(code) &&
+            code.getBytes(StandardCharsets.UTF_8).length<=MAX_SOURCE_BYTES;
+    }
+    static String sourceDigest(String code) {
+        return digest(code.getBytes(StandardCharsets.UTF_8));
+    }
+    private static String digest(byte[] value) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value)); }
+        catch(java.security.NoSuchAlgorithmException error) { throw new IllegalStateException("SHA-256 unavailable",error); }
+    }
+    /** 길이를 붙인 UTF-8 필드로 모호한 연결을 피하고 테스트 원문·순서·ABI·제한도 포함합니다. */
+    static String contextDigest(Map<String,Object> problem,List<Map<String,Object>> tests,String imageId,String engine) {
+        if(imageId==null || !imageId.matches("sha256:[0-9a-f]{64}") || engine==null || !engine.matches("[0-9a-f]{64}"))
+            return null;
+        try {
+            var bytes=new ByteArrayOutputStream();
+            var data=new DataOutputStream(bytes);
+            for(Object value:List.of("COBWEB_JUDGEMENT_V1",imageId,engine,
+                    problem.get("execution_mode"),problem.get("time_limit_ms"),problem.get("memory_limit_mb"),
+                    ProblemService.functionAbiCompatible(problem))) writeField(data,value);
+            data.writeInt(tests.size());
+            for(var test:tests) for(String key:List.of("id","input_data","expected_output","compare_type","display_order"))
+                writeField(data,test.get(key));
+            data.flush();
+            return digest(bytes.toByteArray());
+        } catch(java.io.IOException | IllegalArgumentException | NullPointerException ignored) {
+            // 선택적 캐시의 불완전 메타데이터만 miss로 처리합니다. 해시 엔진/프로그래밍 장애는
+            // 숨기지 않고 워커의 SYSTEM_ERROR 경계로 전파합니다.
+            return null;
+        }
+    }
+    private static void writeField(DataOutputStream output,Object value) throws java.io.IOException {
+        if(value==null) { output.writeInt(-1);return; }
+        byte[] bytes=value.toString().getBytes(StandardCharsets.UTF_8);
+        output.writeInt(bytes.length);output.write(bytes);
+    }
+    /**
+     * 새 제출/lease/통계 기록은 유지하고 본인의 완전히 같은 판정만 복제합니다.
+     * 이미지/판정기/현재 테스트를 증명할 수 없거나 원본 접근 권한이 없으면 캐시 miss입니다.
+     */
+    @Transactional
+    public boolean tryReuse(Map<String,Object> claim,String imageId,String engine) {
+        if(imageId==null || engine==null) return false;
+        // 시험→사용자→문제→제출 순서를 접수와 일치시킵니다.
+        if(claim.get("contest_id")!=null && db.queryForList(
+                "SELECT id FROM group_contests WHERE id=? FOR UPDATE",claim.get("contest_id")).isEmpty()) return false;
+        var users=db.queryForList("SELECT id,status FROM users WHERE id=? FOR UPDATE",claim.get("user_id"));
+        if(users.isEmpty() || !"ACTIVE".equals(users.getFirst().get("status"))) return false;
+        db.queryForList("SELECT id FROM problems WHERE id=? FOR UPDATE",claim.get("problem_id"));
+        var rows=db.queryForList("SELECT * FROM submissions WHERE id=? FOR UPDATE",claim.get("id"));
+        if(rows.isEmpty()) return false;
+        var current=rows.getFirst();
+        if(!"RUNNING".equals(current.get("status")) || !Objects.equals(claim.get("judge_token"),current.get("judge_token")) ||
+            !sameId(claim.get("user_id"),current.get("user_id")) || !sameId(claim.get("problem_id"),current.get("problem_id")) ||
+            !sameId(claim.get("contest_id"),current.get("contest_id"))) return false;
+        if(!cacheReadAllowed(current)) return false;
+        var tests=cases(current.get("problem_id"));
+        if(tests.isEmpty()) return false;
+        String context=contextDigest(problem(current.get("problem_id")),tests,imageId,engine);
+        if(context==null) return false;
+        String code=(String)current.get("source_code");
+        var candidates=db.queryForList("""
+            SELECT id,source_code,status,score,execution_time_ms FROM submissions
+            WHERE user_id=? AND problem_id=? AND language=? AND contest_id <=> ?
+              AND id<? AND source_sha256=? AND judge_context_sha256=?
+              AND status IN ('ACCEPTED','WRONG_ANSWER','TIME_LIMIT_EXCEEDED','MEMORY_LIMIT_EXCEEDED','RUNTIME_ERROR','COMPILATION_ERROR')
+              AND CAST(source_code AS BINARY)=CAST(? AS BINARY)
+            ORDER BY id DESC LIMIT 20
+            """,current.get("user_id"),current.get("problem_id"),current.get("language"),current.get("contest_id"),
+            current.get("id"),sourceDigest(code),context,code);
+        for(var original:candidates) {
+            String originalCode=(String)original.get("source_code");
+            // 해시/DB collation과 별도로 문자 원문과 실제 UTF-8 바이트를 모두 최종 비교합니다.
+            if(!code.equals(originalCode) || !Arrays.equals(code.getBytes(StandardCharsets.UTF_8),originalCode.getBytes(StandardCharsets.UTF_8))) continue;
+            var stored=db.queryForList("SELECT test_case_id,status,execution_time_ms FROM submission_test_case_results WHERE submission_id=? ORDER BY id",original.get("id"));
+            var results=reusableResults(original,stored,tests);
+            if(results==null) continue;
+            // DB 트랜잭션이 롤백돼도 worker의 원래 claim 맵에는 재사용 표시가 남지 않습니다.
+            var reusedClaim=new HashMap<>(claim);
+            reusedClaim.put("judge_image_id",imageId);reusedClaim.put("judge_engine",engine);reusedClaim.put("judge_context",context);
+            reusedClaim.put("reused_from_submission_id",original.get("id"));
+            finish(reusedClaim,results);
+            return true;
+        }
+        return false;
+    }
+    private static boolean sameId(Object first,Object second) {
+        return first==null?second==null:second instanceof Number number && first instanceof Number value && value.longValue()==number.longValue();
+    }
+    private boolean cacheReadAllowed(Map<String,Object> submission) {
+        // 일반 detail은 본인 기록을 볼 수 있습니다. 후보 SQL도 반드시 동일 user_id만 검색합니다.
+        if(submission.get("contest_id")==null) return true;
+        // 종료/멤버십 상실/권한 변경 시 재사용하지 않습니다. 그 뒤의 원래 격리 채점은 계속합니다.
+        return db.queryForObject("""
+            SELECT COUNT(*) FROM group_contests c
+            JOIN group_members gm ON gm.group_id=c.group_id AND gm.user_id=?
+            JOIN group_roles gr ON gr.group_id=gm.group_id AND gr.id=gm.role_id
+            JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=?
+            WHERE c.id=? AND gr.can_take_contests=TRUE
+              AND c.starts_at<=UTC_TIMESTAMP(6) AND c.ends_at>UTC_TIMESTAMP(6)
+            """,Long.class,submission.get("user_id"),submission.get("problem_id"),submission.get("contest_id"))>0;
+    }
+    static List<JudgeResult> reusableResults(Map<String,Object> original,List<Map<String,Object>> rows,List<Map<String,Object>> tests) {
+        String status=(String)original.get("status");
+        if(!REUSABLE_STATUSES.contains(status) || rows.isEmpty()) return null;
+        boolean compilation="COMPILATION_ERROR".equals(status);
+        if(compilation ? rows.size()!=1 || rows.getFirst().get("test_case_id")!=null : rows.size()!=tests.size()) return null;
+        var results=new ArrayList<JudgeResult>();
+        for(int i=0;i<rows.size();i++) {
+            var row=rows.get(i);String result=(String)row.get("status");
+            if(!REUSABLE_STATUSES.contains(result) || !(row.get("execution_time_ms") instanceof Number elapsed) || elapsed.intValue()<0 ||
+                (compilation?!"COMPILATION_ERROR".equals(result):!sameId(row.get("test_case_id"),tests.get(i).get("id")))) return null;
+            results.add(new JudgeResult(row.get("test_case_id")==null?null:((Number)row.get("test_case_id")).longValue(),result,elapsed.intValue()));
+        }
+        String combined=results.stream().map(JudgeResult::status).filter(value->!"ACCEPTED".equals(value)).findFirst().orElse("ACCEPTED");
+        if(!status.equals(combined) || !(original.get("score") instanceof Number score) || score.intValue()!=("ACCEPTED".equals(status)?100:0) ||
+            !(original.get("execution_time_ms") instanceof Number elapsed) || elapsed.intValue()!=results.stream().mapToInt(JudgeResult::elapsedMs).max().orElse(0)) return null;
+        return List.copyOf(results);
     }
     @Transactional
     public void finish(Map<String,Object> s,List<JudgeResult> results) {
@@ -168,6 +297,14 @@ public class SubmissionService {
             s.get("id"),r.caseId(),r.status(),r.elapsedMs());
         db.update("UPDATE submissions SET status=?,score=?,execution_time_ms=?,judged_at=IF(contest_id IS NULL,CURRENT_TIMESTAMP(6),UTC_TIMESTAMP(6)),judge_heartbeat_at=NULL,judge_token=NULL WHERE id=?",
             status,"ACCEPTED".equals(status)?100:0,elapsed,s.get("id"));
+        String context=null;
+        if(REUSABLE_STATUSES.contains(status) && s.get("judge_context") instanceof String expected) {
+            String actual=contextDigest(problem(s.get("problem_id")),cases(s.get("problem_id")),
+                (String)s.get("judge_image_id"),(String)s.get("judge_engine"));
+            if(expected.equals(actual)) context=actual;
+        }
+        db.update("UPDATE submissions SET judge_context_sha256=?,reused_from_submission_id=? WHERE id=?",
+            context,context==null?null:s.get("reused_from_submission_id"),s.get("id"));
         // DB의 현재 contest_id를 사용합니다. 워커가 넘긴 맵으로 일반 풀이 통계를 오염시키지 않습니다.
         if("ACCEPTED".equals(status) && current.getFirst().get("contest_id")==null) {
             db.update("UPDATE problems SET accepted_count=accepted_count+1 WHERE id=?",s.get("problem_id"));

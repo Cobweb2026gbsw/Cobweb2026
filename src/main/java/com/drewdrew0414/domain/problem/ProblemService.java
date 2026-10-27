@@ -10,7 +10,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
+import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -34,18 +34,18 @@ public class ProblemService {
             .anyMatch(a -> Set.of("ROLE_OPERATOR","ROLE_DEVELOPER").contains(a.getAuthority()));
     }
     public static long requireUser(CustomUserDetails user) {
-        if (user == null || !user.isEnabled()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        if (user == null || !user.isEnabled()) throw new ApiException(HttpStatus.UNAUTHORIZED);
         return user.getUserId();
     }
     public static void requireOperator(CustomUserDetails user) {
         requireUser(user);
-        if (!operator(user)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (!operator(user)) throw new ApiException(HttpStatus.FORBIDDEN);
     }
     /** 상태 이력의 checker_id FK와 제출 접수의 사용자→문제 잠금 순서를 일치시킵니다. */
     private long lockUser(CustomUserDetails user) {
         long uid=requireUser(user);
         if(db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",uid).isEmpty())
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            throw new ApiException(HttpStatus.UNAUTHORIZED);
         return uid;
     }
     public static boolean functionAbiCompatible(Map<String,Object> problem) {
@@ -53,24 +53,95 @@ public class ProblemService {
         return value instanceof Boolean b ? b : value instanceof Number n && n.intValue()!=0;
     }
     public List<Map<String,Object>> list(int page, String search) {
-        return db.queryForList("""
-            SELECT problem_number, problem_title, rank_type, rank_int, submission_count, accepted_count
-            FROM problems WHERE status='PUBLISHED' AND visibility='PUBLIC' AND group_id IS NULL
-            AND problem_title LIKE ? ORDER BY problem_number LIMIT 30 OFFSET ?
-            """, "%" + Objects.toString(search,"") + "%", offset(page));
+        return list(page,search,null);
+    }
+    public List<Map<String,Object>> list(int page,String search,CustomUserDetails user) {
+        return list(page,search,null,"all",user);
+    }
+    public List<Map<String,Object>> list(int page,String search,List<String> difficulty,String solved,
+                                         CustomUserDetails user) {
+        Long uid=user!=null && user.isEnabled()?user.getUserId():null;
+        var filters=listingFilters(difficulty,solved,uid!=null);
+        // 전체 정답 수가 아니라 요청한 계정의 최초 해결 원장만 확인합니다.
+        // 원장의 (user_id,problem_id) PK로 단일 JOIN하므로 목록 행 중복이나 문제별 추가 조회가 없습니다.
+        var sql=new StringBuilder("""
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.submission_count,p.accepted_count,
+                   (s.problem_id IS NOT NULL) AS solved
+            FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id
+            WHERE p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
+            AND p.problem_title LIKE ?
+            """);
+        List<Object> parameters=new ArrayList<>();
+        parameters.add(uid);parameters.add("%"+Objects.toString(search,"")+"%");
+        appendListingFilters(sql,parameters,filters);
+        sql.append(" ORDER BY p.problem_number LIMIT 30 OFFSET ?");parameters.add(offset(page));
+        var rows=db.queryForList(sql.toString(),parameters.toArray());
+        return solvedRows(rows,uid!=null);
     }
     public Map<String,Object> permissions(CustomUserDetails user) {
         requireUser(user);
         return Map.of("canCreate",true,"canManage",operator(user));
     }
     public List<Map<String,Object>> mine(int page,String search,CustomUserDetails user) {
+        return mine(page,search,null,"all",user);
+    }
+    public List<Map<String,Object>> mine(int page,String search,List<String> difficulty,String solved,
+                                         CustomUserDetails user) {
         long uid=requireUser(user);
-        return db.queryForList("""
-            SELECT problem_number,problem_title,rank_type,rank_int,status,visibility,execution_mode,
-                   submission_count,accepted_count,updated_at
-            FROM problems WHERE author_id=? AND problem_title LIKE ?
-            ORDER BY updated_at DESC,id DESC LIMIT 30 OFFSET ?
-            """,uid,"%"+Objects.toString(search,"")+"%",offset(page));
+        var filters=listingFilters(difficulty,solved,true);
+        var sql=new StringBuilder("""
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.status,p.visibility,p.execution_mode,
+                   p.submission_count,p.accepted_count,p.updated_at,(s.problem_id IS NOT NULL) AS solved
+            FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id
+            WHERE p.author_id=? AND p.problem_title LIKE ?
+            """);
+        List<Object> parameters=new ArrayList<>(List.of(uid,uid,"%"+Objects.toString(search,"")+"%"));
+        appendListingFilters(sql,parameters,filters);
+        sql.append(" ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET ?");parameters.add(offset(page));
+        var rows=db.queryForList(sql.toString(),parameters.toArray());
+        return solvedRows(rows,true);
+    }
+    private record ListingFilters(List<String> difficulties,String solved) {}
+    private static ListingFilters listingFilters(List<String> difficulty,String solved,boolean authenticated) {
+        var selected=difficulty==null?List.<String>of():difficulty;
+        if(selected.size()>35)
+            throw new ApiException(HttpStatus.BAD_REQUEST,"난이도는 최대 35개까지 선택할 수 있습니다.");
+        for(String value:selected) {
+            if(value==null || !value.matches("(?:INITIATE|SKILLED|ELITE|EXPERT|LEGEND|MYTHIC|ABSOLUTE):[1-5]"))
+                throw new ApiException(HttpStatus.BAD_REQUEST,"난이도는 ELITE:1과 같은 등급:랭크 형식이어야 합니다.");
+        }
+        String status=Objects.toString(solved,"all");
+        if(!Set.of("all","solved","unsolved").contains(status))
+            throw new ApiException(HttpStatus.BAD_REQUEST,"해결 여부 필터를 확인해주세요.");
+        if(!status.equals("all") && !authenticated)
+            throw new ApiException(HttpStatus.UNAUTHORIZED,"해결 여부로 검색하려면 로그인해주세요.");
+        return new ListingFilters(List.copyOf(new LinkedHashSet<>(selected)),status);
+    }
+    /** 등급 집합과 랭크 집합의 곱이 아니라 선택한 정확한 등급:랭크 쌍들을 OR로 묶습니다. */
+    private static void appendListingFilters(StringBuilder sql,List<Object> parameters,ListingFilters filters) {
+        if(!filters.difficulties().isEmpty()) {
+            sql.append(" AND (");
+            for(int index=0;index<filters.difficulties().size();index++) {
+                if(index>0)sql.append(" OR ");
+                sql.append("(p.rank_type=? AND p.rank_int=?)");
+                String value=filters.difficulties().get(index);
+                int separator=value.indexOf(':');
+                parameters.add(value.substring(0,separator));parameters.add(Integer.parseInt(value.substring(separator+1)));
+            }
+            sql.append(')');
+        }
+        if(filters.solved().equals("solved"))sql.append(" AND s.problem_id IS NOT NULL");
+        else if(filters.solved().equals("unsolved"))sql.append(" AND s.problem_id IS NULL");
+    }
+    /** JDBC가 SQL 조건식을 0/1로 반환해도 API 계약은 항상 JSON boolean으로 고정합니다. */
+    private static List<Map<String,Object>> solvedRows(List<Map<String,Object>> rows,boolean authenticated) {
+        return rows.stream().map(row->{
+            Map<String,Object> result=new LinkedHashMap<>(row);
+            Object solved=row.get("solved");
+            result.put("solved",authenticated &&
+                (Boolean.TRUE.equals(solved) || solved instanceof Number value && value.intValue()!=0));
+            return result;
+        }).toList();
     }
     public List<Map<String,Object>> adminList(int page,String search,String status,String visibility,
                                                CustomUserDetails user) {
@@ -88,7 +159,7 @@ public class ProblemService {
     }
     public Map<String,Object> load(int number, CustomUserDetails user) {
         var rows = db.queryForList("SELECT * FROM problems WHERE problem_number=?", number);
-        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if (rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var p = rows.getFirst();
         boolean owner = user != null && user.isEnabled() &&
             Objects.equals(((Number)p.get("author_id")).longValue(), user.getUserId());
@@ -103,7 +174,7 @@ public class ProblemService {
         }
         if (!operator(user) && !owner && !groupManager &&
             !(published && ((p.get("group_id")==null && "PUBLIC".equals(p.get("visibility"))) || groupViewer)))
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            throw new ApiException(HttpStatus.NOT_FOUND);
         contests.requireQuestionRead(((Number)p.get("id")).longValue(),user);
         return p;
     }
@@ -120,12 +191,20 @@ public class ProblemService {
         if ("FUNCTION".equals(p.get("execution_mode")) && !functionAbiCompatible(p))
             languages=languages.stream().filter("PYTHON"::equals).toList();
         result.put("languages",languages);
+        // 함수 시작 코드 생성용 공개 규격 이름만 전달합니다. 레거시 문제를 체인 레이저로 추정하지 않습니다.
+        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && functionAbiCompatible(p)
+            ? "CHAIN_LASER_V1" : null);
+        // 시작 코드는 명시적으로 공개 등록된 행만 읽습니다. 정답 테이블은 조회하지 않습니다.
+        var allowedLanguages=languages;
+        result.put("starterCodes",starterCodes(p.get("id")).stream()
+            .filter(code->allowedLanguages.contains(code.get("language"))).toList());
         result.put("tags",db.queryForList("""
             SELECT t.name FROM problem_tags pt JOIN tags t ON t.id=pt.tag_id
             WHERE pt.problem_id=? ORDER BY t.name
             """,String.class,p.get("id")));
         result.put("sourceName",p.get("source_name"));
         result.put("sourceUrl",p.get("source_url"));
+        ProblemAuthorProjection.put(result,p,db);
         return result;
     }
     public Map<String,Object> edit(int number,CustomUserDetails user) {
@@ -134,12 +213,12 @@ public class ProblemService {
         if(!operator(user)) {
             boolean owner=((Number)p.get("author_id")).longValue()==uid;
             if(p.get("group_id")==null) {
-                if(!owner) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                if(!owner) throw new ApiException(HttpStatus.FORBIDDEN);
             } else {
                 long gid=((Number)p.get("group_id")).longValue();
                 if(!groupAllows(gid,user,GroupPermission.EDIT_PROBLEMS,GroupPermission.REVIEW_PROBLEMS) &&
                    !(owner && groupAllows(gid,user,GroupPermission.CREATE_PROBLEMS)))
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                    throw new ApiException(HttpStatus.FORBIDDEN);
             }
         }
         Map<String,Object> result=new LinkedHashMap<>();
@@ -148,6 +227,7 @@ public class ProblemService {
         result.put("visibility",p.get("requested_visibility"));
         result.put("currentVisibility",p.get("visibility"));
         result.put("groupId",p.get("group_id"));
+        result.put("authorPublic",ProblemAuthorProjection.isPublic(p.get("author_public")));
         boolean usedInContest=usedInContest(((Number)p.get("id")).longValue());
         result.put("usedInContest",usedInContest);
         result.put("canEdit",!usedInContest && canEdit(p,user));
@@ -161,6 +241,9 @@ public class ProblemService {
         result.put("timeLimitMs",p.get("time_limit_ms"));
         result.put("memoryLimitMb",p.get("memory_limit_mb"));
         result.put("executionMode",p.get("execution_mode"));
+        // 편집 화면도 동일한 공개 규격 이름으로 안전한 기본 시작 코드를 생성합니다.
+        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && functionAbiCompatible(p)
+            ? "CHAIN_LASER_V1" : null);
         result.put("sourceName",p.get("source_name"));
         result.put("sourceUrl",p.get("source_url"));
         result.put("examples",db.queryForList("""
@@ -181,7 +264,14 @@ public class ProblemService {
             SELECT language,file_name AS fileName,source_code AS sourceCode
             FROM reference_solutions WHERE problem_id=? ORDER BY language
             """,p.get("id")));
+        result.put("starterCodes",starterCodes(p.get("id")));
         return result;
+    }
+    private List<Map<String,Object>> starterCodes(Object problemId) {
+        return db.queryForList("""
+            SELECT language,source_code AS sourceCode FROM problem_starter_codes
+            WHERE problem_id=? ORDER BY language
+            """,problemId);
     }
     public Map<String,Object> adminDetail(int number,CustomUserDetails user) {
         requireOperator(user);
@@ -204,16 +294,16 @@ public class ProblemService {
             db.update("""
                 INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,
                   constraints_text,rank_type,rank_int,time_limit_ms,memory_limit_mb,execution_mode,
-                  author_id,group_id,status,visibility,requested_visibility,function_abi_compatible,source_name,source_url)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?)
+                  author_id,group_id,status,visibility,requested_visibility,function_abi_compatible,source_name,source_url,author_public)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?)
                 """,number,prepared.title(),request.description(),request.inputDescription(),request.outputDescription(),
                     request.constraints(),request.rankType(),request.rankInt(),request.timeLimitMs(),
                     request.memoryLimitMb(),request.executionMode(),uid,prepared.groupId(),
                     prepared.groupId()==null?"PRIVATE":"GROUP",prepared.requestedVisibility(),
                     "FUNCTION".equals(request.executionMode()),
-                    prepared.sourceName(),prepared.sourceUrl());
+                    prepared.sourceName(),prepared.sourceUrl(),Boolean.TRUE.equals(request.authorPublic()));
         } catch(DuplicateKeyException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목 또는 번호입니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목 또는 번호입니다.");
         }
         long problemId=db.queryForObject("SELECT id FROM problems WHERE problem_number=?",Long.class,number);
         // 새 문제는 아직 자식 행이 없으므로 UPDATE와 세 번의 DELETE 없이 바로 저장합니다.
@@ -229,49 +319,57 @@ public class ProblemService {
         boolean admin=operator(user);
         Long groupId=p.get("group_id")==null?null:((Number)p.get("group_id")).longValue();
         if(r!=null && r.groupId()!=null && !r.groupId().equals(groupId))
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"문제의 소속 그룹은 변경할 수 없습니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"문제의 소속 그룹은 변경할 수 없습니다.");
         if(!admin) {
             if(groupId!=null) {
                 boolean owner=((Number)p.get("author_id")).longValue()==user.getUserId();
                 if(!groupAllows(groupId,user,GroupPermission.EDIT_PROBLEMS) &&
                    !(owner && groupAllows(groupId,user,GroupPermission.CREATE_PROBLEMS)))
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                    throw new ApiException(HttpStatus.FORBIDDEN);
             }
             else if(((Number)p.get("author_id")).longValue()!=user.getUserId())
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                throw new ApiException(HttpStatus.FORBIDDEN);
         }
         if (admin) {
             if(groupId!=null ? !Set.of("DRAFT","REJECTED","ARCHIVED").contains(p.get("status"))
                              : !"PRIVATE".equals(p.get("visibility")))
-                throw new ResponseStatusException(HttpStatus.CONFLICT,"공개 중인 문제는 수정할 수 없습니다.");
+                throw new ApiException(HttpStatus.CONFLICT,"공개 중인 문제는 수정할 수 없습니다.");
         } else if (!Set.of("DRAFT","REJECTED").contains(p.get("status")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"초안 또는 반려된 문제만 수정할 수 있습니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"초안 또는 반려된 문제만 수정할 수 있습니다.");
         if(db.queryForObject("""
             SELECT COUNT(*) FROM submissions WHERE problem_id=? AND status IN ('QUEUED','RUNNING')
             """,Long.class,p.get("id"))>0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"진행 중인 제출이 있어 수정할 수 없습니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"진행 중인 제출이 있어 수정할 수 없습니다.");
         if(usedInContest(((Number)p.get("id")).longValue()))
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"시험에 사용된 문제는 복제하여 수정해주세요.");
+            throw new ApiException(HttpStatus.CONFLICT,"시험에 사용된 문제는 복제하여 수정해주세요.");
         var prepared=prepareWrite(r,groupId,(String)p.get("requested_visibility"));
         titleAvailable(prepared.title(),groupId,((Number)p.get("id")).longValue());
         if(prepared.references()==null) {
             var oldLanguages=db.queryForList("SELECT language FROM reference_solutions WHERE problem_id=?",
                 String.class,p.get("id"));
             if(!prepared.languages().containsAll(oldLanguages))
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"기존 참고 정답 언어가 새 허용 목록과 다릅니다.");
+                throw new ApiException(HttpStatus.BAD_REQUEST,"기존 참고 정답 언어가 새 허용 목록과 다릅니다.");
+        }
+        // 구형 클라이언트가 필드를 생략하면 보존하되, 잘못된 언어로 남는 템플릿은 조용히 삭제하지 않습니다.
+        if(prepared.starters()==null) {
+            var oldLanguages=db.queryForList("SELECT language FROM problem_starter_codes WHERE problem_id=?",
+                String.class,p.get("id"));
+            if(!prepared.languages().containsAll(oldLanguages))
+                throw new ApiException(HttpStatus.BAD_REQUEST,"기존 시작 코드 언어가 새 허용 목록과 다릅니다. 시작 코드도 함께 수정해주세요.");
         }
         try {
             db.update("""
                 UPDATE problems SET problem_title=?,description=?,input_description=?,output_description=?,
                  constraints_text=?,rank_type=?,rank_int=?,time_limit_ms=?,memory_limit_mb=?,execution_mode=?,
-                 function_abi_compatible=?,source_name=?,source_url=?,requested_visibility=?
+                 function_abi_compatible=?,source_name=?,source_url=?,requested_visibility=?,
+                 author_public=COALESCE(?,author_public)
                 WHERE id=?
                 """,prepared.title(),r.description(),r.inputDescription(),r.outputDescription(),r.constraints(),
                     r.rankType(),r.rankInt(),r.timeLimitMs(),r.memoryLimitMb(),r.executionMode(),
                     "FUNCTION".equals(r.executionMode()),prepared.sourceName(),prepared.sourceUrl(),
-                    prepared.requestedVisibility(),p.get("id"));
+                    prepared.requestedVisibility(),r.authorPublic(),p.get("id"));
         } catch(DuplicateKeyException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
         }
         db.update("DELETE FROM problem_examples WHERE problem_id=?",p.get("id"));
         db.update("DELETE FROM problem_test_cases WHERE problem_id=?",p.get("id"));
@@ -279,6 +377,8 @@ public class ProblemService {
         db.update("DELETE FROM problem_tags WHERE problem_id=?",p.get("id"));
         if(prepared.references()!=null)
             db.update("DELETE FROM reference_solutions WHERE problem_id=?",p.get("id"));
+        if(prepared.starters()!=null)
+            db.update("DELETE FROM problem_starter_codes WHERE problem_id=?",p.get("id"));
         saveContent(((Number)p.get("id")).longValue(),r,prepared);
     }
     private void validateFunctionTests(ProblemRequests.Write request) {
@@ -307,8 +407,8 @@ public class ProblemService {
                 throw invalidFunctionTest(index);
         }
     }
-    private static ResponseStatusException invalidFunctionTest(int index) {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST,
+    private static ApiException invalidFunctionTest(int index) {
+        return new ApiException(HttpStatus.BAD_REQUEST,
             "FUNCTION 테스트 "+index+"번은 15×15 이진 matrix, 유효한 target 좌표, true/false 정답이 필요합니다.");
     }
     private void saveContent(long problemId, ProblemRequests.Write r,PreparedWrite prepared) {
@@ -332,45 +432,49 @@ public class ProblemService {
             db.update("""
                 INSERT INTO reference_solutions(problem_id,language,file_name,source_code) VALUES(?,?,?,?)
                 """,problemId,ref.language(),ref.fileName(),ref.sourceCode());
+        if(prepared.starters()!=null) for(var starter:prepared.starters())
+            db.update("INSERT INTO problem_starter_codes(problem_id,language,source_code) VALUES(?,?,?)",
+                problemId,starter.language(),starter.sourceCode());
     }
     private PreparedWrite prepareWrite(ProblemRequests.Write r,Long groupId,String priorVisibility) {
         if(r==null || r.title()==null || r.examples()==null || r.tests()==null || r.executionMode()==null ||
            !Set.of("STDIN","FUNCTION","SQL").contains(r.executionMode()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제 입력을 확인해주세요.");
-        try {
-            if(json.writeValueAsBytes(r).length>2*1024*1024)
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제 입력은 UTF-8 2MiB 이하여야 합니다.");
-        } catch(ResponseStatusException e) { throw e; }
-          catch(Exception e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제 입력을 확인해주세요."); }
-        if(groupId!=null && groupId<=0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"그룹을 확인해주세요.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"문제 입력을 확인해주세요.");
+        // 크기 위반은 요청 오류지만 직렬화 엔진의 예기치 않은 실패를 400으로 숨기지 않습니다.
+        // 그 실패는 공통 API 경계에서 진단 ID가 있는 안전한 500 응답으로 변환합니다.
+        if(json.writeValueAsBytes(r).length>2*1024*1024)
+            throw new ApiException(HttpStatus.BAD_REQUEST,"문제 입력은 UTF-8 2MiB 이하여야 합니다.");
+        if(groupId!=null && groupId<=0) throw new ApiException(HttpStatus.BAD_REQUEST,"그룹을 확인해주세요.");
         String requestedVisibility=r.visibility()!=null?r.visibility()
             : priorVisibility!=null?priorVisibility:groupId==null?"PUBLIC":"GROUP";
         if(groupId==null ? !Set.of("PUBLIC","PRIVATE").contains(requestedVisibility)
                          : !"GROUP".equals(requestedVisibility))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"문제 공개 범위와 그룹을 확인해주세요.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"문제 공개 범위와 그룹을 확인해주세요.");
         String title=normalizeSpace(r.title());
         if(title.isEmpty() || title.length()>200)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"제목은 1~200자여야 합니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"제목은 1~200자여야 합니다.");
         List<String> requested=r.languages()==null?Language.forMode(r.executionMode()):r.languages();
-        if(requested.size()>13) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"언어는 최대 13개입니다.");
+        int languageLimit=Language.values().length;
+        if(requested.size()>languageLimit)
+            throw new ApiException(HttpStatus.BAD_REQUEST,"언어는 최대 "+languageLimit+"개입니다.");
         Set<String> languageSet=new LinkedHashSet<>();
         for(String name:requested) {
-            if(name==null || name.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"언어를 확인해주세요.");
+            if(name==null || name.isBlank()) throw new ApiException(HttpStatus.BAD_REQUEST,"언어를 확인해주세요.");
             Language parsed=Language.parse(name);
             parsed.requireMode(r.executionMode());
             if(!languageSet.add(parsed.name()))
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"중복 언어입니다.");
+                throw new ApiException(HttpStatus.BAD_REQUEST,"중복 언어입니다.");
         }
         List<String> languages=List.copyOf(languageSet);
         List<String> tags=new ArrayList<>();
         if(r.tags()!=null) {
-            if(r.tags().size()>10) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"태그는 최대 10개입니다.");
+            if(r.tags().size()>10) throw new ApiException(HttpStatus.BAD_REQUEST,"태그는 최대 10개입니다.");
             Set<String> seen=new HashSet<>();
             for(String raw:r.tags()) {
-                if(raw==null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"태그를 확인해주세요.");
+                if(raw==null) throw new ApiException(HttpStatus.BAD_REQUEST,"태그를 확인해주세요.");
                 String tag=normalizeSpace(raw);
                 if(tag.isEmpty() || tag.length()>50 || !seen.add(tag))
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"태그 길이 또는 중복을 확인해주세요.");
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"태그 길이 또는 중복을 확인해주세요.");
                 tags.add(tag);
             }
         }
@@ -382,40 +486,57 @@ public class ProblemService {
                 if(uri.getScheme()==null || !Set.of("http","https").contains(uri.getScheme()) || uri.getHost()==null ||
                    uri.getUserInfo()!=null) throw new IllegalArgumentException();
             } catch(IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"출처 URL은 HTTP 또는 HTTPS여야 합니다.");
+                throw new ApiException(HttpStatus.BAD_REQUEST,"출처 URL은 HTTP 또는 HTTPS여야 합니다.");
             }
         }
         List<ProblemRequests.ReferenceSolution> references=null;
         if(r.referenceSolutions()!=null) {
-            if(r.referenceSolutions().size()>13)
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"참고 정답은 최대 13개입니다.");
+            if(r.referenceSolutions().size()>languageLimit)
+                throw new ApiException(HttpStatus.BAD_REQUEST,"참고 정답은 최대 "+languageLimit+"개입니다.");
             references=new ArrayList<>();
             Set<String> seen=new HashSet<>();
             for(var ref:r.referenceSolutions()) {
                 if(ref==null || ref.language()==null || ref.fileName()==null || ref.sourceCode()==null ||
                    ref.sourceCode().isBlank())
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"참고 정답을 확인해주세요.");
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"참고 정답을 확인해주세요.");
                 String language=ref.language();
                 if(!languages.contains(language) || !seen.add(language))
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"참고 정답 언어가 허용 목록과 다르거나 중복됩니다.");
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"참고 정답 언어가 허용 목록과 다르거나 중복됩니다.");
                 String fileName=ref.fileName().strip();
                 if(fileName.isEmpty() || fileName.length()>120 || fileName.indexOf('/')>=0 ||
                    fileName.indexOf('\\')>=0 || fileName.codePoints().anyMatch(Character::isISOControl))
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"참고 정답 파일명을 확인해주세요.");
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"참고 정답 파일명을 확인해주세요.");
                 if(ref.sourceCode().getBytes(StandardCharsets.UTF_8).length>65536)
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"참고 정답은 UTF-8 64KiB 이하여야 합니다.");
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"참고 정답은 UTF-8 64KiB 이하여야 합니다.");
                 references.add(new ProblemRequests.ReferenceSolution(language,fileName,ref.sourceCode()));
+            }
+        }
+        List<ProblemRequests.StarterCode> starters=null;
+        if(r.starterCodes()!=null) {
+            if(r.starterCodes().size()>languageLimit)
+                throw new ApiException(HttpStatus.BAD_REQUEST,"시작 코드는 최대 "+languageLimit+"개입니다.");
+            starters=new ArrayList<>();
+            Set<String> seen=new HashSet<>();
+            for(var starter:r.starterCodes()) {
+                if(starter==null || starter.language()==null || starter.sourceCode()==null || starter.sourceCode().isBlank())
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"시작 코드를 확인해주세요.");
+                String language=starter.language();
+                if(!languages.contains(language) || !seen.add(language))
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"시작 코드 언어가 허용 목록과 다르거나 중복됩니다.");
+                if(starter.sourceCode().getBytes(StandardCharsets.UTF_8).length>65536)
+                    throw new ApiException(HttpStatus.BAD_REQUEST,"시작 코드는 UTF-8 64KiB 이하여야 합니다.");
+                starters.add(new ProblemRequests.StarterCode(language,starter.sourceCode()));
             }
         }
         validateFunctionTests(r);
         return new PreparedWrite(title,languages,List.copyOf(tags),sourceName,sourceUrl,references,
-            groupId,requestedVisibility);
+            starters==null?null:List.copyOf(starters),groupId,requestedVisibility);
     }
     private static String normalizeSpace(String text) { return text.strip().replaceAll("(?U)\\s+"," "); }
     private static String optionalText(String value,int maximum) {
         if(value==null || value.isBlank()) return null;
         String normalized=value.strip();
-        if(normalized.length()>maximum) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"입력 길이를 확인해주세요.");
+        if(normalized.length()>maximum) throw new ApiException(HttpStatus.BAD_REQUEST,"입력 길이를 확인해주세요.");
         return normalized;
     }
     private void titleAvailable(String title,Long groupId,Long excludeId) {
@@ -425,11 +546,11 @@ public class ProblemService {
             : db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=? AND problem_title=? AND id<>?",Long.class,
                 scope,title,excludeId);
         if(count!=null && count>0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
     }
     private static String filter(String value,Set<String> allowed) {
         if(value==null || value.isBlank()) return "";
-        if(!allowed.contains(value)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"필터를 확인해주세요.");
+        if(!allowed.contains(value)) throw new ApiException(HttpStatus.BAD_REQUEST,"필터를 확인해주세요.");
         return value;
     }
     private static int offset(int page) { return Math.min(Math.max(page,0),10000)*30; }
@@ -452,6 +573,7 @@ public class ProblemService {
     }
     private record PreparedWrite(String title,List<String> languages,List<String> tags,String sourceName,
                                  String sourceUrl,List<ProblemRequests.ReferenceSolution> references,
+                                 List<ProblemRequests.StarterCode> starters,
                                  Long groupId,String requestedVisibility) {}
     @Transactional
     public void requestReview(int number,CustomUserDetails user) {
@@ -464,12 +586,12 @@ public class ProblemService {
                 boolean owner=((Number)p.get("author_id")).longValue()==user.getUserId();
                 if(!groupAllows(gid,user,GroupPermission.EDIT_PROBLEMS) &&
                    !(owner && groupAllows(gid,user,GroupPermission.CREATE_PROBLEMS)))
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                    throw new ApiException(HttpStatus.FORBIDDEN);
             } else if(((Number)p.get("author_id")).longValue()!=user.getUserId())
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+                throw new ApiException(HttpStatus.FORBIDDEN);
         }
         if (!Set.of("DRAFT","REJECTED").contains(p.get("status")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT);
+            throw new ApiException(HttpStatus.CONFLICT);
         requireReady(p);
         change(p,"PENDING_REVIEW","검수 요청",user.getUserId());
     }
@@ -480,9 +602,9 @@ public class ProblemService {
         var p=load(number,user);
         if(!operator(user) && (p.get("group_id")==null ||
            !groupAllows(((Number)p.get("group_id")).longValue(),user,GroupPermission.REVIEW_PROBLEMS)))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+            throw new ApiException(HttpStatus.FORBIDDEN);
         if (!"ARCHIVED".equals(r.status()) && !"PENDING_REVIEW".equals(p.get("status")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT);
+            throw new ApiException(HttpStatus.CONFLICT);
         if ("PUBLISHED".equals(r.status())) requireReady(p);
         change(p,r.status(),r.cause(),user.getUserId());
     }
@@ -491,7 +613,7 @@ public class ProblemService {
         requireOperator(user);
         if(request==null || request.visibility()==null ||
            !Set.of("PUBLIC","PRIVATE").contains(request.visibility()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"공개 범위를 확인해주세요.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"공개 범위를 확인해주세요.");
         lockUser(user);
         db.queryForList("SELECT id FROM problems WHERE problem_number=? FOR UPDATE",number);
         var p=load(number,user);
@@ -519,7 +641,7 @@ public class ProblemService {
         if(db.queryForObject("""
             SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE
             """,Long.class,p.get("id"))==0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"활성 테스트 케이스가 필요합니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"활성 테스트 케이스가 필요합니다.");
         boolean pythonOnly="FUNCTION".equals(p.get("execution_mode")) && !functionAbiCompatible(p);
         if(db.queryForObject("""
             SELECT COUNT(*) FROM reference_solutions r JOIN problem_languages l
@@ -527,7 +649,7 @@ public class ProblemService {
             WHERE r.problem_id=? AND (?=FALSE OR r.language='PYTHON')
                 AND CHAR_LENGTH(TRIM(r.source_code))>0
             """,Long.class,p.get("id"),pythonOnly)==0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"허용 언어의 참고 정답이 필요합니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"허용 언어의 참고 정답이 필요합니다.");
     }
     private void change(Map<String,Object> p,String state,String cause,long uid) {
         String publishedVisibility=p.get("group_id")!=null?"GROUP":(String)p.get("requested_visibility");

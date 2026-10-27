@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """전용 로컬 DB·앱에서 문제→커뮤니티와 그룹→코테의 실제 HTTP 연동을 확인합니다.
 
-실행 전 root가 cobweb_linkage_test를 만들고 웹 앱의 Flyway V1~V13 및 자동 채점
+실행 전 root가 cobweb_linkage_test를 만들고 웹 앱의 Flyway V1~V17 및 자동 채점
 워커를 켜야 합니다. 테스트 계정과 콘텐츠는 보존하며 SQL DELETE는 사용하지 않습니다.
 """
 
@@ -53,12 +53,12 @@ def check_targets():
     require(CONTAINER == "cobweb-feature-verify-mysql" and DATABASE == "cobweb_linkage_test",
             "전용 Docker 컨테이너·DB만 허용합니다")
     applied = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1 "
-                         "AND CAST(version AS UNSIGNED) BETWEEN 1 AND 13"))
+                         "AND CAST(version AS UNSIGNED) BETWEEN 1 AND 17"))
     maximum = int(scalar("SELECT COALESCE(MAX(CAST(version AS UNSIGNED)),0) "
                          "FROM flyway_schema_history"))
     failures = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success=0"))
-    require(applied == 13 and maximum == 13 and failures == 0,
-            "전용 DB Flyway V1~V13 적용/성공 조건 미충족")
+    require(applied == 17 and maximum == 17 and failures == 0,
+            "전용 DB Flyway V1~V17 적용/성공 조건 미충족")
     seed = int(scalar("SELECT COUNT(*) FROM problems WHERE problem_number=1000 "
                       "AND status='PUBLISHED' AND visibility='PUBLIC' AND execution_mode='FUNCTION'"))
     require(seed == 1, "전용 DB의 공개 FUNCTION 시드 문제 1000번이 없습니다")

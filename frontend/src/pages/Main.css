@@ -1,0 +1,225 @@
+.main-top {
+  min-height: calc(100vh - 88px);
+
+  padding: 120px 140px;
+
+  box-sizing: border-box;
+
+  transition: 0.2s;
+}
+
+.hero {
+  max-width: 950px;
+}
+
+/* ONLINE JUDGE */
+.hero > p:first-child {
+  margin: 0 0 16px;
+
+  color: #13fff3;
+
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+/* CobWeb */
+.hero h1 {
+  margin: 0;
+
+  font-size: 70px;
+  line-height: 1;
+
+  color: #ffffff;
+}
+
+/* 설명 */
+.hero > p:nth-of-type(2) {
+  max-width: 470px;
+
+  margin-top: 28px;
+
+  color: #b7b7b7;
+
+  font-size: 18px;
+  line-height: 1.8;
+
+  word-break: keep-all;
+}
+
+/* 메인 버튼 */
+.main-button {
+  display: flex;
+  gap: 14px;
+
+  margin-top: 35px;
+}
+
+.main-button button {
+  height: 48px;
+
+  padding: 0 24px;
+
+  border-radius: 999px;
+  border: 1px solid #505050;
+
+  background-color: #000000;
+  color: #ffffff;
+
+  font-size: 15px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+/* 문제 풀기 버튼 */
+.main-button button:first-child {
+  background-color: #13fff3;
+  color: #000000;
+
+  border-color: #13fff3;
+}
+
+.main-button button:hover {
+  border-color: #13fff3;
+
+  transform: translateY(-2px);
+}
+
+/* 카드 영역 */
+.info-cards {
+  display: flex;
+  gap: 28px;
+
+  margin-top: 70px;
+}
+
+.info-card {
+  width: 420px;
+  min-height: 145px;
+
+  padding: 28px 30px;
+
+  border: 1px solid #505050;
+  border-radius: 18px;
+
+  box-sizing: border-box;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+.info-card h3 {
+  margin: 0 0 14px;
+
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.info-card p {
+  margin: 0;
+
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.info-card:hover {
+  border-color: #13fff3;
+
+  transform: translateY(-2px);
+}
+
+/* =========================
+   DARK MODE
+========================= */
+
+.main-top.dark {
+  background-color: #121414;
+  color: white;
+}
+
+.main-top.dark .hero h1 {
+  color: #ffffff;
+}
+
+.main-top.dark .hero > p:nth-of-type(2) {
+  color: #b7b7b7;
+}
+
+.main-top.dark .info-card {
+  background-color: #151515;
+
+  border-color: #505050;
+}
+
+.main-top.dark .info-card h3 {
+  color: #dbfffd;
+}
+
+.main-top.dark .info-card p {
+  color: #9a9a9a;
+}
+
+/* =========================
+   LIGHT MODE
+========================= */
+
+.main-top.light {
+  background-color: #dbfffd;
+  color: #121414;
+}
+
+.main-top.light .hero h1 {
+  color: #121414;
+}
+
+.main-top.light .hero > p:nth-of-type(2) {
+  color: #4f5f5e;
+}
+
+.main-top.light .main-button button:not(:first-child) {
+  background-color: #f4fffe;
+  color: #121414;
+
+  border-color: #8ea5a3;
+}
+
+.main-top.light .info-card {
+  background-color: #f4fffe;
+
+  border-color: #9dbab8;
+}
+
+.main-top.light .info-card h3 {
+  color: #121414;
+}
+
+.main-top.light .info-card p {
+  color: #536260;
+}
+
+/* 카드를 Link로 감쌌을 때 기본 링크 스타일 제거 */
+.info-cards a {
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ZIP의 카드 비율은 유지하되 작은 창에서는 가로 넘침 없이 재배치합니다. */
+.info-card { width: 100%; height: 100%; }
+.main-button { flex-wrap: wrap; }
+@media (max-width: 1100px) {
+  .main-top { padding: 80px 40px; }
+  .info-cards { gap: 16px; }
+}
+@media (max-width: 640px) {
+  .main-top { padding: 54px 20px; }
+  .hero h1 { font-size: 52px; }
+  .info-cards { flex-direction: column; margin-top: 40px; }
+  .info-card { min-height: 120px; }
+}

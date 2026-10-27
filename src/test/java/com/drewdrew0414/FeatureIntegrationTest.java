@@ -136,10 +136,11 @@ class FeatureIntegrationTest {
         long a=group(owner),b=group(owner),c=group(owner);
         status(409,()->group(owner));
         groups.join(a,member); groups.join(a,member); groups.join(b,member); groups.join(c,member);
-        assertEquals(3,groups.mine(member).size());
+        assertEquals(3,groups.mine(member).stream().filter(g->!Boolean.TRUE.equals(g.get("systemGroup"))).count());
+        assertEquals(4,groups.mine(member).size());
         long d=group(user("USER",50));
         status(409,()->groups.join(d,member));
-        groups.leave(a,member); groups.join(d,member); assertEquals(3,groups.mine(member).size());
+        groups.leave(a,member); groups.join(d,member); assertEquals(4,groups.mine(member).size());
         status(409,()->groups.leave(b,owner));
     }
     @Test void eightRolesAndFeatureTogglesAreEnforcedServerSide() {

@@ -8,7 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import com.drewdrew0414.global.exception.ApiException;
 
 /** 그룹 경로와 시험 소속을 확인하고 일반 제출과 분리된 시험 답안을 접수합니다. */
 @RestController @RequiredArgsConstructor
@@ -23,7 +23,7 @@ public class ContestSubmissionController {
                          @AuthenticationPrincipal CustomUserDetails user) {
         if(db.queryForObject("SELECT COUNT(*) FROM group_contests WHERE id=? AND group_id=?",
                 Long.class,contestId,groupId)==0)
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
+            throw new ApiException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
         return ApiResponse.success(submissions.submitContest(contestId,request.problemNumber(),
             request.sourceCode(),Language.parse(request.language()),user));
     }

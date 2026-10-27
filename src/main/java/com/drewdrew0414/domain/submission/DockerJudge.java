@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.security.MessageDigest;
 
 /**
  * 컴파일도 사용자 코드 실행으로 취급하여 네트워크/권한/메모리/시간을 제한합니다.
@@ -32,8 +33,14 @@ public class DockerJudge {
         }
     }
     public Prepared prepare(Language language,String code,String mode) {
+        return preparePinned(language,code,mode,image);
+    }
+    /** 태그가 채점 중 다른 이미지로 바뀌어도 동일한 immutable image ID만 실행합니다. */
+    public Prepared preparePinned(Language language,String code,String mode,String imageId) {
         language.requireMode(mode);
-        var prepared=new Prepared(language,mode);
+        if(imageId==null || !(image.equals(imageId) || imageId.matches("sha256:[0-9a-f]{64}")))
+            throw new IllegalArgumentException("Invalid judge image identity");
+        var prepared=new Prepared(language,mode,imageId);
         try {
             Files.createDirectories(root);
             prepared.dir=Files.createTempDirectory(root,"submission-");
@@ -53,7 +60,7 @@ public class DockerJudge {
                 // tmpfs를 컴파일 뒤에도 유지합니다. 최대 50케이스의 실행/정리 시간보다 긴
                 // 30분 뒤 자동 종료하여 워커가 죽었을 때도 무기한 메모리를 점유하지 않습니다.
                 // 사용자 프로그램을 PID 1로 두지 않으므로 컴파일 종료 코드와 볼륨 수명을 분리합니다.
-                command.addAll(List.of("--entrypoint","/bin/sleep",image,"1800"));
+                command.addAll(List.of("--entrypoint","/bin/sleep",prepared.imageId,"1800"));
                 requireSuccess(execute(command,"",10000));
                 var result=execute(List.of("docker","exec",prepared.compiler,"python3","-I","/opt/judge/runner.py",
                     "compile",language.name(),mode,"1024"),"",65000);
@@ -74,10 +81,13 @@ public class DockerJudge {
     public final class Prepared implements AutoCloseable {
         private final Language language;
         private final String mode;
+        private final String imageId;
         private Path dir,source;
         private String volume,compiler,failure,diagnostic="";
         private boolean closed;
-        private Prepared(Language language,String mode) { this.language=language;this.mode=mode; }
+        private Prepared(Language language,String mode,String imageId) {
+            this.language=language;this.mode=mode;this.imageId=imageId;
+        }
         public String failure() { return failure; }
         /** 운영 API로 노출하지 않습니다. 테스트/운영 진단용 컴파일 메시지이며 최대 64KiB입니다. */
         public String diagnostic() { return diagnostic; }
@@ -99,7 +109,7 @@ public class DockerJudge {
                 // timeout은 컨테이너가 시작한 뒤에 실행되어 Docker 기동 시간과 관계없이
                 // 모든 언어(Python/SQL 포함)의 실제 실행 벽시계를 제한합니다.
                 command.addAll(List.of("-e","DOTNET_GCHeapHardLimit="+Integer.toHexString(memory*1024*1024/2),
-                    "-e","DOTNET_PROCESSOR_COUNT=1","--entrypoint","/usr/bin/timeout",image,
+                    "-e","DOTNET_PROCESSOR_COUNT=1","--entrypoint","/usr/bin/timeout",imageId,
                     "--signal=KILL",Double.toString(millis/1000.0)+"s",
                     "python3","-I","/opt/judge/runner.py","run",language.name(),mode,String.valueOf(memory)));
                 var result=execute(command,input,millis+5000L);
@@ -131,6 +141,42 @@ public class DockerJudge {
                 Files.deleteIfExists(dir);
             } catch(IOException ignored) { /* 컨테이너는 호스트 디렉터리에 쓸 수 없습니다. */ }
         }
+    }
+    /** inspect 실패 시에는 캐시를 끄고 원래 격리 채점 경로를 유지합니다. 네트워크 조회는 하지 않습니다. */
+    public String imageIdentity() {
+        try {
+            var result=execute(List.of("docker","image","inspect","--format","{{.Id}}",image),"",5000);
+            requireSuccess(result);
+            String value=result.output.text().strip();
+            return value.matches("sha256:[0-9a-f]{64}")?value:null;
+        } catch(Exception ignored) {
+            if(ignored instanceof InterruptedException) Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+    /** 이미지 밖에 있는 실제 판정/비교/lease 코드도 바뀌면 기존 판정을 재사용하지 않습니다. */
+    public static String engineFingerprint() {
+        try {
+            var digest=MessageDigest.getInstance("SHA-256");
+            digest.update(System.getProperty("java.runtime.version","").getBytes(StandardCharsets.UTF_8));
+            digest.update(System.getProperty("java.vendor","").getBytes(StandardCharsets.UTF_8));
+            var classes=new TreeMap<String,Class<?>>();
+            var pending=new ArrayDeque<Class<?>>(List.of(DockerJudge.class,JudgeWorker.class,
+                SubmissionService.class,JudgeLease.class,Language.class,
+                com.drewdrew0414.domain.problem.ProblemService.class));
+            while(!pending.isEmpty()) {
+                var type=pending.removeFirst();
+                if(classes.putIfAbsent(type.getName(),type)==null) pending.addAll(List.of(type.getDeclaredClasses()));
+            }
+            for(Class<?> type:classes.values()) {
+                digest.update(type.getName().getBytes(StandardCharsets.UTF_8));
+                try(var stream=type.getResourceAsStream("/"+type.getName().replace('.','/')+".class")) {
+                    if(stream==null) return null;
+                    digest.update(stream.readAllBytes());
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch(Exception ignored) { return null; }
     }
     private ArrayList<String> container(String name,int memory,int cpuSeconds,int tempMb) {
         return new ArrayList<>(List.of("docker","run","--name",name,
@@ -181,6 +227,7 @@ public class DockerJudge {
         // 인터럽트된 채점에서도 컨테이너 정리를 시도하고 호출자의 인터럽트 상태는 복구합니다.
         boolean interrupted=Thread.interrupted();
         try { requireSuccess(execute(List.of(command),"",5000)); }
+        catch(InterruptedException ignored) { interrupted=true; }
         catch(Exception ignored) { /* 고유한 이름의 자원만 정리합니다. */ }
         finally { if(interrupted) Thread.currentThread().interrupt(); }
     }

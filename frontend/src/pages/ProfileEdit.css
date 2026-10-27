@@ -1,0 +1,127 @@
+.pr-page .cw-wrap {
+  max-width: 720px;
+}
+
+.pr-form {
+  padding: 28px 30px;
+}
+
+/* 닉네임 · 랭크 (읽기 전용) */
+.pr-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+
+  margin-bottom: 26px;
+  padding-bottom: 22px;
+
+  border-bottom: 1px solid var(--line);
+}
+
+.pr-identity > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pr-identity strong {
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pr-identity small {
+  width: 100%;
+
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pr-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+
+  width: 52px;
+  height: 52px;
+
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 14px;
+
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* 입력 */
+.pr-field + .pr-field {
+  margin-top: 22px;
+}
+
+.pr-field .cw-textarea {
+  min-height: 140px;
+}
+
+.pr-count {
+  text-align: right;
+  font-family: var(--mono);
+}
+
+.pr-count.full {
+  color: var(--yellow);
+}
+
+.pr-err {
+  color: var(--red);
+}
+
+.pr-banner {
+  margin: 20px 0 0;
+  padding: 12px 14px;
+
+  color: var(--red);
+  background-color: color-mix(in srgb, var(--red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 10px;
+
+  font-size: 13px;
+}
+
+.pr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+
+  margin-top: 28px;
+}
+
+.pr-actions .cw-btn {
+  min-width: 104px;
+}
+
+.pr-back {
+  margin: 18px 0 0;
+
+  font-size: 13px;
+  text-align: center;
+}
+
+.pr-back a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.pr-back a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .pr-form {
+    padding: 22px 18px;
+  }
+
+  .pr-actions {
+    flex-direction: column-reverse;
+  }
+}

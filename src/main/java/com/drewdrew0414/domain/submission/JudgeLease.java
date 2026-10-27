@@ -28,6 +28,7 @@ final class JudgeLease implements AutoCloseable {
 
     /** false면 토큰이 바뀌었거나 연속 갱신 실패로 더는 이 제출을 처리하면 안 됩니다. */
     synchronized boolean renew(String stage) {
+        if(Thread.currentThread().isInterrupted()) current.set(false);
         if(!current.get()) return false;
         try {
             if(!submissions.heartbeat(submission)) {
@@ -38,6 +39,10 @@ final class JudgeLease implements AutoCloseable {
             failures=0;
             return current.get();
         } catch(Exception ignored) {
+            if(Thread.currentThread().isInterrupted()) {
+                current.set(false);
+                return false;
+            }
             failures++;
             log.warn("Judge heartbeat failed: submissionId={} stage={} consecutiveFailures={}",
                 submission.get("id"),stage,failures);

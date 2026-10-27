@@ -1,0 +1,121 @@
+/* 짧은 인증/오류 화면에서도 푸터를 아래로 밀되 본문 위에 겹쳐 띄우지 않습니다. */
+.cw-app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #121414;
+}
+
+.cw-app-shell.light { background: #dbfffd; }
+
+.cw-app-content,
+.cw-route-content {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cw-app-content > .cw-header { flex-shrink: 0; }
+.cw-route-content > * { flex: 1 0 auto; }
+
+/* 기존 페이지의 viewport 높이와 공통 푸터 높이가 중복되지 않게 합니다. */
+.cw-app-shell .cw-page,
+.cw-app-shell .main-top { min-height: 0; }
+
+.cw-app-content > :is(.LoginPage,.SignupPage,.PasswordResetPage,.OAuthPage) {
+  flex: 1 0 auto;
+  min-height: 0;
+  padding: 56px 24px;
+}
+
+.cw-footer {
+  --footer-bg: #101313;
+  --footer-text: #eef3f2;
+  --footer-muted: #8d9896;
+  --footer-link: #64e6ca;
+  --footer-line: #2b3131;
+  flex: 0 0 auto;
+  padding: 30px 64px;
+  color: var(--footer-text);
+  background: var(--footer-bg);
+  border-top: 1px solid var(--footer-line);
+}
+
+.cw-footer.light {
+  --footer-bg: #e9faf8;
+  --footer-text: #121414;
+  --footer-muted: #536260;
+  --footer-link: #0a7f76;
+  --footer-line: #9dbab8;
+}
+
+.cw-footer-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 22px 40px;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.cw-footer-brand { flex: 1 1 260px; }
+.cw-footer-logo,
+.cw-footer-logo:visited {
+  color: var(--footer-link);
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -0.6px;
+  text-decoration: none;
+}
+
+.cw-footer-brand p {
+  margin: 8px 0 0;
+  color: var(--footer-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.cw-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.cw-footer-nav a,
+.cw-footer-nav a:visited {
+  padding: 4px 0;
+  color: var(--footer-muted);
+  font-size: 13px;
+  text-decoration: none;
+  text-underline-offset: 0.25em;
+}
+
+.cw-footer-nav a:hover,
+.cw-footer-nav a:focus-visible {
+  color: var(--footer-link);
+  text-decoration: underline;
+}
+
+.cw-footer a:focus-visible {
+  outline: 2px solid var(--footer-link);
+  outline-offset: 5px;
+  border-radius: 2px;
+}
+
+.cw-footer-year {
+  color: var(--footer-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .cw-footer { padding: 26px 24px; }
+  .cw-footer-inner { align-items: flex-start; gap: 18px; }
+  .cw-footer-brand { flex-basis: 100%; }
+  .cw-footer-nav { gap: 10px 22px; }
+  .cw-footer-year { margin-left: auto; padding-top: 6px; }
+}

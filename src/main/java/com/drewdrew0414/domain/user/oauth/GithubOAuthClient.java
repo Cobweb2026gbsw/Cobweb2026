@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /*
@@ -54,6 +55,7 @@ public class GithubOAuthClient implements OAuthClient {
 
     @Override
     public OAuthUserInfo fetchUserInfo(String code, String state) {
+        try {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         // 깃허브 토큰 엔드포인트도 application/x-www-form-urlencoded 형식을 요구함
         form.add("client_id", clientId);
@@ -70,16 +72,24 @@ public class GithubOAuthClient implements OAuthClient {
                 .retrieve()
                 .body(TokenResponse.class);
 
+        OAuthResponseValidation.requireToken(token==null?null:token.accessToken());
+
         UserResponse user = restClient.get()
                 .uri("https://api.github.com/user")
                 .header("Authorization", "Bearer " + token.accessToken())
                 .retrieve()
                 .body(UserResponse.class);
 
+        if(user==null || user.id()<=0) throw OAuthResponseValidation.unavailable(null);
+
         // /user.email은 공개 프로필 값이며 검증 상태를 포함하지 않습니다. 항상 /user/emails에서 확인합니다.
         String email = fetchPrimaryEmail(token.accessToken());
 
-        return new OAuthUserInfo(Provider.GITHUB, String.valueOf(user.id()), email, user.login());
+        return OAuthResponseValidation.requireIdentity(Provider.GITHUB,
+                new OAuthUserInfo(Provider.GITHUB, String.valueOf(user.id()), email, user.login()));
+        } catch(RestClientException error) {
+            throw OAuthResponseValidation.unavailable(error);
+        }
     }
 
     private String fetchPrimaryEmail(String accessToken) {
@@ -94,6 +104,7 @@ public class GithubOAuthClient implements OAuthClient {
             return null;
         }
         for (EmailResponse e : emails) {
+            if(e==null) throw OAuthResponseValidation.unavailable(null);
             if (e.primary() && e.verified()) {
                 // 대표(primary)로 지정돼 있고, 깃허브가 소유권을 검증(verified)한 이메일만 신뢰해서 사용
                 return e.email();

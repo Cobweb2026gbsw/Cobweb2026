@@ -3,10 +3,12 @@ package com.drewdrew0414.global.config;
 import com.drewdrew0414.global.security.CustomUserDetailsService;
 import com.drewdrew0414.global.security.jwt.JwtAuthenticationFilter;
 import com.drewdrew0414.global.security.jwt.JwtTokenProvider;
+import com.drewdrew0414.global.exception.ApiErrorWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -36,17 +38,18 @@ class SecurityConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        // HTML은 index.html 하나만 유지합니다. 예전 즐겨찾기/OAuth 복귀 주소도 같은
-        // 화면으로 내부 전달하여 URL fragment의 토큰을 잃거나 중복 화면이 생기지 않게 합니다.
-        registry.addViewController("/app.html").setViewName("forward:/index.html");
-        for(String path:new String[]{"/create","/admin","/groups","/community","/notices"})
-            registry.addViewController(path).setViewName("forward:/index.html");
+        // 기존 정적 화면은 호환 확인용으로만 남기고 서비스 주소는 SpaController가 처리합니다.
+        registry.addViewController("/legacy").setViewName("forward:/index.html");
     }
 
     @Bean
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     // 스프링이 관리하는 SecurityFilterChain 빈으로 등록 -> 모든 HTTP 요청이 이 체인을 통과하게 됨
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, Environment environment) throws Exception {
+        // 로컬은 HTTP 8080과 개발 HTTPS를 함께 사용합니다. HSTS가 localhost의
+        // HTTP 포트까지 TLS로 강제하지 않도록 local에서만 끄며 운영 기본값은 유지합니다.
+        if (environment.matchesProfiles("local") && !environment.matchesProfiles("prod"))
+            http.headers(headers -> headers.httpStrictTransportSecurity(hsts -> hsts.disable()));
         http.csrf(AbstractHttpConfigurer::disable)
                 // JWT 방식은 쿠키/세션 기반이 아니라 CSRF 공격 대상이 아니므로 꺼둠
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -59,14 +62,19 @@ class SecurityConfig implements WebMvcConfigurer {
                 .exceptionHandling(errors -> errors
                         // 인증 정보가 없거나 만료된 요청은 401, 인증은 되었지만 권한이 부족한
                         // 요청은 403으로 구분합니다. 클라이언트는 401에서만 재발급을 시도할 수 있습니다.
-                        .authenticationEntryPoint((request, response, exception) -> response.setStatus(401))
-                        .accessDeniedHandler((request, response, exception) -> response.setStatus(403)))
+                        .authenticationEntryPoint((request, response, exception) -> ApiErrorWriter.write(
+                            response,401,"AUTHENTICATION_REQUIRED","로그인이 필요합니다."))
+                        .accessDeniedHandler((request, response, exception) -> ApiErrorWriter.write(
+                            response,403,"PERMISSION_DENIED","이 작업을 수행할 권한이 없습니다.")))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, SpaController.PUBLIC_ROUTES).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/ui/index.html", "/ui/assets/**", "/react-bridge.js", "/legacy").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()
                         .requestMatchers(HttpMethod.GET,"/api/groups","/api/community/notices","/api/community/posts",
                             "/api/community/posts/*","/api/community/posts/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET,"/app.html","/create","/admin","/groups","/community","/notices",
-                            "/app.js","/groups.js","/community.js","/app.css","/groups.css","/community.css").permitAll()
+                            "/app.js","/groups.js","/community.js","/app.css","/groups.css","/community.css",
+                            "/code-editor.js","/markdown.js","/vendor/marked.umd.js").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         // 로그아웃은 현재 사용자 ID의 refresh token을 삭제하므로 반드시 access token으로 본인을 확인
                         .requestMatchers("/api/auth/**").permitAll()

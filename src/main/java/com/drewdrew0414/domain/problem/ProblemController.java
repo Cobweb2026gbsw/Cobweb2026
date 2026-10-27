@@ -4,6 +4,7 @@ import com.drewdrew0414.global.common.ApiResponse;
 import com.drewdrew0414.global.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,8 +13,11 @@ import org.springframework.web.bind.annotation.*;
 public class ProblemController {
     private final ProblemService service;
     @GetMapping
-    public Object list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search) {
-        return ApiResponse.success(service.list(page,search));
+    public Object list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
+                       @RequestParam(required=false) List<String> difficulty,
+                       @RequestParam(defaultValue="all") String solved,
+                       @AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(service.list(page,search,difficulty,solved,user));
     }
     @GetMapping("/permissions")
     public Object permissions(@AuthenticationPrincipal CustomUserDetails user) {
@@ -21,8 +25,10 @@ public class ProblemController {
     }
     @GetMapping("/mine")
     public Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
+                       @RequestParam(required=false) List<String> difficulty,
+                       @RequestParam(defaultValue="all") String solved,
                        @AuthenticationPrincipal CustomUserDetails user) {
-        return ApiResponse.success(service.mine(page,search,user));
+        return ApiResponse.success(service.mine(page,search,difficulty,solved,user));
     }
     @GetMapping("/{number}")
     public Object detail(@PathVariable int number,@AuthenticationPrincipal CustomUserDetails user) {

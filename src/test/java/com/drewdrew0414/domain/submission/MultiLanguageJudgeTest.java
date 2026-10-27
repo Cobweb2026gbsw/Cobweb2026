@@ -24,6 +24,10 @@ class MultiLanguageJudgeTest {
         Map.entry(Language.KOTLIN,"fun main(){val a=readln().trim().split(Regex(\"\\\\s+\")).map{it.toInt()};println(a[0]+a[1])}"),
         Map.entry(Language.SQL,"SELECT SUM(v) FROM numbers;"),
         Map.entry(Language.RUBY,"a,b=STDIN.read.split.map(&:to_i);puts a+b"),
+        Map.entry(Language.PASCAL,"program Main; var a,b: LongInt; begin Read(a,b); WriteLn(a+b); end."),
+        Map.entry(Language.PHP,"<?php $a=preg_split('/\\s+/',trim(stream_get_contents(STDIN))); echo ((int)$a[0]+(int)$a[1]).\"\\n\";"),
+        Map.entry(Language.DART,"import 'dart:io'; void main(){final a=stdin.readLineSync()!.trim().split(RegExp(r'\\s+')).map(int.parse).toList(); print(a[0]+a[1]);}"),
+        Map.entry(Language.UMJUNSIK,"어떻게\n엄식?\n어엄식?\n동탄어어?준........\n엄어.\n어엄어어,\n준....\n식어!\n이 사람이름이냐ㅋㅋ"),
         Map.entry(Language.LLVM_IR,"""
             @fmtin = private constant [6 x i8] c"%d %d\\00"
             @fmtout = private constant [4 x i8] c"%d\\0A\\00"
@@ -53,6 +57,9 @@ class MultiLanguageJudgeTest {
         Map.entry(Language.RUST,"fn sol(m: Vec<Vec<i32>>, t: (usize,usize)) -> bool { m[t.0][t.1] == 1 }"),
         Map.entry(Language.KOTLIN,"fun sol(m: Array<IntArray>, t: Pair<Int,Int>): Boolean = m[t.first][t.second] == 1"),
         Map.entry(Language.RUBY,"def sol(m,t)\n  m[t[0]][t[1]] == 1\nend"),
+        Map.entry(Language.PASCAL,"function sol(const matrix:TMatrix; const target:TTarget):Boolean; begin Result:=matrix[target[0],target[1]]=1; end;"),
+        Map.entry(Language.PHP,"<?php function sol(array $matrix,array $target):bool {return $matrix[$target[0]][$target[1]] === 1;}"),
+        Map.entry(Language.DART,"bool sol(List<List<int>> matrix,List<int> target)=>matrix[target[0]][target[1]]==1;"),
         Map.entry(Language.LLVM_IR,"""
             define i1 @sol(ptr %matrix, i32 %r, i32 %c) {
               %row = mul i32 %r, 15
@@ -78,7 +85,7 @@ class MultiLanguageJudgeTest {
         }
     }
     @ParameterizedTest(name="{0}: FUNCTION adapter")
-    @EnumSource(value=Language.class,names="SQL",mode=EnumSource.Mode.EXCLUDE)
+    @EnumSource(value=Language.class,names={"SQL","UMJUNSIK"},mode=EnumSource.Mode.EXCLUDE)
     void everyNonSqlLanguageRunsFunctionCases(Language language) {
         try(var prepared=judge.prepare(language,FUNCTION_SOURCES.get(language),"FUNCTION")) {
             assertNull(prepared.failure(),prepared.diagnostic());
@@ -96,11 +103,45 @@ class MultiLanguageJudgeTest {
         catch(Exception e) { throw new AssertionError(e); }
     }
     @ParameterizedTest
-    @EnumSource(value=Language.class,names={"C","CPP","JAVA","TYPESCRIPT","CSHARP","GO","RUST","KOTLIN","LLVM_IR"})
+    @EnumSource(value=Language.class,names={"C","CPP","JAVA","TYPESCRIPT","CSHARP","GO","RUST","KOTLIN","LLVM_IR","PASCAL","DART"})
     void invalidSourceIsCompilationError(Language language) {
         try(var prepared=judge.prepare(language,"this is not valid source @@@","STDIN")) {
             assertEquals("COMPILATION_ERROR",prepared.failure(),prepared.diagnostic());
         }
+    }
+    @ParameterizedTest(name="{0}: malformed FUNCTION input is rejected")
+    @EnumSource(value=Language.class,names={"PASCAL","PHP","DART"})
+    void newFunctionAdaptersRejectMalformedInput(Language language) {
+        assertEquals("RUNTIME_ERROR",judge.run(language,FUNCTION_SOURCES.get(language),
+            "{\"matrix\":[],\"target\":[0,0]}","true","FUNCTION",3000,256,1L).status());
+    }
+    @Test void phpFunctionMustReturnBoolean() {
+        assertEquals("RUNTIME_ERROR",judge.run(Language.PHP,"<?php function sol($matrix,$target) {return 1;}",
+            toFunctionInput(new int[15][15],0,0),"true","FUNCTION",3000,128,1L).status());
+    }
+    @ParameterizedTest(name="{0}: infinite loop is killed")
+    @EnumSource(value=Language.class,names={"PASCAL","PHP","DART"})
+    void newGeneralPurposeLanguageInfiniteLoopsAreKilled(Language language) {
+        String source=switch(language) {
+            case PASCAL -> "program Main; begin while True do begin end; end.";
+            case PHP -> "<?php while(true) {}";
+            case DART -> "void main(){while(true){}}";
+            default -> throw new AssertionError(language);
+        };
+        assertEquals("TIME_LIMIT_EXCEEDED",judge.run(language,source,"","","STDIN",500,128,1L).status());
+    }
+    @Test void umjunsikInfiniteLoopUsesTheSameContainerDeadline() {
+        assertEquals("TIME_LIMIT_EXCEEDED",judge.run(Language.UMJUNSIK,
+            "어떻게\n준..\n이 사람이름이냐ㅋㅋ","","","STDIN",500,128,1L).status());
+    }
+    @Test void umjunsikInvalidSourceAndNonzeroExitCannotBeAccepted() {
+        for(String source:new String[]{"어떻게\n아무거나\n이 사람이름이냐ㅋㅋ",
+                "어떻게\n화이팅!..\n이 사람이름이냐ㅋㅋ"})
+            assertEquals("RUNTIME_ERROR",judge.run(Language.UMJUNSIK,source,"","","STDIN",1000,128,1L).status());
+    }
+    @Test void phpSyntaxErrorIsRuntimeErrorForAnInterpretedLanguage() {
+        assertEquals("RUNTIME_ERROR",judge.run(Language.PHP,"<?php function broken( @@@",
+            "","","STDIN",1000,128,1L).status());
     }
     @Test void sqlCannotWriteOrAttachFilesOrRunShellCommands() {
         for(String code:new String[]{"ATTACH DATABASE '/tmp/test.db' AS other;","DELETE FROM numbers;",

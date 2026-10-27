@@ -8,6 +8,8 @@ const CobwebGroups=(()=>{
   const groupProblemViews=new WeakMap();
   const $=selector=>document.querySelector(selector);
   const node=(tag,text='',className='')=>{const result=document.createElement(tag);result.textContent=String(text??'');if(className)result.className=className;return result;};
+  function statementNode(content){const result=node('div','','prose markdown-body');if(ctx.renderMarkdown)ctx.renderMarkdown(result,content);else result.textContent=content??'';return result;}
+  function appendStatementExample(box,example,index){if(ctx.renderExample)return ctx.renderExample(box,example,index);box.append(node('pre','예제 '+(index+1)+'\n입력\n'+(example.input_text??example.input??'')+'\n출력\n'+(example.output_text??example.output??'')+'\n'+(example.explanation||''),'prose'));}
   const button=(text,action,secondary=false)=>{const result=node('button',text,secondary?'secondary':'');result.type='button';let pending=false;result.onclick=()=>{if(pending)return;pending=true;result.disabled=true;return Promise.resolve().then(action).catch(error=>ctx.notice(error.message)).finally(()=>{pending=false;result.disabled=false;});};return result;};
   const list=value=>Array.isArray(value)?value:(value?.items||value?.content||[]);
   const problemNumber=value=>value.problemNumber??value.problem_number??value.number;
@@ -98,7 +100,8 @@ const CobwebGroups=(()=>{
       if(!items.length)itemsBox.append(node('p','그룹 문제가 없습니다.'));
       for(const item of items){const row=node('div','','group-problem-row');row.append(node('span','#'+problemNumber(item)+' · '+problemTitle(item)+' · '+(item.status||'')+' · '+(item.authorUsername||'')),button('상세',()=>openReviewDetail(problemNumber(item)),true));itemsBox.append(row);}
       pager.replaceChildren();const previous=button('이전',async()=>{page--;await load();},true),next=button('다음',async()=>{page++;await load();},true);previous.disabled=page===0;next.disabled=items.length<30;pager.append(previous,next);}
-    async function openReviewDetail(number){const request=++reviewRequest,problem=await ctx.api('/api/problems/'+number+'/edit');if(epoch!==groupEpoch||detailRequest!==groupDetailRequest||request!==reviewRequest)return;detailBox.replaceChildren();detailBox.append(node('h4','#'+number+' · '+problem.title+' · '+problem.status),node('pre',problem.description||'','prose'));
+    async function openReviewDetail(number){const request=++reviewRequest,problem=await ctx.api('/api/problems/'+number+'/edit');if(epoch!==groupEpoch||detailRequest!==groupDetailRequest||request!==reviewRequest)return;detailBox.replaceChildren();detailBox.append(node('h4','#'+number+' · '+problem.title+' · '+problem.status),statementNode(problem.description||''));
+      (problem.examples||[]).forEach((example,index)=>appendStatementExample(detailBox,example,index));
       for(const [index,test] of (problem.tests||[]).entries())detailBox.append(node('pre','테스트 '+(index+1)+'\n입력\n'+test.input+'\n기대 출력\n'+test.expected,'code-preview'));
       for(const solution of problem.referenceSolutions||[])detailBox.append(node('pre',solution.language+' · '+solution.fileName+'\n'+solution.sourceCode,'code-preview'));
       if(problem.canEdit)detailBox.append(button('편집기로 불러오기',()=>ctx.openEditor(number),true));
@@ -258,14 +261,15 @@ const CobwebGroups=(()=>{
     const box=$('#contest-question');box.replaceChildren();box.append(node('h2','#'+number+' · '+problem.problem_title));
     box.append(node('p',(problem.rank_type||'')+' '+(problem.rank_int||'')+' · '+(problem.time_limit_ms||'')+'ms · '+(problem.memory_limit_mb||'')+'MB','field-hint'));
     for(const [label,key] of [['문제 설명','description'],['입력','input_description'],['출력','output_description'],['제한 사항','constraints_text']]){
-      const section=node('section','','contest-statement');section.append(node('h3',label),node('pre',problem[key]||'','prose'));box.append(section);}
+      const section=node('section','','contest-statement');section.append(node('h3',label),statementNode(problem[key]||''));box.append(section);}
     const examples=node('section','','contest-statement');examples.append(node('h3','예제'));
-    for(const [index,example] of (problem.examples||[]).entries())examples.append(node('pre','예제 '+(index+1)+'\n입력\n'+(example.input_text||'')+'\n출력\n'+(example.output_text||'')+'\n'+(example.explanation||''),'prose'));box.append(examples);
+    for(const [index,example] of (problem.examples||[]).entries())appendStatementExample(examples,example,index);box.append(examples);
     const form=document.createElement('form');form.id='contest-submit';form.append(node('h3','시험 제출'));
     const select=field('언어','language','', 'text',(problem.languages||[]).map(id=>[id,ctx.languageLabel(id)]));form.append(select,multiline('풀이 코드','sourceCode','',16));
     const draft=restoreDraft&&contestDraft?.epoch===epoch&&contestDraft.gid===gid&&contestDraft.cid===cid&&contestDraft.number===number&&contest.status==='ACTIVE'?contestDraft:null;
     if(draft){form.querySelector('[name=sourceCode]').value=draft.sourceCode;if((problem.languages||[]).includes(draft.language))form.querySelector('[name=language]').value=draft.language;contestDraft=null;}
-    form.querySelector('textarea').className='contest-source';form.querySelector('textarea').required=true;
+    form.querySelector('textarea').className='contest-source';form.querySelector('textarea').required=true;form.querySelector('textarea').setAttribute('data-code-editor','');form.querySelector('textarea').spellcheck=false;
+    form.append(node('p','Tab: 공백 4칸 · Shift+Tab: 내어쓰기 · Enter: 자동 들여쓰기 · Esc 다음 Tab: 입력란 밖으로 이동','field-hint'));
     const submit=node('button','제출하고 채점하기');submit.type='submit';submit.disabled=contest.status!=='ACTIVE'||Date.now()>=new Date(contest.endsAt).getTime();form.append(submit,node('p',contest.status==='ACTIVE'?'시험 중에만 제출할 수 있습니다.':'종료된 시험은 다시 볼 수 있어도 제출할 수 없습니다.','field-hint'));
     formAction(form,async values=>{const scope=contestScope(),activeQuestion=questionRequest;if(contest.status!=='ACTIVE'||Date.now()>=new Date(contest.endsAt).getTime())throw Error('제출 가능 시간이 아닙니다.');
       const id=await ctx.api(contestBase(gid,cid)+'/submissions','POST',{problemNumber:number,sourceCode:values.sourceCode,language:values.language});

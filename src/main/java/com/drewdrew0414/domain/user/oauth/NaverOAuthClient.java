@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /*
@@ -51,6 +52,7 @@ public class NaverOAuthClient implements OAuthClient {
 
     @Override
     public OAuthUserInfo fetchUserInfo(String code, String state) {
+        try {
         // 네이버는 토큰 교환 시에도 authorize 단계에서 쓴 state를 그대로 요구합니다.
         TokenResponse token = restClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -65,15 +67,23 @@ public class NaverOAuthClient implements OAuthClient {
                 .retrieve()
                 .body(TokenResponse.class);
 
+        OAuthResponseValidation.requireToken(token==null?null:token.accessToken());
+
         ProfileResponse profile = restClient.get()
                 .uri("https://openapi.naver.com/v1/nid/me")
                 .header("Authorization", "Bearer " + token.accessToken())
                 .retrieve()
                 .body(ProfileResponse.class);
 
+        if(profile==null || profile.response()==null) throw OAuthResponseValidation.unavailable(null);
+
         ProfileResponse.Profile p = profile.response();
         // 네이버 프로필 API는 실제 데이터를 response라는 한 단계 안쪽 객체에 감싸서 내려줌
-        return new OAuthUserInfo(Provider.NAVER, p.id(), p.email(), p.name());
+        return OAuthResponseValidation.requireIdentity(Provider.NAVER,
+                new OAuthUserInfo(Provider.NAVER, p.id(), p.email(), p.name()));
+        } catch(RestClientException error) {
+            throw OAuthResponseValidation.unavailable(error);
+        }
     }
 
     // 네이버 토큰 응답 중 우리가 필요로 하는 access_token 하나만 뽑아 받는 record.

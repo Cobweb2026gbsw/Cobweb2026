@@ -1,0 +1,324 @@
+.pd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: start;
+  gap: 20px;
+}
+
+/* ---------- 문제 설명 ---------- */
+.pd-statement {
+  padding: 24px 24px 28px;
+}
+
+.pd-meta {
+  display: flex;
+  gap: 0;
+
+  margin: 0 0 24px;
+  padding-bottom: 20px;
+
+  border-bottom: 1px solid var(--line);
+}
+
+.pd-meta > div {
+  padding: 0 24px;
+  border-left: 1px solid var(--line);
+}
+
+.pd-meta > div:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.pd-meta dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pd-meta dd {
+  margin: 6px 0 0;
+
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pd-statement section {
+  margin-top: 26px;
+}
+
+.pd-statement section:first-of-type {
+  margin-top: 0;
+}
+
+.pd-statement h2 {
+  margin: 0 0 10px;
+
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pd-statement p,
+.pd-statement li {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.pd-statement p {
+  margin: 0;
+}
+
+.pd-statement ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pd-sample {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pd-sample-label {
+  display: block;
+  margin-bottom: 6px;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pd-sample pre {
+  margin: 0;
+  padding: 12px 14px;
+
+  background-color: var(--field);
+  border-radius: 10px;
+
+  font-size: 13px;
+}
+
+.pd-sample pre.out {
+  color: var(--accent-text);
+}
+
+/* ---------- 작성 영역 ---------- */
+.pd-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pd-workspace {
+  padding: 18px;
+}
+
+.pd-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+
+  margin-bottom: 14px;
+}
+
+.pd-lang {
+  width: 240px;
+}
+
+.pd-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pd-saved {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---------- 코드 편집기 ---------- */
+.pd-editor {
+  overflow: hidden;
+
+  background-color: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pd-editor-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  height: 40px;
+  padding: 0 14px;
+
+  background-color: var(--card);
+  border-bottom: 1px solid var(--line);
+
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pd-icon-btn {
+  display: grid;
+  place-items: center;
+
+  width: 28px;
+  height: 28px;
+
+  background: none;
+  color: var(--muted);
+  border: none;
+  border-radius: 6px;
+
+  cursor: pointer;
+}
+
+.pd-icon-btn:hover {
+  background-color: var(--hover);
+  color: var(--text);
+}
+
+.pd-editor-body {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+
+  height: 420px;
+}
+
+.pd-gutter {
+  height: 100%;
+}
+
+.pd-textarea {
+  width: 100%;
+  height: 100%;
+  padding: 16px 16px 16px 4px;
+
+  background: transparent;
+  color: var(--text);
+  border: none;
+
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  resize: none;
+  outline: none;
+}
+
+.pd-editor-status {
+  display: flex;
+  justify-content: space-between;
+
+  padding: 8px 14px;
+
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---------- 실행 결과 ---------- */
+.pd-result {
+  padding: 18px 20px;
+}
+
+.pd-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+
+  margin-bottom: 14px;
+}
+
+.pd-result-head h2 {
+  margin: 0;
+
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pd-result-sub {
+  flex: 1;
+
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pd-result-head .cw-badge {
+  align-self: center;
+}
+
+.pd-console {
+  min-height: 48px;
+  padding: 14px 16px;
+
+  background-color: var(--field);
+  border-radius: 10px;
+
+  font-size: 13px;
+}
+
+.pd-console p {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  margin: 0;
+}
+
+.pd-console p + p {
+  margin-top: 8px;
+}
+
+.pd-console .muted {
+  color: var(--muted);
+}
+
+.pd-console p.muted {
+  gap: 10px;
+}
+
+.pd-console .err {
+  color: var(--red);
+}
+
+/* ---------- 하단 버튼 ---------- */
+.pd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.pd-actions .cw-btn {
+  min-width: 120px;
+}
+
+@media (max-width: 1100px) {
+  .pd-grid {
+    /* 긴 코드 한 줄이 모바일의 설명·편집기 카드 폭을 밀어내지 않게 합니다. */
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .pd-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pd-lang {
+    width: 100%;
+  }
+
+  .pd-sample {
+    grid-template-columns: 1fr;
+  }
+
+  .pd-editor-body {
+    height: 340px;
+  }
+}

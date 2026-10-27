@@ -49,6 +49,7 @@ class RaceNode {
   get textContent() { return this._text+this.children.map(child=>child.textContent).join(''); }
   append(...children) { this.children.push(...children); }
   prepend(...children) { this.children.unshift(...children); }
+  setAttribute(name,value) { this.attributes??={};this.attributes[name]=String(value); }
   replaceChildren(...children) { this._text=''; this.children=[...children]; }
   insertBefore(child,before) { const index=this.children.indexOf(before);this.children.splice(index<0?this.children.length:index,0,child); }
   remove() { if(this.parent) this.parent.children=this.parent.children.filter(child=>child!==this); }

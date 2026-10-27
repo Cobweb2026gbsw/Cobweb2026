@@ -24,7 +24,7 @@ class GroupServiceTest {
         when(user.getUserId()).thenReturn(42L);
         when(db.queryForList(contains("FROM users WHERE id=? AND status='ACTIVE' FOR UPDATE"),eq(42L)))
             .thenReturn(List.of(Map.of("solved_count",50)));
-        when(db.queryForObject(contains("COUNT(*) FROM group_members WHERE user_id=?"),eq(Long.class),eq(42L)))
+        when(db.queryForObject(contains("WHERE gm.user_id=? AND g.system_key IS NULL"),eq(Long.class),eq(42L)))
             .thenReturn(3L);
 
         var error=assertThrows(ResponseStatusException.class,

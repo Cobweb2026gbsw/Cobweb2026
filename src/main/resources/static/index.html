@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cobweb · 문제 풀이</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/groups.css"><link rel="stylesheet" href="/community.css"><script src="/groups.js" defer></script><script src="/community.js" defer></script><script src="/app.js" defer></script></head>
+<title>Cobweb · 문제 풀이</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/groups.css"><link rel="stylesheet" href="/community.css"><script src="/vendor/marked.umd.js" defer></script><script src="/markdown.js" defer></script><script src="/code-editor.js" defer></script><script src="/groups.js" defer></script><script src="/community.js" defer></script><script src="/app.js" defer></script></head>
 <body>
 <header><a href="/" class="brand">Cobweb</a><nav>
 <button data-view="problems">문제</button><button data-view="submissions">내 제출</button>
@@ -16,13 +16,14 @@
 </section>
 <section id="problem" class="view" hidden>
 <button data-view="problems">← 문제 목록</button><h1 id="problem-title"></h1><p id="problem-meta"></p>
-<h2>문제 설명</h2><pre id="description" class="prose"></pre>
-<h2>입력</h2><pre id="input-description" class="prose"></pre>
-<h2>출력 / 함수 형식</h2><pre id="output-description" class="prose"></pre>
-<h2>제한 사항</h2><pre id="constraints" class="prose"></pre><h2>예제</h2><div id="examples"></div>
+<h2>문제 설명</h2><div id="description" class="prose markdown-body"></div>
+<h2>입력</h2><div id="input-description" class="prose markdown-body"></div>
+<h2>출력 / 함수 형식</h2><div id="output-description" class="prose markdown-body"></div>
+<h2>제한 사항</h2><div id="constraints" class="prose markdown-body"></div><h2>예제</h2><div id="examples"></div>
 <form id="submit"><label>제출 언어<select id="submission-language" name="language" required></select></label>
 <p id="language-help"></p><label for="source">풀이 코드</label>
-<textarea id="source" name="source" rows="18" spellcheck="false" required placeholder="def sol(matrix, target):&#10;    return False"></textarea>
+<textarea id="source" name="source" rows="18" spellcheck="false" data-code-editor aria-describedby="code-editor-help" required placeholder="def sol(matrix, target):&#10;    return False"></textarea>
+<p id="code-editor-help" class="field-hint">Tab: 공백 4칸 · Shift+Tab: 내어쓰기 · Enter: 자동 들여쓰기 · Esc 다음 Tab: 입력란 밖으로 이동</p>
 <button>제출하고 채점하기</button></form><pre id="judge-result" aria-live="polite"></pre>
 </section>
 <section id="submissions" class="view" hidden><h1>내 제출</h1><div id="submission-list" class="list"></div></section>
@@ -73,7 +74,7 @@
 <label>출처 URL <input name="sourceUrl" type="url" maxlength="1000" placeholder="https://example.com/problem"></label>
 <fieldset><legend>예제 <span id="example-count"></span></legend><p class="field-hint">최대 20개. 위에서 아래 순서로 표시됩니다.</p><div id="example-rows" class="repeat-list"></div><button id="add-example" type="button">예제 추가</button></fieldset>
 <fieldset><legend>비공개 채점 테스트 <span id="test-count"></span></legend><p class="field-hint">1~50개. 입력과 기대 출력을 순서대로 저장합니다. SQL 입력은 초기화 SQL, 기대 출력은 헤더 없는 TSV입니다.</p><div id="test-rows" class="repeat-list"></div><button id="add-test" type="button">테스트 추가</button></fieldset>
-<fieldset><legend>정답 코드 <span id="solution-count"></span></legend><p class="field-hint">언어당 하나, 최대 13개. 파일은 64 KiB 이하 UTF-8 텍스트만 읽어 코드 내용으로 전송하며 서버에 파일 경로를 보내지 않습니다.</p><div id="solution-rows" class="repeat-list"></div><button id="add-solution" type="button">정답 코드 추가</button></fieldset>
+<fieldset><legend>정답 코드 <span id="solution-count"></span></legend><p class="field-hint">허용 언어당 하나씩 추가할 수 있습니다. 파일은 64 KiB 이하 UTF-8 텍스트만 읽어 코드 내용으로 전송하며 서버에 파일 경로를 보내지 않습니다.</p><div id="solution-rows" class="repeat-list"></div><button id="add-solution" type="button">정답 코드 추가</button></fieldset>
 <div class="editor-actions"><button id="save-problem" type="submit">초안 저장</button><button id="request-review" type="button">검수 요청</button></div>
 </form></div></div></section>
 <section id="admin" class="view" hidden><div class="section-heading"><div><p class="eyebrow">운영자</p><h1>문제 관리</h1><p>검수, 공개 범위 변경, 반려와 보관을 처리합니다.</p></div></div>

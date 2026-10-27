@@ -210,6 +210,7 @@ async function testContestLinkedAdminEditDoesNotArchive() {
     "let sessionEpoch=1,viewEpoch=1,adminProblem=null;const $=s=>document.querySelector(s);",
     section('function currentSession(', 'async function api(') +
       section('function problemTitle(item)', 'function listItems(data)') +
+      section('function renderMarkdown(', 'function form(') +
       section('function addReviewSection(', 'async function openAdminProblem(') +
       section("$('#admin-edit').onclick=async()=>{", "form('review',"),
     {document: {querySelector: get, createElement: () => new FakeNode()},

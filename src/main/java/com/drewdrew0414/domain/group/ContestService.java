@@ -1,12 +1,14 @@
 package com.drewdrew0414.domain.group;
 
+import com.drewdrew0414.domain.problem.ProblemAuthorProjection;
+
 import com.drewdrew0414.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
+import com.drewdrew0414.global.exception.ApiException;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -38,7 +40,7 @@ public class ContestService {
     }
     private Map<String,Object> contest(long gid,long cid,boolean lock) {
         var rows=db.queryForList("SELECT * FROM group_contests WHERE group_id=? AND id=?"+(lock?" FOR UPDATE":""),gid,cid);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"코딩테스트를 찾을 수 없습니다.");
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND,"코딩테스트를 찾을 수 없습니다.");
         return rows.getFirst();
     }
     private Map<String,Object> summary(Map<String,Object> row,LocalDateTime now) {
@@ -79,13 +81,13 @@ public class ContestService {
         var authors=db.queryForList("SELECT author_id FROM problems WHERE id=?",problemId);
         if(!authors.isEmpty() && id(authors.getFirst().get("author_id"))==user.getUserId()) return;
         if(!canReadQuestions(contest,user,now()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"현재 시험 문제를 볼 수 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"현재 시험 문제를 볼 수 없습니다.");
     }
     private void requireActiveTake(Map<String,Object> contest,CustomUserDetails user) {
         GroupService.requireUser(user);
         if(!groups.can(id(contest.get("group_id")),user,GroupPermission.TAKE_CONTESTS) ||
             !"ACTIVE".equals(status(contest,now())))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"시험 응시 시간 또는 권한이 아닙니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간 또는 권한이 아닙니다.");
     }
 
     public List<Map<String,Object>> list(long gid,CustomUserDetails user) {
@@ -119,9 +121,9 @@ public class ContestService {
         long uid=GroupService.requireUser(user);
         // created_by FK의 사용자 부모 행을 그룹보다 먼저 잠가 그룹 생성/가입과 순서를 맞춥니다.
         if(db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",uid).isEmpty())
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            throw new ApiException(HttpStatus.UNAUTHORIZED);
         if(db.queryForList("SELECT id FROM study_groups WHERE id=? AND status='ACCEPTED' FOR UPDATE",gid).isEmpty())
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"그룹을 찾을 수 없습니다.");
+            throw new ApiException(HttpStatus.NOT_FOUND,"그룹을 찾을 수 없습니다.");
         groups.requirePermission(gid,user,GroupPermission.CREATE_CONTESTS);
         validateWrite(request,true,null);
         db.update("""
@@ -134,7 +136,7 @@ public class ContestService {
         var problemIds=lockProblems(gid,request.problemNumbers());
         insertProblems(cid,request.problemNumbers(),problemIds);
         if(!utc(request.startsAt()).isAfter(now()))
-            throw new ResponseStatusException(HttpStatus.CONFLICT,"시험 시작 시각이 지나 다시 저장해야 합니다.");
+            throw new ApiException(HttpStatus.CONFLICT,"시험 시작 시각이 지나 다시 저장해야 합니다.");
         return cid;
     }
     @Transactional
@@ -154,7 +156,7 @@ public class ContestService {
             db.update("DELETE FROM contest_problems WHERE contest_id=?",cid);
             insertProblems(cid,request.problemNumbers(),problemIds);
             if(!local(old.get("starts_at")).isAfter(now()) || !utc(request.startsAt()).isAfter(now()))
-                throw new ResponseStatusException(HttpStatus.CONFLICT,"시작된 시험은 문제와 시간을 바꿀 수 없습니다.");
+                throw new ApiException(HttpStatus.CONFLICT,"시작된 시험은 문제와 시간을 바꿀 수 없습니다.");
         } else db.update("""
             UPDATE group_contests SET replay_allowed=?,capture_protection=?,window_switch_protection=? WHERE id=?
             """,request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),cid);
@@ -165,12 +167,12 @@ public class ContestService {
             request.problemNumbers().isEmpty() || request.problemNumbers().size()>50 ||
             request.problemNumbers().stream().anyMatch(Objects::isNull) ||
             new HashSet<>(request.problemNumbers()).size()!=request.problemNumbers().size())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"시험 정보 또는 문제 목록이 올바르지 않습니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"시험 정보 또는 문제 목록이 올바르지 않습니다.");
         if(!request.startsAt().isBefore(request.endsAt()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"시험 종료 시각은 시작 시각보다 늦어야 합니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"시험 종료 시각은 시작 시각보다 늦어야 합니다.");
         if(old==null || upcoming) {
             if(!utc(request.startsAt()).isAfter(now()))
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"미래의 시작 시각을 지정해 주세요.");
+                throw new ApiException(HttpStatus.BAD_REQUEST,"미래의 시작 시각을 지정해 주세요.");
         } else {
             var existing=db.queryForList("""
                 SELECT p.problem_number FROM contest_problems cp JOIN problems p ON p.id=cp.problem_id
@@ -180,14 +182,14 @@ public class ContestService {
                 !utc(request.startsAt()).equals(local(old.get("starts_at"))) ||
                 !utc(request.endsAt()).equals(local(old.get("ends_at"))) ||
                 !request.problemNumbers().equals(existing))
-                throw new ResponseStatusException(HttpStatus.CONFLICT,"시작된 시험은 문제와 시간을 바꿀 수 없습니다.");
+                throw new ApiException(HttpStatus.CONFLICT,"시작된 시험은 문제와 시간을 바꿀 수 없습니다.");
         }
     }
     private Map<Integer,Long> lockProblems(long gid,List<Integer> numbers) {
         Map<Integer,Long> ids=new HashMap<>();
         for(int number:numbers) {
             var rows=db.queryForList("SELECT id FROM problems WHERE problem_number=?",number);
-            if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT,"선택한 문제를 찾을 수 없습니다.");
+            if(rows.isEmpty()) throw new ApiException(HttpStatus.CONFLICT,"선택한 문제를 찾을 수 없습니다.");
             ids.put(number,id(rows.getFirst().get("id")));
         }
         // 모든 출제자 편집은 문제 행을 먼저 잠급니다. 여러 문제를 한 시험에 묶을 때도
@@ -202,7 +204,7 @@ public class ContestService {
                     WHERE r.problem_id=p.id AND CHAR_LENGTH(TRIM(r.source_code))>0)
                 FOR UPDATE
                 """,problemId,gid);
-            if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT,"선택한 문제는 시험에 사용할 수 없습니다.");
+            if(rows.isEmpty()) throw new ApiException(HttpStatus.CONFLICT,"선택한 문제는 시험에 사용할 수 없습니다.");
         }
         return ids;
     }
@@ -218,7 +220,7 @@ public class ContestService {
     public void requireSubmission(long contestId,long problemId,CustomUserDetails user) {
         GroupService.requireUser(user);
         var rows=db.queryForList("SELECT * FROM group_contests WHERE id=? FOR UPDATE",contestId);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND,"시험을 찾을 수 없습니다.");
         var c=rows.getFirst();
         requireActiveTake(c,user);
         if(db.queryForObject("""
@@ -227,7 +229,7 @@ public class ContestService {
             WHERE cp.contest_id=? AND cp.problem_id=? AND p.group_id=c.group_id
               AND p.visibility='GROUP'
             """,Long.class,contestId,problemId)==0)
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"시험에 포함되지 않은 문제입니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"시험에 포함되지 않은 문제입니다.");
     }
 
     /** 일반 문제 API는 시험 연결 문제를 숨기고 시험 전용 엔드포인트만 응시자에게 엽니다. */
@@ -240,17 +242,17 @@ public class ContestService {
         if(rows.isEmpty()) return;
         if(user!=null && user.isEnabled() && id(rows.getFirst().get("author_id"))==user.getUserId()) return;
         if(questionStaff(id(rows.getFirst().get("group_id")),user)) return;
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        throw new ApiException(HttpStatus.NOT_FOUND);
     }
     /** 본인 제출은 응시 중 또는 참여했던 시험의 허용된 replay에서만, 스태프는 별도 권한으로 읽습니다. */
     public void requireSubmissionRead(long contestId,long ownerUserId,CustomUserDetails user) {
         long uid=GroupService.requireUser(user);
         var rows=db.queryForList("SELECT * FROM group_contests WHERE id=?",contestId);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var c=rows.getFirst(); long gid=id(c.get("group_id"));
         if(groups.can(gid,user,GroupPermission.VIEW_CONTEST_RESULTS)) return;
         if(uid!=ownerUserId || !personalReadAllowed(c,user,now()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"시험 제출을 볼 수 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"시험 제출을 볼 수 없습니다.");
     }
 
     public List<Map<String,Object>> problems(long gid,long cid,CustomUserDetails user) {
@@ -258,7 +260,7 @@ public class ContestService {
         var c=contest(gid,cid,false);
         var visible=visibleProblemSummaries(c,user);
         if(visible.isEmpty() && !canReadQuestions(c,user,now()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"현재 시험 문제를 볼 수 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"현재 시험 문제를 볼 수 없습니다.");
         return visible;
     }
     public Map<String,Object> problem(long gid,long cid,int number,CustomUserDetails user) {
@@ -267,12 +269,12 @@ public class ContestService {
         var rows=db.queryForList("""
             SELECT p.id,p.problem_number,p.problem_title,p.description,p.input_description,
                    p.output_description,p.constraints_text,p.rank_type,p.rank_int,p.time_limit_ms,
-                   p.memory_limit_mb,p.execution_mode,p.status,p.author_id,
+                   p.memory_limit_mb,p.execution_mode,p.status,p.author_id,p.author_public,
                    p.function_abi_compatible,p.source_name,p.source_url
             FROM contest_problems cp JOIN problems p ON p.id=cp.problem_id
             WHERE cp.contest_id=? AND p.problem_number=? AND p.group_id=? AND p.visibility='GROUP'
             """,cid,number,gid);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var p=rows.getFirst(); requireQuestionAccess(c,user,id(p.get("id")));
         Map<String,Object> result=new LinkedHashMap<>();
         for(var key:List.of("problem_number","problem_title","description","input_description",
@@ -287,11 +289,21 @@ public class ContestService {
         if("FUNCTION".equals(p.get("execution_mode")) && !enabled(p.get("function_abi_compatible")))
             languages=languages.stream().filter("PYTHON"::equals).toList();
         result.put("languages",languages);
+        result.put("functionAbi","FUNCTION".equals(p.get("execution_mode")) && enabled(p.get("function_abi_compatible"))
+            ? "CHAIN_LASER_V1" : null);
+        // 문제 접근 권한·시험 시간창을 확인한 뒤 공개 시작 코드만 제공합니다.
+        var allowedLanguages=languages;
+        result.put("starterCodes",db.queryForList("""
+            SELECT language,source_code AS sourceCode FROM problem_starter_codes
+            WHERE problem_id=? ORDER BY language
+            """,p.get("id")).stream()
+            .filter(code->allowedLanguages.contains(code.get("language"))).toList());
         result.put("tags",db.queryForList("""
             SELECT t.name FROM problem_tags pt JOIN tags t ON t.id=pt.tag_id
             WHERE pt.problem_id=? ORDER BY t.name
             """,String.class,p.get("id")));
         result.put("sourceName",p.get("source_name")); result.put("sourceUrl",p.get("source_url"));
+        ProblemAuthorProjection.put(result,p,db);
         return result;
     }
 
@@ -299,7 +311,7 @@ public class ContestService {
         long uid=GroupService.requireUser(user);
         var c=contest(gid,cid,false);
         if(!groups.can(gid,user,GroupPermission.TAKE_CONTESTS) || !personalReadAllowed(c,user,now()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"본인 시험 제출을 볼 수 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"본인 시험 제출을 볼 수 없습니다.");
         return Map.of("submissions",submissionRows(cid,uid));
     }
     private List<Map<String,Object>> submissionRows(long cid,long uid) {
@@ -352,13 +364,13 @@ public class ContestService {
         // 제출과 동일한 시험→사용자 순서로 잠가 이벤트 FK의 부모 잠금 경합을 막습니다.
         var c=contest(gid,cid,true);
         if(db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",uid).isEmpty())
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            throw new ApiException(HttpStatus.UNAUTHORIZED);
         requireActiveTake(c,user);
         if(event==null || event.type()==null || event.eventId()==null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"이벤트 값이 올바르지 않습니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"이벤트 값이 올바르지 않습니다.");
         if(event.type().windowSwitch()?!enabled(c.get("window_switch_protection")):
             !enabled(c.get("capture_protection")))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"활성화되지 않은 감시 이벤트입니다.");
+            throw new ApiException(HttpStatus.BAD_REQUEST,"활성화되지 않은 감시 이벤트입니다.");
         if(db.queryForObject("""
             SELECT COUNT(*) FROM contest_events WHERE contest_id=? AND user_id=? AND event_id=?
             """,Long.class,cid,uid,event.eventId().toString())>0) return;
@@ -366,13 +378,13 @@ public class ContestService {
             SELECT COUNT(*) FROM contest_events WHERE contest_id=? AND user_id=?
               AND occurred_at>=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE)
             """,Long.class,cid,uid);
-        if(recent>=60) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"감시 이벤트가 너무 잦습니다.");
+        if(recent>=60) throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,"감시 이벤트가 너무 잦습니다.");
         int inserted=db.update("""
             INSERT INTO contest_events(contest_id,user_id,event_id,event_type,occurred_at)
             SELECT id,?,?,?,UTC_TIMESTAMP(6) FROM group_contests
             WHERE id=? AND starts_at<=UTC_TIMESTAMP(6) AND ends_at>UTC_TIMESTAMP(6)
             """,uid,event.eventId().toString(),event.type().name(),cid);
-        if(inserted!=1) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
+        if(inserted!=1) throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
     }
     public List<Map<String,Object>> events(long gid,long cid,Long targetUid,CustomUserDetails user) {
         contest(gid,cid,false);

@@ -9,7 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /** 공개 프로필은 허용된 열만 반환합니다. 이메일·비밀번호·로그인 로그는 공개하지 않습니다. */
@@ -24,9 +24,13 @@ public class ProfileController {
             WHERE status='ACTIVE' ORDER BY solved_count DESC,submit_count ASC,id LIMIT 30 OFFSET ?
             """,Math.min(Math.max(page,0),10000)*30));
     }
+    /** 기존 이름의 '/', '..', 유니코드를 경로 정규화 없이 그대로 조회하는 공개 별칭입니다. */
+    @GetMapping("/profiles") public Object profileQuery(@RequestParam String username) {
+        return profile(username);
+    }
     @GetMapping("/profiles/{username}") public Object profile(@PathVariable String username) {
         var rows=db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE username=?",username);
-        if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var p=rows.getFirst(); Object uid=p.remove("id");
         p.put("solvedProblems",db.queryForList("""
             SELECT p.problem_number,p.problem_title FROM user_solved_problems s JOIN problems p ON p.id=s.problem_id
