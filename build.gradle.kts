@@ -8,6 +8,9 @@ group = "com.drewdrew0414"
 version = "0.0.1-SNAPSHOT"
 description = "cobweb2026"
 
+// 빌드 검증용 main이 추가되어도 실행 JAR의 진입점은 항상 웹 애플리케이션입니다.
+springBoot { mainClass.set("com.drewdrew0414.Cobweb2026Application") }
+
 // Spring Boot 4.1.1 BOM의 공식 버전 속성으로 관련 모듈 전체를 같은 보안 패치로 맞춥니다.
 extra["tomcat.version"] = "11.0.26"
 extra["jackson-bom.version"] = "3.1.7"
@@ -78,3 +81,15 @@ tasks.processResources {
     }
     from(layout.buildDirectory.dir("generated-frontend"))
 }
+
+// 잘못된 포터블 함수 인자/번호/랭크가 웹 기동 중 발견되는 일을 패키징 전에 막습니다.
+// classes → processResources를 사용하며 bootJar에는 의존하지 않아 순환하지 않습니다.
+val verifyCurriculumCatalogs by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Validate packaged curriculum catalogs without starting Spring or accessing a database"
+    dependsOn(tasks.named("classes"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.drewdrew0414.global.config.CatalogBuildVerifier")
+    jvmArgs("-Xms32m", "-Xmx512m")
+}
+tasks.named("bootJar") { dependsOn(verifyCurriculumCatalogs) }

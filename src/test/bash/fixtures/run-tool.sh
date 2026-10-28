@@ -126,6 +126,9 @@ case "$tool" in
     stage_fail "$kind"
     if [[ "$kind" == worker ]]; then
       [[ " $* " == *' --curriculum.level0.enabled=false '* ]] || exit 94
+      [[ "${OPENAI_API_KEY:-}" == '' && "${OPENAI_ENABLED:-}" == false ]] || exit 94
+      [[ " $* " == *' --openai.enabled=false '* && " $* " == *' --openai.api-key= '* ]] || exit 94
+      : > "$MOCK_STATE/worker.openai-disabled-checked"
       printf 'Started Cobweb2026Application\n'
     fi
     hold ;;

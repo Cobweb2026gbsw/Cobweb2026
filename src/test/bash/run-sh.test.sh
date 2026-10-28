@@ -67,7 +67,8 @@ start() {
 }
 wait_for() {
   local file="$1" pattern="${2:-}" attempt
-  for ((attempt=0;attempt<350;attempt++)); do
+  # 병렬 Docker 검증의 프로세스 생성 지연까지 허용하며 런처 자체 시간 제한은 변경하지 않습니다.
+  for ((attempt=0;attempt<1000;attempt++)); do
     if [[ -f "$file" ]] && { [[ -z "$pattern" ]] || grep -F -- "$pattern" "$file" >/dev/null; }; then return 0; fi
     if ! kill -0 "$LAUNCHER" 2>/dev/null; then fail "기다리던 상태 전에 런처 종료: $file $pattern"; fi
     /bin/sleep 0.02
@@ -76,7 +77,7 @@ wait_for() {
 }
 await_exit() {
   local expected="$1" actual=0 attempt
-  for ((attempt=0;attempt<350;attempt++)); do
+  for ((attempt=0;attempt<1000;attempt++)); do
     kill -0 "$LAUNCHER" 2>/dev/null || break
     /bin/sleep 0.02
   done
@@ -413,4 +414,20 @@ assert_no_event '<stop>'
 assert_file "$CASE_DIR/state/volume.exists"
 grep -F '기존 DB 볼륨은 있지만 config.env가 없습니다' "$CASE_DIR/output" >/dev/null || fail '기존 PG 비밀 파일 복구 안내 누락'
 pass '기존 PostgreSQL 볼륨의 설정 누락: 새 비밀번호를 생성하지 않고 DB 변경 전 거절'
+
+fixture openai-worker-isolation absent
+OPENAI_API_KEY=test-only-not-a-real-openai-key OPENAI_ENABLED=true start ''
+wait_for "$CASE_DIR/output" '준비 완료:'
+assert_file "$CASE_DIR/state/worker.openai-disabled-checked"
+assert_no_event 'test-only-not-a-real-openai-key'
+! grep -F 'test-only-not-a-real-openai-key' "$CASE_DIR/output" >/dev/null || fail 'OpenAI 가짜 비밀키가 출력됐습니다.'
+runtime_configs=("$CASE_DIR/.local/run/$PROJECT/postgres/logs/"*/runtime.properties)
+for runtime_config in "${runtime_configs[@]}"; do
+  ! grep -F 'OPENAI_' "$runtime_config" >/dev/null || fail 'OpenAI 값이 런처 설정 사본으로 복사됐습니다.'
+done
+kill -INT "$LAUNCHER"
+await_exit 130
+assert_no_processes
+assert_preserved_data
+pass 'OpenAI 서버 환경이 있어도 채점 워커의 키는 빈값·enabled=false, CLI로도 비활성 강제'
 printf '1..%s\n' "$PASSED"

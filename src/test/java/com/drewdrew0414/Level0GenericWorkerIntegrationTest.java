@@ -57,7 +57,7 @@ class Level0GenericWorkerIntegrationTest {
 
     @BeforeEach void setup() {
         // HTTP는 별도 DB 연결을 쓰므로 fixture를 커밋한 뒤 각 테스트가 만든 ID만 원자적으로 정리합니다.
-        assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test")
+        assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test","cobweb_expert_test")
             .contains(db.queryForObject("SELECT current_database()",String.class)),"A dedicated test database is required");
         author=account(Role.OPERATOR);solver=account(Role.USER);
     }

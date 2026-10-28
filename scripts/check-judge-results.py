@@ -25,6 +25,7 @@ SUITES = (
     "com.drewdrew0414.TestRunIntegrationTest",
     "com.drewdrew0414.domain.submission.GenericNestedFunctionJudgeTest",
     "com.drewdrew0414.domain.submission.GenericAlgorithmCatalogJudgeTest",
+    "com.drewdrew0414.domain.submission.GenericExpertCatalogJudgeTest",
 )
 
 
@@ -70,6 +71,7 @@ def main(result_dir: Path) -> None:
     test_runs = cases[SUITES[7]]
     nested = cases[SUITES[8]]
     algorithms = cases[SUITES[9]]
+    expert = cases[SUITES[10]]
     required_multi = {
         f"{language}: compile once, run isolated cases" for language in LANGUAGES
     } | {
@@ -143,6 +145,18 @@ def main(result_dir: Path) -> None:
         f"{p['rankType']} {p['ordinal']}: {p['title']} ({len(p['tests'])} Docker cases)"
         for p in algorithm_entries
     }
+    expert_entries = json.loads((catalog_source.parent / "level3.json").read_text(encoding="utf-8"))["problems"]
+    if (len(expert_entries) != 80
+            or [p["ordinal"] for p in expert_entries] != list(range(1, 81))
+            or [p["number"] for p in expert_entries] != list(range(1266, 1346))
+            or any(p["rankType"] != "EXPERT" or p["chapter"] != f"Lv.3-{index // 16 + 1}"
+                   or p["rankInt"] != 5 - index // 16 or not 10 <= len(p["tests"]) <= 50
+                   for index, p in enumerate(expert_entries))):
+        raise ValueError("Invalid EXPERT 80-problem/five-16-problem-chapter catalog")
+    required_expert = {
+        f"EXPERT {p['ordinal']}: {p['title']} ({len(p['tests'])} Docker cases)"
+        for p in expert_entries
+    } | {"wrongScalarAndWrongNestedArrayResultsAreNotAccepted()"}
     if not docker:
         raise ValueError("DockerJudgeTest did not execute")
     if missing := required_multi - multi:
@@ -157,6 +171,7 @@ def main(result_dir: Path) -> None:
         (SUITES[7], test_runs, required_test_runs, 9),
         (SUITES[8], nested, required_nested, 48),
         (SUITES[9], algorithms, required_algorithms, 165),
+        (SUITES[10], expert, required_expert, 81),
     ):
         if case_counts[suite] != expected or len(actual) != expected or actual != required:
             raise ValueError(
@@ -167,7 +182,9 @@ def main(result_dir: Path) -> None:
           "HTTP/worker cases, 197 generic ABI cases, all 100 Lv.0 references/812 stored cases, "
           "generic HTTP/worker reuse integration, 3 safe-diagnostic Docker cases, "
           "all 9 custom-test-run cases (including 3 Docker cases), 48 nested/large-input ABI cases, "
-          f"and all 165 algorithm references/{sum(len(p['tests']) for p in algorithm_entries)} stored cases ran")
+          f"all 165 algorithm references/{sum(len(p['tests']) for p in algorithm_entries)} stored cases, "
+          f"and all 80 EXPERT references/{sum(len(p['tests']) for p in expert_entries)} stored cases "
+          "plus scalar/nested wrong-answer rejection ran")
 
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@ class TestRunIntegrationTest {
     private CustomUserDetails author,solver,other;
 
     @BeforeEach void setup() {
-        assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test")
+        assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test","cobweb_expert_test")
             .contains(db.queryForObject("SELECT current_database()",String.class)),"A dedicated test database is required");
         author=account(Role.OPERATOR);solver=account(Role.USER);other=account(Role.USER);
     }

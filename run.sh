@@ -554,7 +554,8 @@ done
 # 마이그레이션과 웹 준비가 끝난 뒤 같은 JAR의 non-web 워커를 실행합니다.
 STAGE='worker'
 set -m
-"$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --spring.profiles.active=local --spring.main.web-application-type=none \
+OPENAI_API_KEY='' OPENAI_ENABLED=false "$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --spring.profiles.active=local --spring.main.web-application-type=none \
+  --openai.enabled=false --openai.api-key= \
   --spring.flyway.enabled=false --judge.enabled=true --judge.image="$JUDGE_IMAGE_ID" \
   --judge.workspace="$JUDGE_WORKSPACE" --demo.seed=false --curriculum.level0.enabled=false </dev/null > "$LOG_DIR/worker.log" 2>&1 &
 WORKER_PID=$!

@@ -76,9 +76,11 @@ ZIP 기반 새 화면 소스는 `frontend/src/`이며 Gradle이 잠금 파일로
 전체 API의 요청·응답·권한, DB와 채점 동작은 [백엔드 구현 명세](docs/BACKEND_SPEC.md)에 정리했습니다.
 
 local 프로필은 5433 포트의 PostgreSQL DB를 사용하고 단일 Flyway `V1__postgresql_schema.sql`을 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력이며 PostgreSQL 검증을 뜻하지 않습니다.
-기본 웹 기동에서는 Lv.0 입문 100문제와 Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제를 등록합니다. 기존 사용자 문제의 번호·제목과 충돌하면
+기본 웹 기동에서는 Lv.0 입문 100문제, Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제와 Lv.3 EXPERT 80문제를 등록합니다.
+기존 체인 레이저 1문제까지 합쳐 기본 과정은 **346문제**입니다. 기존 사용자 문제의 번호·제목과 충돌하면
 트랜잭션 전체를 중단하며 덮어쓰지 않습니다. 기존 체인 레이저는 ID·제출·테스트를 보존한 채
-1100번으로 보존한 뒤 ELITE 과정 등록 시 같은 ID로 공개를 복구합니다. SKILLED는 1101~1175, 새 ELITE는 1176~1265입니다.
+1100번으로 보존한 뒤 ELITE 과정 등록 시 같은 ID로 공개를 복구합니다. SKILLED는 1101~1175, 새 ELITE는 1176~1265,
+EXPERT는 1266~1345입니다. 기존 과정 JSON과 등록된 문제의 관리자 수정 내용을 덮어쓰지 않습니다.
 전체 기본 과정을 끄려면 `--curriculum.level0.enabled=false`를 명시합니다. 이때만 `demo.seed=true`의
 기존 체인 레이저 데모가 동작하며, 이미 보관한 체인 레이저를 1000번에 다시 만들지는 않습니다.
 작성자는 로그인할 수 없는 `cobweb-system` 계정입니다. 실제 사용자 계정과의 충돌은 거절합니다.
@@ -98,8 +100,12 @@ SQL·엄랭을 제외한 15개 언어에 공개 서명 기반 시작 코드를 �
 공개 서명만 API로 전달하며 참고 정답·비공개 테스트는 기존 관리 권한 경계 안에 둡니다.
 가져오기 이력으로 재시작 때 중복을 막고 등록 후 관리자가 바꾼 문제 내용·공개 상태를 덮어쓰지 않습니다.
 
-추가 과정의 원본은 `problems/level1.json`, `level2.json`입니다. 각 영역의 SKILLED 등급은 5·4·3·2·1,
-ELITE의 여섯 영역은 5·4·3·3·2·1로 배정합니다. 채점기는 알고리즘 선택이나 특정 구문 사용 자체를 강제하지 않습니다.
+추가 과정의 원본은 `src/main/resources/problems/level1.json`, `level2.json`, `level3.json`입니다. 각 영역의 SKILLED 등급은 5·4·3·2·1,
+ELITE의 여섯 영역은 5·4·3·3·2·1, EXPERT의 다섯 영역은 16문제씩 5·4·3·2·1로 배정합니다.
+EXPERT는 문제마다 공개 예제 2개, Python 기준 풀이와 총 1,187개 비공개 채점 케이스를 포함합니다.
+원본 정의 `scripts/expert_catalog/part1.py`~`part3.py`에서 `python3 -I -B scripts/build-expert-catalog.py`로 `level3.json`을 재생성합니다.
+80문제의 번호·제목·함수 서명, 결정 규칙과 독립 검증 명령은 [EXPERT 과정 명세](docs/EXPERT_CURRICULUM.md)를 참고하세요.
+채점기는 알고리즘 선택이나 특정 구문 사용 자체를 강제하지 않습니다.
 일반 함수 입력·정답 JSON은 각각 UTF-8 16MiB, 모든 인자에 걸친 배열 슬롯(바깥 행+내부 원소) 합은 100만 개까지입니다.
 행 길이가 다른 중첩 배열과 빈 행을 지원합니다. 문자열 하나는 16KiB ASCII, private 테스트 묶음은 32MiB,
 범용 함수 제작 JSON 전체는40MiB까지입니다(일반 문제 제작은 기존2MiB).
@@ -112,10 +118,22 @@ JVM 힙은 각각64MiB로 시작해512MiB까지만 사용하며 OOM 시 종료�
 
 콘텐츠 독립 검증은 `python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'`,
 실제 15언어 ABI 검증은 `DOCKER_JUDGE_TEST=true`, 100개 정답 전체 Docker 검증은
-`GENERIC_CATALOG_DOCKER_TEST=true`를 추가해 Gradle 테스트를 실행합니다. 새 이미지는 `17-v3-generic-nested`로 구분해 이전 캐시를 무효화합니다.
+`GENERIC_CATALOG_DOCKER_TEST=true`를 추가해 Gradle 테스트를 실행합니다.
+EXPERT 80문제만 별도로 실제 Docker에서 재채점하려면 `EXPERT_CATALOG_DOCKER_TEST=true`와
+`--tests '*GenericExpertCatalogJudgeTest'`를 사용합니다. 이전 과정 전체 재채점과 분리된 선택 검사이며 상세 명령은 [EXPERT 검증 안내](docs/EXPERT_CURRICULUM.md#생성과-검증)를 따르세요.
+새 이미지는 `17-v3-generic-nested`로 구분해 이전 캐시를 무효화합니다.
 `GET /api/ready`는 ApplicationRunner와 문제 등록 트랜잭션이 끝나기 전 503, 트래픽 수신 가능 상태가 된 뒤
 200을 반환합니다. `run.sh`도 이 응답을 확인하므로 HTTP 포트가 먼저 열렸다는 이유만으로 준비 완료를 선언하지 않습니다.
 분리된 `compose.worker.yaml`의 워커는 입문 과정 가져오기를 끄며 웹만 등록을 담당합니다.
+
+`bootJar`는 `verifyCurriculumCatalogs`로 Lv.0~3 파일·번호·랭크·함수 ABI·전역 제목을 먼저 검사합니다.
+카탈로그 누락이나 언어 예약어 인자 때문에 웹 기동 중 실패하기 전에 빌드를 거절하며, 이 검사는 DB나 참고 풀이를 실행하지 않습니다.
+
+### OpenAI 연동 준비
+
+현재는 서버 설정과 항상 실패하는 스텁만 준비했으며 실제 API 호출·과금은 없습니다.
+키는 서버 전용이고 `/api/openai/**`·`/api/ai/**`는 관리자까지 차단합니다. 채점 워커에는 키/활성 설정을 전달하지 않습니다.
+키를 넣거나 활성 플래그만 켜도 호출할 수 없으며, 실제 기능·권한·쿼터·비용 제한은 별도 구현이 필요합니다. [OpenAI 준비 명세](docs/OPENAI_PREPARATION.md)를 참고하세요.
 
 ### 2026-10-26 문제별 시작 코드와 코드 편집기
 

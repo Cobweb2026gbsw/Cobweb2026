@@ -19,6 +19,10 @@ printf '\n%s\n' \
   'POSTGRES_ADMIN_PASSWORD=ci-test-only' 'DEV_ADMIN_PASSWORD=ci-test-only' \
   'DEV_ROOT_PASSWORD=ci-legacy-only' 'MYSQL_ROOT_PASSWORD=ci-legacy-only' \
   'JWT_SECRET=ci-jwt-only' 'GOOGLE_CLIENT_SECRET=ci-google-only' 'MAIL_PASSWORD=ci-mail-only' \
+  'OPENAI_API_KEY=ci-openai-only-not-real' 'OPENAI_ENABLED=true' 'OPENAI_MODEL=ci-model' \
+  'OPENAI_ALLOWED_MODELS=ci-model' 'SPRING_APPLICATION_JSON={"openai":{"enabled":true,"api-key":"ci-json-only"}}' \
+  'JAVA_TOOL_OPTIONS=-Dopenai.enabled=true' 'JDK_JAVA_OPTIONS=-Dopenai.enabled=true' \
+  '_JAVA_OPTIONS=-Dopenai.enabled=true' 'SPRING_CONFIG_IMPORT=ci-not-a-real-import' \
   >> "$work_dir/.env"
 
 render_config() {
@@ -53,6 +57,17 @@ for (const [key, value] of Object.entries({JWT_SECRET: 'ci-jwt-only', GOOGLE_CLI
 }
 if (service === 'app' && config.services.postgres.environment.POSTGRES_PASSWORD !== 'ci-test-only') {
   throw new Error('Database administrator configuration was incorrectly removed from PostgreSQL');
+}
+if (service === 'worker') {
+  for (const key of ['OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_ALLOWED_MODELS', 'SPRING_APPLICATION_JSON', 'JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS', 'SPRING_CONFIG_LOCATION', 'SPRING_CONFIG_ADDITIONAL_LOCATION', 'SPRING_CONFIG_NAME', 'SPRING_CONFIG_IMPORT']) {
+    if (environment[key] !== '') throw new Error('Worker inherits prohibited AI/configuration value: ' + key);
+  }
+  if (environment.OPENAI_ENABLED !== 'false') throw new Error('Worker enables OpenAI');
+  const command = config.services.worker.command || [];
+  if (!command.includes('--openai.enabled=false') || !command.includes('--openai.api-key=')) throw new Error('Worker CLI AI boundary is missing');
+}
+if (service === 'app' && environment.OPENAI_API_KEY !== 'ci-openai-only-not-real') {
+  throw new Error('Server-side OpenAI configuration was incorrectly removed from the web app');
 }
 console.log(service + ': administrator secrets excluded; application auth/mail settings preserved.');
 NODE

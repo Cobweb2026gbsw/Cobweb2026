@@ -14,6 +14,19 @@ services:
       DEV_ADMIN_PASSWORD: ''
       DEV_ROOT_PASSWORD: ''
       MYSQL_ROOT_PASSWORD: ''
+      # 채점 워커는 AI 기능/비밀키를 사용하지 않습니다. env_file보다 우선하여 비웁니다.
+      OPENAI_ENABLED: 'false'
+      OPENAI_API_KEY: ''
+      OPENAI_MODEL: ''
+      OPENAI_ALLOWED_MODELS: ''
+      SPRING_APPLICATION_JSON: ''
+      JAVA_TOOL_OPTIONS: ''
+      JDK_JAVA_OPTIONS: ''
+      _JAVA_OPTIONS: ''
+      SPRING_CONFIG_LOCATION: ''
+      SPRING_CONFIG_ADDITIONAL_LOCATION: ''
+      SPRING_CONFIG_NAME: ''
+      SPRING_CONFIG_IMPORT: ''
       DB_URL: ${WORKER_DB_URL:?WORKER_DB_URL required}
       DB_USERNAME: ${WORKER_DB_USERNAME:?WORKER_DB_USERNAME required}
       DB_PASSWORD: ${WORKER_DB_PASSWORD:?WORKER_DB_PASSWORD required}
@@ -23,6 +36,8 @@ services:
       JUDGE_ENABLED: 'true'
       SPRING_MAIN_WEB_APPLICATION_TYPE: none
       JUDGE_WORKSPACE: /tmp/cobweb-judge
+    # CLI 속성은 잘못된 추가 설정 파일보다도 우선합니다.
+    command: ['--openai.enabled=false', '--openai.api-key=']
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/cobweb-judge:/tmp/cobweb-judge

@@ -4,6 +4,7 @@ import com.drewdrew0414.global.security.CustomUserDetailsService;
 import com.drewdrew0414.global.security.jwt.JwtAuthenticationFilter;
 import com.drewdrew0414.global.security.jwt.JwtTokenProvider;
 import com.drewdrew0414.global.exception.ApiErrorWriter;
+import com.drewdrew0414.global.openai.OpenAiWebRequestMatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
@@ -67,6 +68,9 @@ class SecurityConfig implements WebMvcConfigurer {
                         .accessDeniedHandler((request, response, exception) -> ApiErrorWriter.write(
                             response,403,"PERMISSION_DENIED","이 작업을 수행할 권한이 없습니다.")))
                 .authorizeHttpRequests(auth -> auth
+                        // OpenAI는 서버 전용 준비 단계입니다. /api/openai/**·/api/ai/**는
+                        // 관리자도 호출할 수 없고, 다른 공개/인증 규칙보다 먼저 거절합니다.
+                        .requestMatchers(new OpenAiWebRequestMatcher()).denyAll()
                         .requestMatchers(HttpMethod.GET, SpaController.PUBLIC_ROUTES).permitAll()
                         .requestMatchers(HttpMethod.GET, "/ui/index.html", "/ui/assets/**", "/react-bridge.js", "/legacy").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/ready", "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()

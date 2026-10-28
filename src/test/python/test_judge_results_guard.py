@@ -7,6 +7,7 @@ import json
 import re
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -72,9 +73,14 @@ class JudgeResultsGuardTest(unittest.TestCase):
                 for level in (1, 2)
                 for p in json.loads((ROOT / f"src/main/resources/problems/level{level}.json").read_text(encoding="utf-8"))["problems"]
             },
+            GUARD.SUITES[10]: {
+                f"EXPERT {p['ordinal']}: {p['title']} ({len(p['tests'])} Docker cases)"
+                for p in json.loads((ROOT / "src/main/resources/problems/level3.json").read_text(encoding="utf-8"))["problems"]
+            } | java_test_names("src/test/java/com/drewdrew0414/domain/submission/GenericExpertCatalogJudgeTest.java"),
         }
         self.assertEqual(len(self.cases[GUARD.SUITES[6]]), 3)
         self.assertEqual(len(self.cases[GUARD.SUITES[7]]), 9)
+        self.assertEqual(len(self.cases[GUARD.SUITES[10]]), 81)
         for suite, names in self.cases.items():
             self.write_report(suite, names)
 
@@ -98,8 +104,31 @@ class JudgeResultsGuardTest(unittest.TestCase):
 
     def test_complete_reports_match_java_names_and_preserve_existing_contracts(self):
         result = self.check()
-        for expected in ("197 generic ABI", "100 Lv.0 references/812", "3 safe-diagnostic Docker", "9 custom-test-run"):
+        for expected in ("197 generic ABI", "100 Lv.0 references/812", "3 safe-diagnostic Docker", "9 custom-test-run", "80 EXPERT references/", "scalar/nested wrong-answer rejection"):
             self.assertIn(expected, result)
+
+    def test_expert_catalog_numbering_rank_and_sixteen_problem_chapters_are_required(self):
+        original_read = Path.read_text
+        expert_path = ROOT / "src/main/resources/problems/level3.json"
+        changes = (
+            ("count", lambda entries: entries.pop()),
+            ("ordinal", lambda entries: entries[0].__setitem__("ordinal", 2)),
+            ("number", lambda entries: entries[0].__setitem__("number", 1265)),
+            ("rank", lambda entries: entries[0].__setitem__("rankType", "ELITE")),
+            ("subrank", lambda entries: entries[16].__setitem__("rankInt", 5)),
+            ("chapter", lambda entries: entries[16].__setitem__("chapter", "Lv.3-1")),
+            ("private case minimum", lambda entries: entries[0].__setitem__("tests", [])),
+        )
+        for label, mutate in changes:
+            def changed_read(path, *args, **kwargs):
+                text = original_read(path, *args, **kwargs)
+                if path == expert_path:
+                    document = json.loads(text)
+                    mutate(document["problems"])
+                    return json.dumps(document, ensure_ascii=False)
+                return text
+            with self.subTest(change=label), mock.patch.object(Path, "read_text", changed_read):
+                self.assert_rejected()
 
     def test_each_new_suite_report_is_required(self):
         for suite in GUARD.SUITES[6:]:

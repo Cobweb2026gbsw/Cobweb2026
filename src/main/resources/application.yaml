@@ -46,6 +46,17 @@ curriculum:
   level0:
     enabled: ${CURRICULUM_LEVEL0_ENABLED:true}
 
+# 서버 내부 연결 준비만 합니다. true와 유효한 키를 넣어도 현재 스텁은 항상 실패하며 통신하지 않습니다.
+# 프런트 번들/VITE_* 값이나 브라우저 API에 키를 전달하지 않습니다.
+openai:
+  enabled: ${OPENAI_ENABLED:false}
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:}
+  allowed-models: ${OPENAI_ALLOWED_MODELS:}
+  max-input-characters: ${OPENAI_MAX_INPUT_CHARACTERS:8000}
+  max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:512}
+  timeout-ms: ${OPENAI_TIMEOUT_MS:5000}
+
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 1800000     # 30분 (ms)
