@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.doAnswer;
 
-/** 개별 요청 테스트로 놓치기 쉬운 인증/JPA 변경감지 경합을 실제 MySQL에서 재현합니다. */
+/** 개별 요청 테스트로 놓치기 쉬운 인증/JPA 변경감지 경합을 실제 PostgreSQL에서 재현합니다. */
 @SpringBootTest
 @ActiveProfiles("test")
 class AuthConcurrencyTest {

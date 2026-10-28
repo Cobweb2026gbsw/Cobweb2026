@@ -1,0 +1,25 @@
+Wanted Sans Variable v1.0.3
+
+Copyright (c) 2024 Wanted Lab, Inc., with Reserved Font Name Wanted Sans Variable.
+Copyright 2024 The Wanted Sans Project Authors (https://github.com/wanteddev/wanted-sans)
+
+This unmodified font is distributed under the SIL Open Font License, Version 1.1.
+See OFL.txt in this directory for the complete copyright notice and license.
+
+Official release:
+https://github.com/wanteddev/wanted-sans/releases/tag/v1.0.3
+
+Original font:
+https://raw.githubusercontent.com/wanteddev/wanted-sans/v1.0.3/packages/wanted-sans/fonts/webfonts/variable/complete/woff2/WantedSansVariable.woff2
+
+Official CSS (font weight range: 400-1000):
+https://github.com/wanteddev/wanted-sans/blob/v1.0.3/packages/wanted-sans/fonts/webfonts/variable/complete/WantedSansVariable.css
+
+Original license:
+https://github.com/wanteddev/wanted-sans/blob/v1.0.3/OFL.txt
+
+File: WantedSansVariable.woff2
+Size: 1289292 bytes
+SHA-256: 4259e7e9a172e634c2cb419d793b84148990316341e910443e5d10965b2c8f16
+
+CobWeb serves this font locally. No external font CDN is requested at runtime.

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Map;
 
-/** 정식 워커와 같은 격리·도구 체인을 사용하고 입력·예상값은 별도 사용자 큐에서만 읽습니다. */
+/** 정식 워커와 같은 격리를 사용하며 비공개 샘플은 출력 수집 없는 정식 판정 경로로 실행합니다. */
 @Component @RequiredArgsConstructor
 @ConditionalOnProperty(name="judge.enabled",havingValue="true")
 public class TestRunWorker {
@@ -30,12 +30,21 @@ public class TestRunWorker {
             if(!tests.current(run)||Thread.currentThread().isInterrupted())return;
             try(var prepared=runner.preparePinned(language,(String)run.get("source_code"),(String)run.get("execution_mode"),image,(String)run.get("function_signature"))) {
                 if(!tests.current(run)||Thread.currentThread().isInterrupted())return;
-                for(var input:tests.cases(run)) {
+                boolean privateSample=TestRunService.isPrivateSample(run);
+                for(var input:privateSample?tests.privateCases(run):tests.cases(run)) {
                     if(!tests.current(run)||Thread.currentThread().isInterrupted())return;
-                    var output=prepared.runForTesting(input.input(),input.expected(),((Number)run.get("time_limit_ms")).intValue(),((Number)run.get("memory_limit_mb")).intValue());
-                    var judged=output.result();
-                    results.add(new TestRunService.Result(input.input(),input.expected(),"SYSTEM_ERROR".equals(judged.status())?null:output.actual(),judged.status(),judged.elapsedMs(),
-                        "SYSTEM_ERROR".equals(judged.status())||judged.diagnostic()==null?null:judged.diagnostic().publicValue()));
+                    SubmissionService.JudgeResult judged;
+                    if(privateSample) {
+                        // 실제 출력 캡처/64KiB 표시 상한을 적용하지 않습니다. 정식 채점과 같은
+                        // 대용량 반환 비교를 하고 비공개 원문·안전 진단조차 결과에 넣지 않습니다.
+                        judged=prepared.run(input.input(),input.expected(),((Number)run.get("time_limit_ms")).intValue(),((Number)run.get("memory_limit_mb")).intValue(),null);
+                        results.add(new TestRunService.Result(null,null,null,judged.status(),judged.elapsedMs(),null));
+                    } else {
+                        var output=prepared.runForTesting(input.input(),input.expected(),((Number)run.get("time_limit_ms")).intValue(),((Number)run.get("memory_limit_mb")).intValue());
+                        judged=output.result();
+                        results.add(new TestRunService.Result(input.input(),input.expected(),"SYSTEM_ERROR".equals(judged.status())?null:output.actual(),judged.status(),judged.elapsedMs(),
+                            "SYSTEM_ERROR".equals(judged.status())||judged.diagnostic()==null?null:judged.diagnostic().publicValue()));
+                    }
                     if("SYSTEM_ERROR".equals(judged.status())){failed=true;break;}
                 }
             }

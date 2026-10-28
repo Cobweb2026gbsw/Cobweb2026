@@ -72,20 +72,22 @@ public class SubmissionService {
             throw new ApiException(HttpStatus.CONFLICT,"채점 데이터가 준비되지 않았습니다.");
         if (db.queryForObject("SELECT COUNT(*) FROM submissions WHERE user_id=? AND status IN ('QUEUED','RUNNING')",Long.class,uid)>=5)
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,"진행 중인 제출은 최대 5개입니다.");
-        if(contestId==null) db.update("""
+        long id;
+        if(contestId==null) id=db.queryForObject("""
             INSERT INTO submissions(user_id,problem_id,language,source_code,contest_id)
-            VALUES(?,?,?,?,NULL)
-            """,uid,p.get("id"),language.name(),code);
+            VALUES(?,?,?,?,NULL) RETURNING id
+            """,Long.class,uid,p.get("id"),language.name(),code);
         else {
             // 권한 확인 후 검사가 길어져 종료 시각을 넘긴 요청도 저장 시점에 거절합니다.
-            int inserted=db.update("""
+            var inserted=db.queryForList("""
                 INSERT INTO submissions(user_id,problem_id,language,source_code,contest_id,submitted_at)
-                SELECT ?,?,?,?,id,UTC_TIMESTAMP(6) FROM group_contests
-                WHERE id=? AND starts_at<=UTC_TIMESTAMP(6) AND ends_at>UTC_TIMESTAMP(6)
-                """,uid,p.get("id"),language.name(),code,contestId);
-            if(inserted!=1) throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
+                SELECT ?,?,?,?,id,(clock_timestamp() AT TIME ZONE 'UTC') FROM group_contests
+                WHERE id=? AND starts_at<=(clock_timestamp() AT TIME ZONE 'UTC') AND ends_at>(clock_timestamp() AT TIME ZONE 'UTC')
+                RETURNING id
+                """,Long.class,uid,p.get("id"),language.name(),code,contestId);
+            if(inserted.size()!=1) throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
+            id=inserted.getFirst();
         }
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
         db.update("UPDATE submissions SET source_sha256=? WHERE id=?",sourceDigest(code),id);
         if(contestId==null) {
             db.update("UPDATE users SET submit_count=submit_count+1 WHERE id=?",uid);
@@ -103,7 +105,7 @@ public class SubmissionService {
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id,diagnostic_json FROM submissions WHERE id=?",id);
+        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id,diagnostic_json::text AS diagnostic_json FROM submissions WHERE id=?",id);
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
         if(result.get("contest_id")!=null) {
@@ -127,8 +129,8 @@ public class SubmissionService {
         if(rows.isEmpty()) return null;
         var s=rows.getFirst(); String token=UUID.randomUUID().toString();
         db.update("""
-            UPDATE submissions SET status='RUNNING',claimed_at=CURRENT_TIMESTAMP(6),
-                judge_heartbeat_at=CURRENT_TIMESTAMP(6),judge_token=?,judge_attempts=judge_attempts+1
+            UPDATE submissions SET status='RUNNING',claimed_at=(clock_timestamp() AT TIME ZONE 'UTC'),
+                judge_heartbeat_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_token=?,judge_attempts=judge_attempts+1
             WHERE id=?
             """,token,s.get("id"));
         s.put("judge_token",token);
@@ -140,14 +142,14 @@ public class SubmissionService {
     public void recoverExpired() {
         String expired="""
             status='RUNNING' AND (
-                judge_heartbeat_at < DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 20 MINUTE)
+                judge_heartbeat_at < ((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '20 minutes')
                 OR (judge_heartbeat_at IS NULL AND
-                    COALESCE(claimed_at,submitted_at) < DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 20 MINUTE))
+                    COALESCE(claimed_at,submitted_at) < ((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '20 minutes'))
             )
             """;
         db.update("UPDATE submissions SET status='QUEUED',claimed_at=NULL,judge_heartbeat_at=NULL,judge_token=NULL WHERE "
             +expired+" AND judge_attempts<3");
-        db.update("UPDATE submissions SET status='SYSTEM_ERROR',judged_at=IF(contest_id IS NULL,CURRENT_TIMESTAMP(6),UTC_TIMESTAMP(6)),judge_heartbeat_at=NULL,judge_token=NULL WHERE "
+        db.update("UPDATE submissions SET status='SYSTEM_ERROR',judged_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_heartbeat_at=NULL,judge_token=NULL WHERE "
             +expired+" AND judge_attempts>=3");
     }
     /** 반환값 0은 다른 워커가 lease를 회수했거나 제출이 이미 끝났음을 뜻합니다. */
@@ -155,12 +157,12 @@ public class SubmissionService {
         // 변경 행 수를 반환하는 JDBC 드라이버에서도 같은 마이크로초의 갱신을 성공으로 판정합니다.
         return db.update("""
             UPDATE submissions SET judge_heartbeat_at=
-                GREATEST(COALESCE(judge_heartbeat_at,CURRENT_TIMESTAMP(6)),CURRENT_TIMESTAMP(6)) + INTERVAL 1 MICROSECOND
+                GREATEST(COALESCE(judge_heartbeat_at,(clock_timestamp() AT TIME ZONE 'UTC')),(clock_timestamp() AT TIME ZONE 'UTC')) + INTERVAL '1 microsecond'
             WHERE id=? AND status='RUNNING' AND judge_token=?
             """,submission.get("id"),submission.get("judge_token"))==1;
     }
     public Map<String,Object> problem(Object id) {
-        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible,function_signature FROM problems WHERE id=?",id);
+        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible,function_signature::text AS function_signature FROM problems WHERE id=?",id);
     }
     public List<Map<String,Object>> cases(Object pid) {
         return db.queryForList("SELECT id,input_data,expected_output,compare_type,display_order FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE ORDER BY display_order,id",pid);
@@ -233,11 +235,11 @@ public class SubmissionService {
         if(context==null) return false;
         String code=(String)current.get("source_code");
         var candidates=db.queryForList("""
-            SELECT id,source_code,status,score,execution_time_ms,diagnostic_json FROM submissions
-            WHERE user_id=? AND problem_id=? AND language=? AND contest_id <=> ?
+            SELECT id,source_code,status,score,execution_time_ms,diagnostic_json::text AS diagnostic_json FROM submissions
+            WHERE user_id=? AND problem_id=? AND language=? AND contest_id IS NOT DISTINCT FROM ?
               AND id<? AND source_sha256=? AND judge_context_sha256=?
               AND status IN ('ACCEPTED','WRONG_ANSWER','TIME_LIMIT_EXCEEDED','MEMORY_LIMIT_EXCEEDED','RUNTIME_ERROR','COMPILATION_ERROR')
-              AND CAST(source_code AS BINARY)=CAST(? AS BINARY)
+              AND convert_to(source_code,'UTF8')=convert_to(CAST(? AS text),'UTF8')
             ORDER BY id DESC LIMIT 20
             """,current.get("user_id"),current.get("problem_id"),current.get("language"),current.get("contest_id"),
             current.get("id"),sourceDigest(code),context,code);
@@ -270,7 +272,7 @@ public class SubmissionService {
             JOIN group_roles gr ON gr.group_id=gm.group_id AND gr.id=gm.role_id
             JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=?
             WHERE c.id=? AND gr.can_take_contests=TRUE
-              AND c.starts_at<=UTC_TIMESTAMP(6) AND c.ends_at>UTC_TIMESTAMP(6)
+              AND c.starts_at<=(clock_timestamp() AT TIME ZONE 'UTC') AND c.ends_at>(clock_timestamp() AT TIME ZONE 'UTC')
             """,Long.class,submission.get("user_id"),submission.get("problem_id"),submission.get("contest_id"))>0;
     }
     static List<JudgeResult> reusableResults(Map<String,Object> original,List<Map<String,Object>> rows,List<Map<String,Object>> tests) {
@@ -309,12 +311,12 @@ public class SubmissionService {
         int elapsed=results.stream().mapToInt(JudgeResult::elapsedMs).max().orElse(0);
         for(var r:results) db.update("INSERT INTO submission_test_case_results(submission_id,test_case_id,status,execution_time_ms) VALUES(?,?,?,?)",
             s.get("id"),r.caseId(),r.status(),r.elapsedMs());
-        db.update("UPDATE submissions SET status=?,score=?,execution_time_ms=?,judged_at=IF(contest_id IS NULL,CURRENT_TIMESTAMP(6),UTC_TIMESTAMP(6)),judge_heartbeat_at=NULL,judge_token=NULL WHERE id=?",
+        db.update("UPDATE submissions SET status=?,score=?,execution_time_ms=?,judged_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_heartbeat_at=NULL,judge_token=NULL WHERE id=?",
             status,"ACCEPTED".equals(status)?100:0,elapsed,s.get("id"));
         // 최종 판정과 같은 종류의 첫 진단만 보관합니다. 다른 케이스의 성공/시스템 출력은 남기지 않습니다.
         var diagnostic=results.stream().filter(r->status.equals(r.status())).map(JudgeResult::diagnostic)
             .filter(Objects::nonNull).filter(value->value.matches(status)).findFirst().orElse(null);
-        db.update("UPDATE submissions SET diagnostic_json=? WHERE id=?",diagnostic==null?null:diagnostic.toJson(),s.get("id"));
+        db.update("UPDATE submissions SET diagnostic_json=CAST(? AS jsonb) WHERE id=?",diagnostic==null?null:diagnostic.toJson(),s.get("id"));
         String context=null;
         if(REUSABLE_STATUSES.contains(status) && s.get("judge_context") instanceof String expected) {
             String actual=contextDigest(problem(s.get("problem_id")),cases(s.get("problem_id")),
@@ -326,7 +328,7 @@ public class SubmissionService {
         // DB의 현재 contest_id를 사용합니다. 워커가 넘긴 맵으로 일반 풀이 통계를 오염시키지 않습니다.
         if("ACCEPTED".equals(status) && current.getFirst().get("contest_id")==null) {
             db.update("UPDATE problems SET accepted_count=accepted_count+1 WHERE id=?",s.get("problem_id"));
-            int inserted=db.update("INSERT IGNORE INTO user_solved_problems(user_id,problem_id) VALUES(?,?)",s.get("user_id"),s.get("problem_id"));
+            int inserted=db.update("INSERT INTO user_solved_problems(user_id,problem_id) VALUES(?,?) ON CONFLICT (user_id,problem_id) DO NOTHING",s.get("user_id"),s.get("problem_id"));
             if(inserted==1) {
                 db.update("UPDATE users SET solved_count=solved_count+1 WHERE id=?",s.get("user_id"));
                 int count=db.queryForObject("SELECT solved_count FROM users WHERE id=?",Integer.class,s.get("user_id"));

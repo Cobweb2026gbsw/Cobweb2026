@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useResource, useScope } from '../lib/useResource';
 import { CATEGORIES, displayDate } from '../lib/community';
 import { profileHref } from '../lib/profileRoutes';
+import CommentBody from '../components/CommentBody';
 import './common.css';
 import './Forum.css';
 
@@ -60,7 +61,7 @@ function Comment({item,postId,admin,disabled,onChange,canManage}){
   };
   return <article className="fm-thread-item" data-depth={item.depth}>
     <div className="fm-comment-head"><Link to={profileHref(item.authorUsername)}>{item.authorUsername}</Link><span>{displayDate(item.createdAt)}{item.edited?' · 수정됨':''}{item.deleted?' · 삭제됨':''}</span></div>
-    {editing?<form onSubmit={event=>{event.preventDefault();mutate('edit');}}><textarea aria-label="댓글 수정" className="cw-textarea" maxLength={5000} required value={body} onChange={event=>setBody(event.target.value)}/><div className="cw-actions"><button className="cw-btn sm primary" disabled={busy}>저장</button><button type="button" className="cw-btn sm" onClick={()=>setEditing(false)}>취소</button></div></form>:<p className="fm-body">{item.body??item.deletedMessage??'삭제된 댓글입니다.'}</p>}
+    {editing?<form onSubmit={event=>{event.preventDefault();mutate('edit');}}><textarea aria-label="댓글 수정" className="cw-textarea" maxLength={5000} required value={body} onChange={event=>setBody(event.target.value)}/><div className="cw-actions"><button className="cw-btn sm primary" disabled={busy}>저장</button><button type="button" className="cw-btn sm" onClick={()=>setEditing(false)}>취소</button></div></form>:<CommentBody key={item.body??item.deletedMessage} body={item.body??item.deletedMessage??'삭제된 댓글입니다.'}/>}
     <div className="cw-actions">
       {item.canEdit&&<button className="cw-btn sm" disabled={busy} onClick={()=>setEditing(!editing)}>댓글 수정</button>}
       {item.canDelete&&<button className="cw-btn sm danger" disabled={busy} onClick={()=>mutate('delete')}>댓글 삭제</button>}

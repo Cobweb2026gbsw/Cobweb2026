@@ -30,7 +30,7 @@ class SubmissionClaimTest {
         String token=(String)claim.get("judge_token");
         assertNotNull(token);
         assertEquals(36,token.length());
-        verify(db).update(argThat(sql -> sql.contains("judge_heartbeat_at=CURRENT_TIMESTAMP(6)")
+        verify(db).update(argThat(sql -> sql.contains("judge_heartbeat_at=(clock_timestamp() AT TIME ZONE 'UTC')")
             && sql.contains("judge_attempts=judge_attempts+1")),eq(token),eq(77L));
     }
 }

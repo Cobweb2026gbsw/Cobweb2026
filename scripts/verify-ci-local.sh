@@ -7,10 +7,10 @@ cd "$repo_dir"
 # Use an explicit dedicated test database, never credentials from .env.
 # A fresh port/database avoids migrating old test fixtures with duplicate titles.
 export SPRING_PROFILES_ACTIVE=test
-export TEST_DB_URL="${TEST_DB_URL:-jdbc:mysql://127.0.0.1:13307/cobweb_test}"
-export TEST_DB_USERNAME="${TEST_DB_USERNAME:-root}" TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-cobweb-test-only}"
+export TEST_DB_URL="${TEST_DB_URL:-jdbc:postgresql://127.0.0.1:15433/cobweb_test}"
+export TEST_DB_USERNAME="${TEST_DB_USERNAME:-cobweb}" TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-cobweb-test-only}"
 case "$TEST_DB_URL" in
-  jdbc:mysql://127.0.0.1:*/cobweb_test|jdbc:mysql://127.0.0.1:*/cobweb_feature_test|jdbc:mysql://127.0.0.1:*/cobweb_revalidation_test) ;;
+  jdbc:postgresql://127.0.0.1:*/cobweb_test|jdbc:postgresql://127.0.0.1:*/cobweb_feature_test|jdbc:postgresql://127.0.0.1:*/cobweb_revalidation_test) ;;
   *) printf 'Refusing non-dedicated test database URL.\n' >&2; exit 2 ;;
 esac
 export DB_URL="$TEST_DB_URL" DB_USERNAME="$TEST_DB_USERNAME" DB_PASSWORD="$TEST_DB_PASSWORD"
@@ -22,7 +22,7 @@ export GITHUB_CLIENT_ID=unused GITHUB_CLIENT_SECRET=unused
 
 static_checks() {
   # 런처 복구 계약은 실제 Docker/서버를 건드리지 않는 격리 fixture로 확인합니다.
-  bash -n run.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh
+  bash -n run.sh deploy/postgres/entrypoint.sh deploy/postgres/init-app.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh
   bash src/test/bash/run-sh.test.sh
   npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
   npm --prefix frontend test

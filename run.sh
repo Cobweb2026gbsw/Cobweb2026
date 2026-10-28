@@ -13,11 +13,11 @@ usage() {
     '사용법: ./run.sh [--rebuild-judge]  (종료: Ctrl+C)' \
     '' \
     '필수: Java JDK 21(keytool 포함), Node.js 20 이상/npm, 실행 중인 Docker Desktop/Engine, Docker Compose, curl, openssl' \
-    '웹 바인딩: HTTP 0.0.0.0:8080 + HTTPS 0.0.0.0:8443 / 전용 MySQL: 127.0.0.1:3307' \
+    '웹 바인딩: HTTP 0.0.0.0:8080 + HTTPS 0.0.0.0:8443 / 전용 PostgreSQL: 127.0.0.1:5433' \
     '접속: http://localhost:8080 또는 https://localhost:8443 (8080으로 https 접속 금지)' \
-    '옵션: COBWEB_PORT=18080 COBWEB_HTTPS_PORT=18443 ./run.sh, COBWEB_RUN_PROJECT=cobweb-local' \
-    '실행 설정·로그: .local/run/<Compose 이름>/' \
-    '처음에는 컴파일러 이미지 다운로드와 Flyway V1 이후 마이그레이션으로 시간이 걸립니다.' \
+    '옵션: COBWEB_PORT=18080 COBWEB_HTTPS_PORT=18443 ./run.sh, COBWEB_RUN_PROJECT=cobweb-postgres-local' \
+    '실행 설정·로그: .local/run/<Compose 이름>/postgres/' \
+    '처음에는 컴파일러 이미지 다운로드와 PostgreSQL 통합 Flyway V1 초기화로 시간이 걸립니다.' \
     '기존 .env는 덮어쓰지 않습니다. 메일/OAuth는 .env에 실제 제공자 설정이 있을 때만 사용할 수 있습니다.' \
     '로컬 자체서명 인증서는 localhost/127.0.0.1 전용이며 브라우저의 신뢰 경고가 날 수 있습니다.' \
     '시스템 CA 신뢰나 브라우저 인증서 검증을 자동 변경하지 않습니다. 외부 접속은 유효한 도메인/인증서의 운영 프록시를 사용하세요.' \
@@ -26,7 +26,8 @@ usage() {
     '신규 DB 컨테이너/네트워크만 제거하며 데이터 볼륨·DB 내용·마이그레이션·설정·인증서·로그는 보존합니다.' \
     '정상 기동 뒤 Ctrl+C: 웹·워커·전용 DB를 모두 중지합니다. DB 내용을 되돌리지 않습니다.' \
     '실행 JAR는 실행별 로그 폴더의 app.jar 사본이므로 이후 재빌드해도 실행본을 덮지 않습니다.' \
-    '로컬 마이그레이션만 단발 JVM의 Flyway 전용 root 연결로 실행하고 웹·워커는 제한 계정을 유지합니다.' \
+    '로컬 마이그레이션만 단발 JVM의 Flyway 전용 postgres 연결로 실행하고 웹·워커는 제한 계정을 유지합니다.' \
+    'PostgreSQL은 별도 project/config/volume을 사용합니다. 기존 MySQL 데이터는 자동 이관하거나 삭제하지 않습니다.' \
     '마이그레이션·웹·워커 JVM 힙은 초기 64 MiB/최대 512 MiB이며, OOM 발생 시 해당 JVM을 종료합니다(전체 RSS 한도 아님).' \
     '현재 소스로 JAR를 빌드하며, 채점 이미지가 없거나 이전 언어 세트이면 자동 갱신합니다(테스트는 별도).' \
     'judge/의 코드·도구 체인 변경 후에는 ./run.sh --rebuild-judge로 이미지를 다시 빌드하세요.'
@@ -58,7 +59,7 @@ docker info >/dev/null 2>&1 || fail 'Docker가 실행되지 않았거나 접근�
 
 PORT="${COBWEB_PORT:-8080}"
 HTTPS_PORT="${COBWEB_HTTPS_PORT:-8443}"
-PROJECT="${COBWEB_RUN_PROJECT:-cobweb-local}"
+PROJECT="${COBWEB_RUN_PROJECT:-cobweb-postgres-local}"
 [[ "$PORT" =~ ^[1-9][0-9]{0,4}$ ]] && (( PORT <= 65535 )) || fail 'COBWEB_PORT는 1~65535여야 합니다.'
 [[ "$HTTPS_PORT" =~ ^[1-9][0-9]{0,4}$ ]] && (( HTTPS_PORT <= 65535 )) || fail 'COBWEB_HTTPS_PORT는 1~65535여야 합니다.'
 [[ "$PORT" != "$HTTPS_PORT" ]] || fail 'HTTP와 HTTPS 포트는 달라야 합니다.'
@@ -87,7 +88,8 @@ command -v "$KEYTOOL_BIN" >/dev/null || fail '로컬 HTTPS 인증서를 준비�
 readonly -a APP_JVM_OPTIONS=(-Xms64m -Xmx512m -XX:+ExitOnOutOfMemoryError)
 
 umask 077
-STATE_DIR="$ROOT_DIR/.local/run/$PROJECT"
+# 사용자 지정 Compose 이름이 예전 MySQL 실행과 같아도 설정·TLS·로그를 덮어쓰지 않습니다.
+STATE_DIR="$ROOT_DIR/.local/run/$PROJECT/postgres"
 mkdir -p "$STATE_DIR"
 LOCK_DIR="$STATE_DIR/lock"
 CONFIG_FILE="$STATE_DIR/config.env"
@@ -116,14 +118,14 @@ compose() { docker compose --ansi never --progress plain --project-directory "$R
 # 조회 실패를 '리소스 없음'으로 오인하지 않도록 Docker 오류는 그대로 반환합니다.
 current_db_id() {
   local id
-  id="$(compose ps -a -q mysql)" || return 1
+  id="$(compose ps -a -q postgres)" || return 1
   [[ -z "$id" || "$id" =~ ^[a-f0-9]{12,64}$ ]] || return 1
   printf '%s' "$id"
 }
 require_db_owner() {
   local owner
   owner="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$1")" || return 1
-  [[ "$owner" == "$PROJECT|mysql|$ROOT_DIR" ]]
+  [[ "$owner" == "$PROJECT|postgres|$ROOT_DIR" ]]
 }
 current_network_id() {
   local id
@@ -369,13 +371,13 @@ mkdir -p "$LOG_DIR" "$JUDGE_WORKSPACE"
 # 설정 파일을 셸 source/eval로 실행하지 않습니다. 첫 실행에만 전용 DB 비밀값을
 # 만들며, 이미 있는 볼륨에 새 비밀번호를 덮어씌우지 않습니다.
 if [[ ! -e "$CONFIG_FILE" ]]; then
-  if docker volume inspect "${PROJECT}_cobweb_mysql" >/dev/null 2>&1; then
+  if docker volume inspect "${PROJECT}_cobweb_postgres" >/dev/null 2>&1; then
     fail "기존 DB 볼륨은 있지만 config.env가 없습니다. $CONFIG_FILE 백업을 복원하세요. DB는 변경하지 않았습니다."
   fi
   config_tmp="$(mktemp "$STATE_DIR/config.XXXXXX")"
   printf '%s\n' \
     "DEV_DB_PASSWORD=$(openssl rand -hex 24)" \
-    "DEV_ROOT_PASSWORD=$(openssl rand -hex 24)" \
+    "DEV_ADMIN_PASSWORD=$(openssl rand -hex 24)" \
     "JWT_SECRET=$(openssl rand -hex 32)" \
     'MAIL_USERNAME=local-disabled@example.invalid' 'MAIL_PASSWORD=local-disabled' \
     'GOOGLE_CLIENT_ID=local-disabled' 'GOOGLE_CLIENT_SECRET=local-disabled' \
@@ -384,17 +386,17 @@ if [[ ! -e "$CONFIG_FILE" ]]; then
   mv "$config_tmp" "$CONFIG_FILE"
 fi
 chmod 600 "$CONFIG_FILE"
-DEV_DB_PASSWORD=''; DEV_ROOT_PASSWORD=''; JWT_SECRET=''; COBWEB_HTTPS_KEYSTORE_PASSWORD=''
+DEV_DB_PASSWORD=''; DEV_ADMIN_PASSWORD=''; JWT_SECRET=''; COBWEB_HTTPS_KEYSTORE_PASSWORD=''
 while IFS='=' read -r key value || [[ -n "$key" ]]; do
   case "$key" in
     DEV_DB_PASSWORD) DEV_DB_PASSWORD="$value" ;;
-    DEV_ROOT_PASSWORD) DEV_ROOT_PASSWORD="$value" ;;
+    DEV_ADMIN_PASSWORD) DEV_ADMIN_PASSWORD="$value" ;;
     JWT_SECRET) JWT_SECRET="$value" ;;
     COBWEB_HTTPS_KEYSTORE_PASSWORD) COBWEB_HTTPS_KEYSTORE_PASSWORD="$value" ;;
   esac
 done < "$CONFIG_FILE"
-[[ -n "$DEV_DB_PASSWORD" && -n "$DEV_ROOT_PASSWORD" && ${#JWT_SECRET} -ge 32 ]] || fail "config.env의 DB 비밀번호/JWT 설정을 확인하세요: $CONFIG_FILE"
-export DEV_DB_PASSWORD DEV_ROOT_PASSWORD JWT_SECRET
+[[ -n "$DEV_DB_PASSWORD" && -n "$DEV_ADMIN_PASSWORD" && ${#JWT_SECRET} -ge 32 ]] || fail "config.env의 DB 비밀번호/JWT 설정을 확인하세요: $CONFIG_FILE"
+export DEV_DB_PASSWORD DEV_ADMIN_PASSWORD JWT_SECRET
 compose config --quiet
 DB_INITIAL_ID="$(current_db_id)" || fail '초기 DB 컨테이너 상태 조회에 실패했습니다. DB는 변경하지 않았습니다.'
 if [[ -n "$DB_INITIAL_ID" ]]; then
@@ -462,11 +464,11 @@ run_task "$KEYTOOL_BIN" -exportcert -rfc -alias cobweb-local -keystore "$TLS_KEY
 chmod 600 "$TLS_KEYSTORE" "$TLS_CERTIFICATE" "$CONFIG_FILE"
 openssl x509 -checkend 86400 -noout -in "$TLS_CERTIFICATE" >/dev/null || fail "로컬 인증서가 만료됐거나 곧 만료됩니다. $TLS_DIR 인증서를 백업한 뒤 새로 발급하세요."
 
-info "전용 로컬 DB 시작: Compose $PROJECT, 127.0.0.1:3307 (기존 사용자 DB 미사용)"
+info "전용 로컬 DB 시작: Compose $PROJECT, 127.0.0.1:5433 (기존 사용자 DB 미사용)"
 # up 도중 Ctrl+C가 와도 생성된 DB를 정리할 수 있도록 호출 전에 표시합니다.
 DB_OWNED=true
 STAGE='database'
-run_task compose up -d --wait --wait-timeout 180 --no-recreate mysql
+run_task compose up -d --wait --wait-timeout 180 --no-recreate postgres
 current_id="$(current_db_id)" || fail '기동 후 DB 컨테이너 확인 실패'
 [[ -n "$current_id" ]] && require_db_owner "$current_id" || fail '기동한 DB의 소유권 확인 실패'
 [[ -z "$DB_INITIAL_ID" || "$current_id" == "$DB_INITIAL_ID" ]] || fail '기존 DB 컨테이너가 바뀌었습니다. 자동 진행하지 않습니다.'
@@ -503,13 +505,13 @@ BUILD_LOCK_OWNED=false
 
 # local 프로필의 URL까지 환경 속성으로 고정해 .env의 운영 DB 값이 쓰이지 않습니다.
 # 메일/OAuth는 .env가 있으면 읽되, 비밀값을 화면이나 프로세스 인자에 출력하지 않습니다.
-export SPRING_DATASOURCE_URL='jdbc:mysql://127.0.0.1:3307/cobweb2026?serverTimezone=UTC'
+export SPRING_DATASOURCE_URL='jdbc:postgresql://127.0.0.1:5433/cobweb2026'
 export SPRING_DATASOURCE_USERNAME=cobweb SPRING_DATASOURCE_PASSWORD="$DEV_DB_PASSWORD"
 export SPRING_FLYWAY_URL="$SPRING_DATASOURCE_URL"
 export SPRING_FLYWAY_USER="$SPRING_DATASOURCE_USERNAME" SPRING_FLYWAY_PASSWORD="$SPRING_DATASOURCE_PASSWORD"
-# 이후 Compose는 --env-file을 사용하므로 root 비밀번호를 모든 JVM 환경에 상속할 필요가 없습니다.
-export -n DEV_ROOT_PASSWORD
-# 원본 config.env에는 DB root 비밀값이 있으므로 JVM에 통째로 import하지 않습니다.
+# 이후 Compose는 --env-file을 사용하므로 관리자 비밀번호를 모든 JVM 환경에 상속할 필요가 없습니다.
+export -n DEV_ADMIN_PASSWORD
+# 원본 config.env에는 DB 관리자 비밀값이 있으므로 JVM에 통째로 import하지 않습니다.
 # 앱에 필요한 정확한 키만 사본으로 만들고 셸 source/eval은 사용하지 않습니다.
 APP_CONFIG_FILE="$LOG_DIR/runtime.properties"
 while IFS='=' read -r key value || [[ -n "$key" ]]; do
@@ -521,13 +523,13 @@ done < "$CONFIG_FILE" > "$APP_CONFIG_FILE"
 chmod 600 "$APP_CONFIG_FILE"
 export SPRING_CONFIG_IMPORT="file:$APP_CONFIG_FILE[.properties],optional:file:$ROOT_DIR/.env[.properties]"
 export PUBLIC_BASE_URL="https://localhost:$HTTPS_PORT"
-# MySQL의 binlog가 켜진 기본 설정에서도 V17 트리거를 만들 수 있도록
-# 이 단발 자식의 Flyway 연결에만 기존 로컬 root 자격을 전달합니다.
+# 통합 PostgreSQL baseline과 트리거는 이 단발 관리 JVM에서 적용합니다.
+# 관리자 자격은 이 자식의 Flyway 연결에만 전달합니다.
 # 비밀번호는 argv/로그에 넣지 않으며 앱 datasource/웹/워커의 권한은 바꾸지 않습니다.
 STAGE='migrate'
 info "로컬 DB 마이그레이션: 로그 $LOG_DIR/migrate.log"
 SPRING_CONFIG_IMPORT="file:$APP_CONFIG_FILE[.properties]" SPRING_FLYWAY_URL="$SPRING_DATASOURCE_URL" \
-  SPRING_FLYWAY_USER=root SPRING_FLYWAY_PASSWORD="$DEV_ROOT_PASSWORD" \
+  SPRING_FLYWAY_USER=postgres SPRING_FLYWAY_PASSWORD="$DEV_ADMIN_PASSWORD" \
   run_task "$JAVA_BIN" "${APP_JVM_OPTIONS[@]}" -jar "$APP_JAR" --local.migrate-only=true --spring.profiles.active=local \
   --spring.main.web-application-type=none --spring.flyway.enabled=true --judge.enabled=false --demo.seed=false --curriculum.level0.enabled=false \
   > "$LOG_DIR/migrate.log" 2>&1

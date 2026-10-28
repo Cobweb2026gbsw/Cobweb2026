@@ -50,9 +50,9 @@ class SubmissionDiagnosticIntegrationTest {
         finish(claim,"ACCEPTED",diagnostic);
         long id=((Number)claim.get("id")).longValue();
         assertNull(db.queryForObject("SELECT diagnostic_json FROM submissions WHERE id=?",String.class,id));
-        db.update("UPDATE submissions SET diagnostic_json=? WHERE id=?",diagnostic.toJson(),id);
+        db.update("UPDATE submissions SET diagnostic_json=CAST(? AS jsonb) WHERE id=?",diagnostic.toJson(),id);
         assertNull(submissions.detail(id,fixture.user()).get("diagnostic"));
-        db.update("UPDATE submissions SET status='RUNTIME_ERROR',diagnostic_json=? WHERE id=?",
+        db.update("UPDATE submissions SET status='RUNTIME_ERROR',diagnostic_json=CAST(? AS jsonb) WHERE id=?",
             "{\"phase\":\"RUN\",\"errorType\":\"PRIVATE_RAW_ERROR\",\"message\":\"secret\",\"locations\":[]}",id);
         assertNull(submissions.detail(id,fixture.user()).get("diagnostic"));
     }
@@ -62,8 +62,8 @@ class SubmissionDiagnosticIntegrationTest {
         db.update("UPDATE submissions SET judge_token=? WHERE id=?",UUID.randomUUID().toString(),claim.get("id"));
         finish(claim,"RUNTIME_ERROR",diagnostic);
         assertNull(db.queryForObject("SELECT diagnostic_json FROM submissions WHERE id=?",String.class,claim.get("id")));
-        assertThrows(org.springframework.dao.DataAccessException.class,()->db.update(
-            "UPDATE submissions SET diagnostic_json=JSON_OBJECT('message',?) WHERE id=?","x".repeat(8193),claim.get("id")));
+        com.drewdrew0414.PostgresTestSupport.rejected(db,()->db.update(
+            "UPDATE submissions SET diagnostic_json=jsonb_build_object('message',CAST(? AS text)) WHERE id=?","x".repeat(8193),claim.get("id")));
     }
     @Test void endedContestAndRevokedParticipationCannotReadSafeDiagnosticThroughOrdinaryDetail() {
         var fixture=fixture();long contest=contest(fixture);
@@ -73,7 +73,7 @@ class SubmissionDiagnosticIntegrationTest {
         var diagnostic=JudgeDiagnostic.runtime(Language.PYTHON,"raise ValueError('source-only')\n","ValueError: private-input",false);
         finish(claim,"RUNTIME_ERROR",diagnostic);
         assertEquals(diagnostic.publicValue(),submissions.detail(id,fixture.user()).get("diagnostic"));
-        db.update("UPDATE group_contests SET ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND),replay_allowed=FALSE WHERE id=?",contest);
+        db.update("UPDATE group_contests SET ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second'),replay_allowed=FALSE WHERE id=?",contest);
         assertEquals(403,assertThrows(ResponseStatusException.class,()->submissions.detail(id,fixture.user())).getStatusCode().value());
         db.update("UPDATE group_contests SET replay_allowed=TRUE WHERE id=?",contest);
         assertEquals(diagnostic.publicValue(),submissions.detail(id,fixture.user()).get("diagnostic"));
@@ -90,7 +90,7 @@ class SubmissionDiagnosticIntegrationTest {
     }
     private Map<String,Object> running(Fixture fixture,String code) {
         long id=submissions.submit(fixture.number(),code,Language.PYTHON,fixture.user());
-        db.update("UPDATE submissions SET status='RUNNING',judge_token=?,judge_attempts=1,claimed_at=CURRENT_TIMESTAMP(6),judge_heartbeat_at=CURRENT_TIMESTAMP(6) WHERE id=?",UUID.randomUUID().toString(),id);
+        db.update("UPDATE submissions SET status='RUNNING',judge_token=?,judge_attempts=1,claimed_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_heartbeat_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=?",UUID.randomUUID().toString(),id);
         return db.queryForMap("SELECT * FROM submissions WHERE id=?",id);
     }
     private Fixture fixture() {
@@ -112,14 +112,11 @@ class SubmissionDiagnosticIntegrationTest {
         return new CustomUserDetails(entity);
     }
     private long contest(Fixture fixture) {
-        db.update("INSERT INTO study_groups(group_name,status) VALUES(?,'ACCEPTED')","dg"+UUID.randomUUID().toString().substring(0,12));
-        long group=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
-        db.update("INSERT INTO group_roles(group_id,role_name,builtin_key,can_take_contests,can_view_problems) VALUES(?,'member','MEMBER',TRUE,TRUE)",group);
-        long role=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long group=db.queryForObject("INSERT INTO study_groups(group_name,status) VALUES(?,'ACCEPTED') RETURNING id",Long.class,"dg"+UUID.randomUUID().toString().substring(0,12));
+        long role=db.queryForObject("INSERT INTO group_roles(group_id,role_name,builtin_key,can_take_contests,can_view_problems) VALUES(?,'member','MEMBER',TRUE,TRUE) RETURNING id",Long.class,group);
         db.update("INSERT INTO group_members(user_id,group_id,member_number,permission,role_id) VALUES(?,?,1,'MEMBER',?)",fixture.user().getUserId(),group,role);
         db.update("UPDATE problems SET group_id=?,visibility='GROUP' WHERE id=?",group,fixture.id());
-        db.update("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) VALUES(?,'diagnostic',DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR),DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR),?)",group,fixture.user().getUserId());
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long id=db.queryForObject("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) VALUES(?,'diagnostic',((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 hour'),((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour'),?) RETURNING id",Long.class,group,fixture.user().getUserId());
         db.update("INSERT INTO contest_problems(contest_id,problem_id,display_order) VALUES(?,?,1)",id,fixture.id());
         return id;
     }

@@ -39,7 +39,7 @@ class ProfileQueryIntegrationTest {
     @ValueSource(strings = {"..", "a/b", "기존사용자"})
     void queryAliasPreservesExistingDatabaseNamesAndOnlyReturnsPublicFields(String username) throws Exception {
         // 재실행 시 같은 이름이 있으면 그 사용자 행을 변경하지 않습니다. 테스트 콘텐츠도 삭제하지 않습니다.
-        db.update("INSERT IGNORE INTO users(username,password,role) VALUES(?,'profile-query-test-only','USER')", username);
+        db.update("INSERT INTO users(username,password,role) VALUES(?,'profile-query-test-only','USER') ON CONFLICT DO NOTHING", username);
         String query = "?username=" + URLEncoder.encode(username, StandardCharsets.UTF_8);
 
         var response = get("/api/profiles" + query);

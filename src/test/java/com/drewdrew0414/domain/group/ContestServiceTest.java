@@ -46,7 +46,7 @@ class ContestServiceTest {
         var contests=new ContestService(db,groups);
         when(db.queryForList(contains("FROM group_contests WHERE id=? FOR UPDATE"),eq(5L)))
             .thenReturn(List.of(contest()));
-        when(db.queryForObject(eq("SELECT UTC_TIMESTAMP(6)"),eq(Timestamp.class)))
+        when(db.queryForObject(eq("SELECT (clock_timestamp() AT TIME ZONE 'UTC')"),eq(Timestamp.class)))
             .thenReturn(Timestamp.valueOf(LocalDateTime.of(2030,1,1,9,59)));
         when(groups.can(eq(9L),any(),eq(GroupPermission.TAKE_CONTESTS))).thenReturn(true);
 
@@ -62,7 +62,7 @@ class ContestServiceTest {
         var contests=new ContestService(db,groups);
         when(db.queryForList(contains("FROM group_contests WHERE id=? FOR UPDATE"),eq(5L)))
             .thenReturn(List.of(contest()));
-        when(db.queryForObject(eq("SELECT UTC_TIMESTAMP(6)"),eq(Timestamp.class)))
+        when(db.queryForObject(eq("SELECT (clock_timestamp() AT TIME ZONE 'UTC')"),eq(Timestamp.class)))
             .thenReturn(Timestamp.valueOf(LocalDateTime.of(2030,1,1,10,30)));
         when(groups.can(eq(9L),any(),eq(GroupPermission.TAKE_CONTESTS))).thenReturn(true);
         when(db.queryForObject(contains("COUNT(*) FROM contest_problems"),eq(Long.class),eq(5L),eq(13L)))
@@ -79,7 +79,7 @@ class ContestServiceTest {
         var contests=new ContestService(db,groups);
         when(db.queryForList(contains("FROM group_contests WHERE group_id=? AND id=?"),eq(9L),eq(5L)))
             .thenReturn(List.of(contest()));
-        when(db.queryForObject(eq("SELECT UTC_TIMESTAMP(6)"),eq(Timestamp.class)))
+        when(db.queryForObject(eq("SELECT (clock_timestamp() AT TIME ZONE 'UTC')"),eq(Timestamp.class)))
             .thenReturn(Timestamp.valueOf(LocalDateTime.of(2030,1,1,11,1)));
         when(groups.can(eq(9L),any(),eq(GroupPermission.TAKE_CONTESTS))).thenReturn(true);
 
@@ -113,7 +113,7 @@ class ContestServiceTest {
             .thenReturn(List.of(contest()));
         when(db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",42L))
             .thenReturn(List.of(Map.of("id",42L)));
-        when(db.queryForObject("SELECT UTC_TIMESTAMP(6)",Timestamp.class))
+        when(db.queryForObject("SELECT (clock_timestamp() AT TIME ZONE 'UTC')",Timestamp.class))
             .thenReturn(Timestamp.valueOf(LocalDateTime.of(2030,1,1,10,30)));
         when(groups.can(9L,participant,GroupPermission.TAKE_CONTESTS)).thenReturn(true);
 

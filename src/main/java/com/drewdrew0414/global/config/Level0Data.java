@@ -73,7 +73,7 @@ public class Level0Data implements ApplicationRunner {
             else throw conflict("problem number "+row.get("problem_number")+" is already authored");
         }
         for(var entry:catalog.problems()) {
-            if(db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=0 AND problem_title=?",Long.class,entry.title())>0)
+            if(db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=0 AND lower(problem_title)=lower(?)",Long.class,entry.title())>0)
                 throw conflict("problem title is already authored: "+entry.title());
         }
         long author=seedAuthor("Lv.0");
@@ -113,8 +113,8 @@ public class Level0Data implements ApplicationRunner {
     }
     /** 같은 이름의 실제 계정을 시드 계정으로 바꾸지 않습니다. */
     long seedAuthor(String label) {
-        db.update("INSERT IGNORE INTO users(username,password,status) VALUES('cobweb-system','!','STOPPED')");
-        var system=db.queryForMap("SELECT id,password,status FROM users WHERE username='cobweb-system' FOR UPDATE");
+        db.update("INSERT INTO users(username,password,status) VALUES('cobweb-system','!','STOPPED') ON CONFLICT DO NOTHING");
+        var system=db.queryForMap("SELECT id,password,status FROM users WHERE lower(username)='cobweb-system' FOR UPDATE");
         if(!"STOPPED".equals(system.get("status")) || !"!".equals(system.get("password")))
             throw conflict(label,"cobweb-system is not the stopped seed account");
         return ((Number)system.get("id")).longValue();
@@ -125,7 +125,7 @@ public class Level0Data implements ApplicationRunner {
                 constraints_text,rank_type,rank_int,time_limit_ms,memory_limit_mb,execution_mode,judge_type,
                 status,visibility,requested_visibility,author_id,group_id,function_abi_compatible,function_signature,
                 author_public,published_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,'FUNCTION','SPECIAL','PUBLISHED','PUBLIC','PUBLIC',?,NULL,TRUE,?,FALSE,CURRENT_TIMESTAMP)
+            VALUES(?,?,?,?,?,?,?,?,?,?,'FUNCTION','SPECIAL','PUBLISHED','PUBLIC','PUBLIC',?,NULL,TRUE,CAST(? AS jsonb),FALSE,(clock_timestamp() AT TIME ZONE 'UTC'))
             """,p.number(),p.title(),p.description(),p.inputDescription(),p.outputDescription(),p.constraints(),
             p.rankType(),p.rankInt(),p.timeLimitMs(),p.memoryLimitMb(),author,p.functionSignature().toJson(json));
         long id=db.queryForObject("SELECT id FROM problems WHERE problem_number=?",Long.class,p.number());
@@ -140,8 +140,8 @@ public class Level0Data implements ApplicationRunner {
         for(String language:Language.forMode("FUNCTION"))
             db.update("INSERT INTO problem_languages(problem_id,language) VALUES(?,?)",id,language);
         for(String tag:p.tags()) {
-            db.update("INSERT IGNORE INTO tags(name) VALUES(?)",tag);
-            long tagId=db.queryForObject("SELECT id FROM tags WHERE name=?",Long.class,tag);
+            db.update("INSERT INTO tags(name) VALUES(?) ON CONFLICT DO NOTHING",tag);
+            long tagId=db.queryForObject("SELECT id FROM tags WHERE lower(name)=lower(?)",Long.class,tag);
             db.update("INSERT INTO problem_tags(problem_id,tag_id) VALUES(?,?)",id,tagId);
         }
         var ref=p.referenceSolution();

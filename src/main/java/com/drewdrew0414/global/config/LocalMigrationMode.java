@@ -14,7 +14,7 @@ public final class LocalMigrationMode {
         "judge.enabled", "false",
         "demo.seed", "false",
         "curriculum.level0.enabled", "false");
-    private static final String LOCAL_DATABASE = "jdbc:mysql://127.0.0.1:3307/cobweb2026?serverTimezone=UTC";
+    private static final String LOCAL_DATABASE = "jdbc:postgresql://127.0.0.1:5433/cobweb2026";
 
     private LocalMigrationMode() {}
 
@@ -48,7 +48,7 @@ public final class LocalMigrationMode {
         if (!LOCAL_DATABASE.equals(environment.getProperty("spring.datasource.url"))
                 || !LOCAL_DATABASE.equals(environment.getProperty("spring.flyway.url"))
                 || !"cobweb".equals(environment.getProperty("spring.datasource.username"))
-                || !"root".equals(environment.getProperty("spring.flyway.user"))) throw invalid();
+                || !"postgres".equals(environment.getProperty("spring.flyway.user"))) throw invalid();
     }
 
     private static IllegalArgumentException invalid() {

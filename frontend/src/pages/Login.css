@@ -37,27 +37,31 @@
   color: #d7d7d7;
 }
 
-.LoginBox input {
+.LoginBox input:not([type="checkbox"]) {
   width: 100%;
   height: 42px;
 
   background-color: transparent;
 
   border: none;
+  /* 입력 위치를 구분하는 기존 밑줄만 보존하고 사각형 포커스는 표시하지 않습니다. */
   border-bottom: 1px solid #777;
 
   color: white;
   font-size: 15px;
 
   outline: none;
+  box-shadow: none;
 }
 
-.LoginBox input::placeholder {
+.LoginBox input:not([type="checkbox"])::placeholder {
   color: #777;
 }
 
-.LoginBox input:focus {
-  border-bottom: 1px solid #64e6ca;
+.LoginBox input:not([type="checkbox"]):focus,
+.LoginPage.light .LoginBox input:not([type="checkbox"]):focus {
+  outline: none;
+  box-shadow: none;
 }
 
 .login-links {
@@ -122,8 +126,8 @@
 }
 
 .LoginPage.light .LoginBox p { color: #536260; }
-.LoginPage.light .LoginBox input { border-bottom-color: #9dbab8; color: #121414; }
-.LoginPage.light .LoginBox input::placeholder { color: #71807e; }
+.LoginPage.light .LoginBox input:not([type="checkbox"]) { border-bottom-color: #a0a0a0; color: #121414; }
+.LoginPage.light .LoginBox input:not([type="checkbox"])::placeholder { color: #71807e; }
 .LoginPage.light .LoginBox button { background-color: #121414; color: #ffffff; }
 
 /* 로그인 오류 메시지 */
@@ -137,10 +141,21 @@
 .LoginPage.light .LoginBox .login-error { color: #c4263c; }
 
 .LoginBox > label { display: block; margin: 20px 0 8px; font-size: 14px; }
+/* 로그인 유지 체크박스에는 텍스트 입력란의 전체 너비·밑줄을 적용하지 않습니다. */
+.LoginBox .login-remember { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; color: #d7d7d7; font-size: 13px; cursor: pointer; }
+.LoginBox .login-remember input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: #64e6ca; cursor: pointer; }
+.LoginPage.light .LoginBox .login-remember { color: #536260; }
+.LoginBox .login-remember-help { display: block; margin-top: 5px; color: #999; font-size: 11px; }
+.LoginPage.light .LoginBox .login-remember-help { color: #606060; }
+.LoginBox .login-transport { line-height: 1.7; overflow-wrap: anywhere; }
+.LoginBox .login-transport a { color: #64e6ca; text-underline-offset: 3px; }
+.LoginPage.light .LoginBox .login-transport a { color: #0a7f76; }
 .LoginBox .login-social { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; margin-top: 18px; }
 .LoginBox .login-social button { height: auto; min-height: 40px; margin: 0; padding: 8px 5px; font-size: 11px; border: 1px solid #505050; }
 .LoginBox .login-help { font-size: 11px; line-height: 1.7; }
 .LoginBox .login-logo a { color: inherit; text-decoration: none; }
 .LoginBox button:disabled { opacity: .45; cursor: wait; }
-.LoginBox input:focus-visible,.LoginBox button:focus-visible,.LoginBox a:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
+.LoginBox input:not([type="checkbox"]):focus-visible { outline: none; box-shadow: none; }
+.LoginBox input[type="checkbox"]:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 3px; }
+.LoginBox button:focus-visible,.LoginBox a:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
 @media(max-width: 520px) { .LoginPage { padding: 28px 14px; box-sizing: border-box; }.LoginBox { width: 100%; padding: 34px 24px; } }

@@ -16,11 +16,11 @@ jobs:
     timeout-minutes: 30
     env:
       SPRING_PROFILES_ACTIVE: test
-      TEST_DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
-      TEST_DB_USERNAME: root
+      TEST_DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      TEST_DB_USERNAME: cobweb
       TEST_DB_PASSWORD: cobweb-test-only
-      DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
-      DB_USERNAME: root
+      DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      DB_USERNAME: cobweb
       DB_PASSWORD: cobweb-test-only
       JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
       MAIL_USERNAME: test@example.invalid
@@ -34,15 +34,16 @@ jobs:
       DOCKER_JUDGE_TEST: 'false'
       GENERIC_CATALOG_DOCKER_TEST: 'false'
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: postgres:18
         env:
-          MYSQL_DATABASE: cobweb_test
-          MYSQL_ROOT_PASSWORD: cobweb-test-only
+          POSTGRES_DB: cobweb_test
+          POSTGRES_USER: cobweb
+          POSTGRES_PASSWORD: cobweb-test-only
         ports:
-          - 13307:3306
+          - 15433:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pcobweb-test-only"
+          --health-cmd="pg_isready -h 127.0.0.1 -U cobweb -d cobweb_test"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=30
@@ -66,7 +67,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ci-logs
-          bash -n run.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh
+          bash -n run.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh deploy/postgres/entrypoint.sh deploy/postgres/init-app.sh
           bash src/test/bash/run-sh.test.sh 2>&1 | tee ci-logs/launcher.log
       - name: Check browser auth flow
         shell: bash
@@ -128,11 +129,11 @@ jobs:
     timeout-minutes: 90
     env:
       SPRING_PROFILES_ACTIVE: test
-      TEST_DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
-      TEST_DB_USERNAME: root
+      TEST_DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      TEST_DB_USERNAME: cobweb
       TEST_DB_PASSWORD: cobweb-test-only
-      DB_URL: jdbc:mysql://127.0.0.1:13307/cobweb_test
-      DB_USERNAME: root
+      DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      DB_USERNAME: cobweb
       DB_PASSWORD: cobweb-test-only
       JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
       MAIL_USERNAME: test@example.invalid
@@ -146,15 +147,16 @@ jobs:
       DOCKER_JUDGE_TEST: 'true'
       GENERIC_CATALOG_DOCKER_TEST: 'true'
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: postgres:18
         env:
-          MYSQL_DATABASE: cobweb_test
-          MYSQL_ROOT_PASSWORD: cobweb-test-only
+          POSTGRES_DB: cobweb_test
+          POSTGRES_USER: cobweb
+          POSTGRES_PASSWORD: cobweb-test-only
         ports:
-          - 13307:3306
+          - 15433:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pcobweb-test-only"
+          --health-cmd="pg_isready -h 127.0.0.1 -U cobweb -d cobweb_test"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=30

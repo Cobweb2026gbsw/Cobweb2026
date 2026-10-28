@@ -7,10 +7,10 @@ spring:
     compose:
       enabled: false  # 개발/운영 Compose는 명시적으로 실행하며 앱 기동 시 자동으로 시작하지 않음
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/cobweb2026?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul}
-    username: ${DB_USERNAME:root}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cobweb2026}
+    username: ${DB_USERNAME:cobweb}
     password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: org.postgresql.Driver
   mail:
     host: smtp.gmail.com
     port: 587
@@ -33,7 +33,7 @@ spring:
       hibernate:
         format_sql: true
   flyway:
-    # 기존 DB를 자동으로 기준 처리하지 않습니다. 빈 DB는 V1부터, 기존 DB는 검토 후 수동 baseline합니다.
+    # PostgreSQL 신규 DB에는 통합 V1을 적용합니다. 기존 MySQL 데이터는 별도 검증 이관 전까지 보존합니다.
     enabled: ${FLYWAY_ENABLED:false}
     baseline-on-migrate: false
 

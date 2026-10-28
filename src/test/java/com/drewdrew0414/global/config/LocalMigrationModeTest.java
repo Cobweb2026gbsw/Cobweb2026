@@ -12,7 +12,7 @@ class LocalMigrationModeTest {
         "--spring.main.web-application-type=none", "--spring.flyway.enabled=true",
         "--judge.enabled=false", "--demo.seed=false", "--curriculum.level0.enabled=false"
     };
-    private static final String DATABASE = "jdbc:mysql://127.0.0.1:3307/cobweb2026?serverTimezone=UTC";
+    private static final String DATABASE = "jdbc:postgresql://127.0.0.1:5433/cobweb2026";
 
     @Test void normalWebAndWorkerArgumentsDoNotActivateOneShotMode() {
         assertFalse(LocalMigrationMode.requested(new String[]{}));
@@ -99,6 +99,6 @@ class LocalMigrationModeTest {
         }
         return environment.withProperty("spring.datasource.url", DATABASE)
             .withProperty("spring.flyway.url", DATABASE).withProperty("spring.datasource.username", "cobweb")
-            .withProperty("spring.flyway.user", "root");
+            .withProperty("spring.flyway.user", "postgres");
     }
 }

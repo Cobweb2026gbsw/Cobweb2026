@@ -59,8 +59,13 @@ public class JwtTokenProvider {
     }
 
     public String generateRefreshToken(Long userId) {
-        // refresh token은 username/role 없이 userId(subject)만 담음. 재발급 시엔 DB의 RefreshToken 레코드로
-        // 실제 유효성을 다시 확인하므로 굳이 클레임을 더 실을 필요가 없음
+        // 기존 OAuth/내부 호출은 종전의 14일 유지 정책을 보존합니다.
+        return generateRefreshToken(userId, true);
+    }
+
+    public String generateRefreshToken(Long userId, boolean rememberMe) {
+        // 권한 정보는 담지 않고 사용자 ID와 쿠키 유지 여부만 보관합니다.
+        // 재발급 시 DB의 RefreshToken 레코드로 실제 유효성을 다시 확인합니다.
         Date now = new Date();
         Date expiry = new Date(now.getTime() + refreshTokenExpiration);
 
@@ -68,10 +73,16 @@ public class JwtTokenProvider {
                 // JWT 시간은 초 단위이므로 같은 초의 재발급도 서로 다른 토큰이어야 합니다.
                 .id(java.util.UUID.randomUUID().toString())
                 .subject(String.valueOf(userId))
+                // 쿠키 회전 시 세션 쿠키를 영속 쿠키로 승격하지 않도록 서버가 서명해 보관합니다.
+                .claim("rememberMe", rememberMe)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)
                 .compact();
+    }
+
+    public boolean isPersistentRefreshToken(String token) {
+        return readRefreshToken(token).rememberMe();
     }
 
     public boolean isValid(String token) {
@@ -90,10 +101,17 @@ public class JwtTokenProvider {
 
     /** 재발급 시 JWT를 한 번만 파싱하여 서명·만료·사용자 ID를 함께 검사합니다. */
     public Long validateAndGetUserId(String token) {
+        return readRefreshToken(token).userId();
+    }
+
+    public record RefreshIdentity(Long userId, boolean rememberMe) {}
+
+    /** 서명 검증과 쿠키 정책 읽기를 한 번의 파싱으로 끝내며, 레거시 토큰의 유지 정책은 보존합니다. */
+    public RefreshIdentity readRefreshToken(String token) {
         try {
-            String subject = Jwts.parser().verifyWith(key).build().parseSignedClaims(token)
-                    .getPayload().getSubject();
-            return Long.valueOf(subject);
+            Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+            return new RefreshIdentity(Long.valueOf(claims.getSubject()),
+                    !claims.containsKey("rememberMe") || Boolean.TRUE.equals(claims.get("rememberMe")));
         } catch (ExpiredJwtException e) {
             throw new ExpiredTokenException();
         } catch (JwtException | IllegalArgumentException e) {

@@ -24,7 +24,7 @@ public class AuthRateLimitService {
         // 원문 이메일·아이디·IP를 제한 테이블에 남기지 않습니다.
         String key = TokenHash.sha256(scope + "\0" + identity.toLowerCase(Locale.ROOT));
         LocalDateTime now = LocalDateTime.now();
-        db.update("INSERT IGNORE INTO auth_rate_limits(limit_key,window_started_at,attempts) VALUES(?,?,0)", key, now);
+        db.update("INSERT INTO auth_rate_limits(limit_key,window_started_at,attempts) VALUES(?,?,0) ON CONFLICT (limit_key) DO NOTHING", key, now);
         var state = db.queryForMap(
                 "SELECT window_started_at,attempts FROM auth_rate_limits WHERE limit_key=? FOR UPDATE", key);
         Object storedStart = state.get("window_started_at");
@@ -44,7 +44,7 @@ public class AuthRateLimitService {
         String key = TokenHash.sha256("verification-lock\0" + purpose + "\0" + email.toLowerCase(Locale.ROOT));
         // 잠금은 호출자의 트랜잭션이 끝날 때까지 유지됩니다. 발급·검증·소비가 같은 순서로 대기합니다.
         db.update("INSERT INTO email_verification_guards(guard_key,touched_at) VALUES(?,?) " +
-                "ON DUPLICATE KEY UPDATE touched_at=VALUES(touched_at)", key, LocalDateTime.now());
+                "ON CONFLICT (guard_key) DO UPDATE SET touched_at=EXCLUDED.touched_at", key, LocalDateTime.now());
     }
 
     @Scheduled(fixedDelay = 3_600_000, initialDelay = 3_600_000)

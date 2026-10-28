@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 전용 테스트 DB의 각 테스트를 롤백하며 실제 MySQL FK와 JSON 저장을 검증합니다. */
+/** 전용 테스트 DB의 각 테스트를 롤백하며 실제 PostgreSQL FK와 JSON 저장을 검증합니다. */
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("test")
 @Transactional
@@ -48,11 +48,9 @@ class Level0DataIntegrationTest {
     }
     @Test void importsExactly100PublicInitiateFunctionsAndPreservesChainSubmissionsAndAuthoredProblems() {
         long existingTests=db.queryForObject("SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=?",Long.class,chainId);
-        db.update("INSERT INTO submissions(user_id,problem_id,language,source_code,status) VALUES(?,?,'PYTHON','old answer','WRONG_ANSWER')",author,chainId);
-        long submission=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
-        db.update("INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,author_id) VALUES(1900000,?,'body','input','output',?)",
+        long submission=db.queryForObject("INSERT INTO submissions(user_id,problem_id,language,source_code,status) VALUES(?,?,'PYTHON','old answer','WRONG_ANSWER') RETURNING id",Long.class,author,chainId);
+        long unrelated=db.queryForObject("INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,author_id) VALUES(1900000,?,'body','input','output',?) RETURNING id",Long.class,
             "Unrelated "+UUID.randomUUID(),author);
-        long unrelated=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
 
         importer.importCatalog(catalog);
 

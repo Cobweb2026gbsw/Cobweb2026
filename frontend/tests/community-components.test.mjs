@@ -63,4 +63,27 @@ test('post version conflict keeps edit draft and reports server error',async()=>
   cleanup();const module=await load('ForumWrite');mock((path,method)=>method==='PUT'?{__error:'버전이 달라 새로고침 후 다시 시도해주세요.'}:post);
   const view=await mount(module,'/forum/7/edit','/forum/:id/edit');const title=await view.findByDisplayValue('실제 게시글');fireEvent.change(title,{target:{value:'저장 전 초안'}});fireEvent.click(view.getByRole('button',{name:'저장'}));await view.findByRole('alert');assert.equal(view.getByDisplayValue('저장 전 초안').value,'저장 전 초안');cleanup();
 });
+test('comments, replies and second-level replies expand independently without changing the original edit draft',async()=>{
+  cleanup();const module=await load('ForumPost');
+  const originals=['부모 댓글 '.repeat(70),'첫 답글 '.repeat(80),'두 번째 답글 '.repeat(80)];
+  mock(path=>{
+    if(!path.includes('/comments?'))return post;
+    const parentId=new URL(path,'http://localhost').searchParams.get('parentId');
+    const depth=parentId==null?0:parentId==='11'?1:2;
+    return {items:[{...comment,id:11+depth,parentId:depth?10+depth:null,depth,body:originals[depth],replyCount:depth<2?1:0}],total:1};
+  });
+  const view=await mount(module,'/forum/7','/forum/:id');
+  await view.findByRole('button',{name:'…더보기'});
+  fireEvent.click(view.getByRole('button',{name:'답글 1'}));
+  await waitFor(()=>assert.equal(view.getAllByRole('button',{name:'…더보기'}).length,2));
+  fireEvent.click(view.getAllByRole('button',{name:'답글 1'})[1]);
+  await waitFor(()=>assert.equal(view.getAllByRole('button',{name:'…더보기'}).length,3));
+  fireEvent.click(view.getAllByRole('button',{name:'…더보기'})[2]);
+  assert.equal(view.getAllByRole('button',{name:'…더보기'}).length,2);
+  assert.equal(view.getAllByRole('button',{name:'접기'}).length,1);
+  assert.equal(view.getAllByRole('button',{name:'답글 1'}).length,2);
+  fireEvent.click(view.getAllByRole('button',{name:'댓글 수정'})[2]);
+  assert.equal(view.getByRole('textbox',{name:'댓글 수정'}).value,originals[2]);
+  cleanup();
+});
 test.after(async()=>{cleanup();await act(async()=>{await new Promise(resolve=>setTimeout(resolve,0));});dom.window.close();});

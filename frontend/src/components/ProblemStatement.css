@@ -9,7 +9,8 @@
 /* 긴 설명은 이 카드 안에서만 스크롤합니다. 키보드로도 영역에 진입해 읽을 수 있습니다. */
 .pd-statement {
   min-width: 0;
-  max-height: clamp(260px, calc(100dvh - 240px), 900px);
+  /* 오른쪽 편집기와 테스트 영역을 내려 읽을 때도 설명 카드가 짧게 끊기지 않게 합니다. */
+  height: clamp(600px, calc(100dvh + 240px), 1200px);
   overflow: auto;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
@@ -20,6 +21,10 @@
   outline-offset: 3px;
 }
 
+/* 긴 내부 스크롤의 네이티브 트랙도 현재 테마를 따라가게 합니다. */
+.dark .pd-statement { color-scheme: dark; }
+.light .pd-statement { color-scheme: light; }
+
 @media (max-width: 1100px) {
-  .pd-statement { max-height: clamp(240px, 60dvh, 600px); }
+  .pd-statement { height: clamp(320px, 65dvh, 680px); }
 }

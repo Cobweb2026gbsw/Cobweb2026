@@ -152,7 +152,7 @@ test('generic problem detail switches all 15 languages using its published param
   for(const language of ids){
     fireEvent.change(view.getByLabelText('언어'),{target:{value:language}});
     await waitFor(()=>assert.match(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),arrayDeclarations[language]));
-    assert.match(view.container.textContent,/solution\(numbers: int\[\], lines: string\[\]\) → string/);
+    assert.doesNotMatch(view.container.textContent,/solution\(numbers: int\[\], lines: string\[\]\) → string/);
     assert.doesNotMatch(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),/matrix|target/);
     if(language==='PYTHON')act(()=>setEditorValue(view.getByRole('textbox',{name:'풀이 코드'}),'def solution(numbers, lines):\n    return "draft"\n'));
   }
@@ -165,7 +165,7 @@ test('generic problem detail displays a no-argument string function without lega
   globalThis.__genericAuthoringApi=async path=>path==='/api/languages'?catalog:{problem_number:1000,problem_title:'Hello World!',description:'문자열 반환',execution_mode:'FUNCTION',functionAbi:'GENERIC_V1',functionSignature:{name:'sol',parameters:[],returnType:'string'},languages:['PYTHON','JAVASCRIPT'],examples:[]};
   const view=render(React.createElement(MemoryRouter,{initialEntries:['/problems/1000'],future:{v7_startTransition:true,v7_relativeSplatPath:true}},React.createElement(Routes,null,React.createElement(Route,{path:'/problems/:id',element:React.createElement(Page,{dark:true})}))));
   await waitFor(()=>assert.match(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),/def sol\(\) -> str:/));
-  assert.match(view.container.textContent,/sol\(\) → string/);
+  assert.doesNotMatch(view.container.textContent,/sol\(\) → string/);
   fireEvent.change(view.getByLabelText('언어'),{target:{value:'JAVASCRIPT'}});
   assert.match(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),/function sol\(\)/);assert.doesNotMatch(view.container.textContent,/matrix|target/);cleanup();
 });

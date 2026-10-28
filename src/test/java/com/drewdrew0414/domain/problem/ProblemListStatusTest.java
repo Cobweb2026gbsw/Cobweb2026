@@ -80,7 +80,7 @@ class ProblemListStatusTest {
         assertEquals(false,service.mine(1,"draft",List.of("ABSOLUTE:5"),"unsolved",user(5)).getFirst().get("solved"));
         var sql=ArgumentCaptor.forClass(String.class);
         verify(db).queryForList(sql.capture(),eq(5L),eq(5L),eq("%draft%"),eq("ABSOLUTE"),eq(5),eq(30));
-        assertTrue(sql.getValue().contains("WHERE p.author_id=? AND p.problem_title LIKE ?"));
+        assertTrue(sql.getValue().contains("WHERE p.author_id=? AND p.problem_title ILIKE ?"));
         assertTrue(sql.getValue().contains("AND s.problem_id IS NULL ORDER BY p.updated_at DESC,p.id DESC"));
         assertEquals(401,assertThrows(ResponseStatusException.class,()->service.mine(0,"",null)).getStatusCode().value());
         verifyNoMoreInteractions(db);

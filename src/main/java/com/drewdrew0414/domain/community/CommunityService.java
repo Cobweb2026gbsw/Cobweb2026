@@ -40,15 +40,15 @@ public class CommunityService {
         String term="%"+query+"%";
         int offset=offset(page);
         var rows=db.queryForList("""
-            SELECT cp.id,cp.title,cp.category,cp.author_username AS authorUsername,
-                   cp.version,cp.is_deleted AS deleted,cp.created_at AS createdAt,
-                   cp.updated_at AS updatedAt,
+            SELECT cp.id,cp.title,cp.category,cp.author_username AS "authorUsername",
+                   cp.version,cp.is_deleted AS deleted,cp.created_at AS "createdAt",
+                   cp.updated_at AS "updatedAt",
                    CASE WHEN p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
-                        THEN p.problem_number ELSE NULL END AS problemNumber,
-                   (SELECT COUNT(*) FROM community_comments cc WHERE cc.post_id=cp.id) AS commentCount
+                        THEN p.problem_number ELSE NULL END AS "problemNumber",
+                   (SELECT COUNT(*) FROM community_comments cc WHERE cc.post_id=cp.id) AS "commentCount"
             FROM community_posts cp LEFT JOIN problems p ON p.id=cp.problem_id
             WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)
-              AND (cp.title LIKE ? OR cp.body LIKE ?)
+              AND (cp.title ILIKE ? OR cp.body ILIKE ?)
             ORDER BY (cp.category='NOTICE') DESC,cp.created_at DESC,cp.id DESC
             LIMIT 20 OFFSET ?
             """,includeDeleted,selected,selected,term,term,offset);
@@ -56,7 +56,7 @@ public class CommunityService {
         Long total=db.queryForObject("""
             SELECT COUNT(*) FROM community_posts cp
             WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)
-              AND (cp.title LIKE ? OR cp.body LIKE ?)
+              AND (cp.title ILIKE ? OR cp.body ILIKE ?)
             """,Long.class,includeDeleted,selected,selected,term,term);
         return Map.of("items",items,"total",total,"page",Math.max(page,0));
     }
@@ -124,12 +124,12 @@ public class CommunityService {
         var rows=db.queryForList("""
             SELECT cc.*,(SELECT COUNT(*) FROM community_comments child WHERE child.parent_id=cc.id) AS reply_count
             FROM community_comments cc
-            WHERE cc.post_id=? AND ((? IS NULL AND cc.parent_id IS NULL) OR cc.parent_id=?)
+            WHERE cc.post_id=? AND ((CAST(? AS bigint) IS NULL AND cc.parent_id IS NULL) OR cc.parent_id=?)
             ORDER BY cc.id LIMIT 20 OFFSET ?
             """,postId,parentId,parentId,offset);
         Long total=db.queryForObject("""
             SELECT COUNT(*) FROM community_comments cc
-            WHERE cc.post_id=? AND ((? IS NULL AND cc.parent_id IS NULL) OR cc.parent_id=?)
+            WHERE cc.post_id=? AND ((CAST(? AS bigint) IS NULL AND cc.parent_id IS NULL) OR cc.parent_id=?)
             """,Long.class,postId,parentId,parentId);
         var items=rows.stream().map(c -> commentItem(c,includeDeleted,postDeleted,user)).toList();
         return Map.of("items",items,"total",total,"page",Math.max(page,0));
@@ -168,13 +168,13 @@ public class CommunityService {
     public List<Map<String,Object>> postHistory(long id,int page,CustomUserDetails user) {
         ProblemService.requireOperator(user);
         var rows=db.queryForList("""
-            SELECT id,action,old_title AS oldTitle,old_category AS oldCategory,old_body AS oldBody,
-                   old_problem_id AS oldProblemId,old_problem_number AS oldProblemNumber,
-                   old_deleted AS oldDeleted,old_version AS oldVersion,new_title AS newTitle,
-                   new_category AS newCategory,new_body AS newBody,
-                   new_problem_id AS newProblemId,new_problem_number AS newProblemNumber,
-                   new_deleted AS newDeleted,
-                   new_version AS newVersion,editor_username AS editorUsername,edited_at AS editedAt,reason
+            SELECT id,action,old_title AS "oldTitle",old_category AS "oldCategory",old_body AS "oldBody",
+                   old_problem_id AS "oldProblemId",old_problem_number AS "oldProblemNumber",
+                   old_deleted AS "oldDeleted",old_version AS "oldVersion",new_title AS "newTitle",
+                   new_category AS "newCategory",new_body AS "newBody",
+                   new_problem_id AS "newProblemId",new_problem_number AS "newProblemNumber",
+                   new_deleted AS "newDeleted",
+                   new_version AS "newVersion",editor_username AS "editorUsername",edited_at AS "editedAt",reason
             FROM community_post_revisions WHERE post_id=? ORDER BY id DESC LIMIT 20 OFFSET ?
             """,id,offset(page));
         return rows.stream().map(CommunityService::withUtcHistoryTime).toList();
@@ -182,9 +182,9 @@ public class CommunityService {
     public List<Map<String,Object>> commentHistory(long id,int page,CustomUserDetails user) {
         ProblemService.requireOperator(user);
         var rows=db.queryForList("""
-            SELECT id,action,old_body AS oldBody,old_deleted AS oldDeleted,old_version AS oldVersion,
-                   new_body AS newBody,new_deleted AS newDeleted,new_version AS newVersion,
-                   editor_username AS editorUsername,edited_at AS editedAt,reason
+            SELECT id,action,old_body AS "oldBody",old_deleted AS "oldDeleted",old_version AS "oldVersion",
+                   new_body AS "newBody",new_deleted AS "newDeleted",new_version AS "newVersion",
+                   editor_username AS "editorUsername",edited_at AS "editedAt",reason
             FROM community_comment_revisions WHERE comment_id=? ORDER BY id DESC LIMIT 20 OFFSET ?
             """,id,offset(page));
         return rows.stream().map(CommunityService::withUtcHistoryTime).toList();
@@ -197,11 +197,10 @@ public class CommunityService {
         long uid=lockUser(user);
         var content=validatePost(request.title(),request.body(),request.category(),request.problemNumber(),
             null,user);
-        db.update("""
+        long id=db.queryForObject("""
             INSERT INTO community_posts(category,title,body,problem_id,author_id,author_username,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))
-            """,content.category(),content.title(),content.body(),content.problemId(),uid,user.getUsername());
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+            VALUES(?,?,?,?,?,?,(clock_timestamp() AT TIME ZONE 'UTC'),(clock_timestamp() AT TIME ZONE 'UTC')) RETURNING id
+            """,Long.class,content.category(),content.title(),content.body(),content.problemId(),uid,user.getUsername());
         postRevision(id,"CREATE",null,content.title(),content.category(),content.body(),
             content.problemId(),content.problemNumber(),false,1,user,null);
         return id;
@@ -227,7 +226,7 @@ public class CommunityService {
         long next=request.version()+1;
         changed(db.update("""
             UPDATE community_posts SET title=?,body=?,category=?,problem_id=?,version=?,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=? AND version=?
+                updated_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND version=?
             """,content.title(),content.body(),content.category(),content.problemId(),next,id,request.version()));
         postRevision(id,"UPDATE",old,content.title(),content.category(),content.body(),
             content.problemId(),content.problemNumber(),false,next,user,null);
@@ -243,8 +242,8 @@ public class CommunityService {
         if(deleted(old.get("is_deleted"))) throw new ApiException(HttpStatus.CONFLICT,"이미 삭제된 글입니다.");
         long next=version+1;
         changed(db.update("""
-            UPDATE community_posts SET is_deleted=TRUE,deleted_at=UTC_TIMESTAMP(6),version=?,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=? AND version=?
+            UPDATE community_posts SET is_deleted=TRUE,deleted_at=(clock_timestamp() AT TIME ZONE 'UTC'),version=?,
+                updated_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND version=?
             """,next,id,version));
         postRevision(id,"DELETE",old,(String)old.get("title"),(String)old.get("category"),
             (String)old.get("body"),nullableLong(old.get("problem_id")),
@@ -261,7 +260,7 @@ public class CommunityService {
         long next=request.version()+1;
         changed(db.update("""
             UPDATE community_posts SET is_deleted=FALSE,deleted_at=NULL,version=?,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=? AND version=?
+                updated_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND version=?
             """,next,id,request.version()));
         postRevision(id,"RESTORE",old,(String)old.get("title"),(String)old.get("category"),
             (String)old.get("body"),nullableLong(old.get("problem_id")),
@@ -284,11 +283,10 @@ public class CommunityService {
             depth=((Number)parent.get("depth")).intValue()+1;
             if(depth>2) throw new ApiException(HttpStatus.BAD_REQUEST,"답글은 두 단계까지만 작성할 수 있습니다.");
         }
-        db.update("""
+        long id=db.queryForObject("""
             INSERT INTO community_comments(post_id,parent_id,depth,body,author_id,author_username,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))
-            """,postId,request.parentId(),depth,body,uid,user.getUsername());
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+            VALUES(?,?,?,?,?,?,(clock_timestamp() AT TIME ZONE 'UTC'),(clock_timestamp() AT TIME ZONE 'UTC')) RETURNING id
+            """,Long.class,postId,request.parentId(),depth,body,uid,user.getUsername());
         commentRevision(id,"CREATE",null,body,false,1,user,null);
         return id;
     }
@@ -304,7 +302,7 @@ public class CommunityService {
         String body=validateBody(request.body(),5000);
         long next=request.version()+1;
         changed(db.update("""
-            UPDATE community_comments SET body=?,version=?,updated_at=UTC_TIMESTAMP(6)
+            UPDATE community_comments SET body=?,version=?,updated_at=(clock_timestamp() AT TIME ZONE 'UTC')
             WHERE id=? AND version=?
             """,body,next,id,request.version()));
         commentRevision(id,"UPDATE",old,body,false,next,user,null);
@@ -318,8 +316,8 @@ public class CommunityService {
         if(deleted(old.get("is_deleted"))) throw new ApiException(HttpStatus.CONFLICT,"이미 삭제된 댓글입니다.");
         long next=version+1;
         changed(db.update("""
-            UPDATE community_comments SET is_deleted=TRUE,deleted_at=UTC_TIMESTAMP(6),version=?,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=? AND version=?
+            UPDATE community_comments SET is_deleted=TRUE,deleted_at=(clock_timestamp() AT TIME ZONE 'UTC'),version=?,
+                updated_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND version=?
             """,next,id,version));
         commentRevision(id,"DELETE",old,(String)old.get("body"),true,next,user,null);
     }
@@ -334,7 +332,7 @@ public class CommunityService {
         long next=request.version()+1;
         changed(db.update("""
             UPDATE community_comments SET is_deleted=FALSE,deleted_at=NULL,version=?,
-                updated_at=UTC_TIMESTAMP(6) WHERE id=? AND version=?
+                updated_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND version=?
             """,next,id,request.version()));
         commentRevision(id,"RESTORE",old,(String)old.get("body"),false,next,user,reason(request.reason()));
     }
@@ -392,7 +390,7 @@ public class CommunityService {
             INSERT INTO community_post_revisions(post_id,action,old_title,old_category,old_body,
                 old_problem_id,old_problem_number,old_deleted,old_version,new_title,new_category,new_body,
                 new_problem_id,new_problem_number,new_deleted,new_version,editor_id,editor_username,reason,edited_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(6))
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(clock_timestamp() AT TIME ZONE 'UTC'))
             """,id,action,old==null?null:old.get("title"),old==null?null:old.get("category"),
             old==null?null:old.get("body"),old==null?null:old.get("problem_id"),
             old==null?null:old.get("problem_number"),old==null?null:old.get("is_deleted"),
@@ -404,7 +402,7 @@ public class CommunityService {
         db.update("""
             INSERT INTO community_comment_revisions(comment_id,action,old_body,old_deleted,old_version,
                 new_body,new_deleted,new_version,editor_id,editor_username,reason,edited_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(6))
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,(clock_timestamp() AT TIME ZONE 'UTC'))
             """,id,action,old==null?null:old.get("body"),old==null?null:old.get("is_deleted"),
             old==null?null:old.get("version"),body,removed,version,user.getUserId(),user.getUsername(),reason);
     }

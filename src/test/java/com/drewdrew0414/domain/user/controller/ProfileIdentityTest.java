@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class ProfileIdentityTest {
     @Test void publicUsernamePathNeverIncludesAccountIdAndOnlyLooksUpPublicSolvedProblems() {
         var db=mock(JdbcTemplate.class);var controller=new ProfileController(db);
-        when(db.queryForList(contains("FROM users WHERE username=?"),eq("alice"))).thenReturn(List.of(row(7L,"alice")));
+        when(db.queryForList(contains("FROM users WHERE lower(username)=lower(?)"),eq("alice"))).thenReturn(List.of(row(7L,"alice")));
         when(db.queryForList(contains("FROM user_solved_problems"),eq(7L))).thenReturn(solved());
         var result=data(controller.profile("alice"));
         assertPublic(result);assertEquals("alice",result.get("username"));assertEquals(solved(),result.get("solvedProblems"));
@@ -29,11 +29,11 @@ class ProfileIdentityTest {
     @ParameterizedTest @ValueSource(strings={"..","a/b","기존사용자"})
     void publicQueryAliasKeepsTheExactUsernameButDoesNotExposeStableIdentity(String username) {
         var db=mock(JdbcTemplate.class);var controller=new ProfileController(db);
-        when(db.queryForList(contains("FROM users WHERE username=?"),eq(username))).thenReturn(List.of(row(12L,username)));
+        when(db.queryForList(contains("FROM users WHERE lower(username)=lower(?)"),eq(username))).thenReturn(List.of(row(12L,username)));
         when(db.queryForList(contains("FROM user_solved_problems"),eq(12L))).thenReturn(solved());
         var result=data(controller.profileQuery(username));
         assertEquals(username,result.get("username"));assertPublic(result);
-        verify(db).queryForList(contains("FROM users WHERE username=?"),eq(username));
+        verify(db).queryForList(contains("FROM users WHERE lower(username)=lower(?)"),eq(username));
     }
     @Test void meLoadsOnlyTheAuthenticatedImmutableIdInsteadOfAnEqualOrReusedUsername() {
         var db=mock(JdbcTemplate.class);var controller=new ProfileController(db);var principal=principal(41L,"old-name",UserStatus.ACTIVE);
@@ -42,7 +42,7 @@ class ProfileIdentityTest {
         var result=data(controller.me(principal));
         assertEquals("41",result.get("id"));assertEquals("current-name",result.get("username"));
         verify(db).queryForList(contains("FROM users WHERE id=?"),eq(41L));
-        verify(db,never()).queryForList(contains("FROM users WHERE username=?"),anyString());
+        verify(db,never()).queryForList(contains("FROM users WHERE lower(username)=lower(?)"),anyString());
         for(String privateField:List.of("email","password","role","provider_id","accessToken","refreshToken"))
             assertFalse(result.containsKey(privateField),privateField);
     }
@@ -52,12 +52,12 @@ class ProfileIdentityTest {
         when(db.queryForList(contains("FROM users WHERE id=?"),eq(41L))).thenReturn(List.of(row(999L,"alice")));
         when(db.queryForList(contains("FROM user_solved_problems"),eq(999L))).thenReturn(List.of());
         assertEquals("41",data(controller.me(principal(41L,"alice",UserStatus.ACTIVE))).get("id"));
-        verify(db,never()).queryForList(contains("FROM users WHERE username=?"),anyString());
+        verify(db,never()).queryForList(contains("FROM users WHERE lower(username)=lower(?)"),anyString());
     }
     @Test void readingMeDoesNotAddPrivateIdToLaterPublicPathOrQueryResponses() {
         var db=mock(JdbcTemplate.class);var controller=new ProfileController(db);
         when(db.queryForList(contains("FROM users WHERE id=?"),eq(41L))).thenAnswer(call->List.of(row(41L,"alice")));
-        when(db.queryForList(contains("FROM users WHERE username=?"),eq("alice"))).thenAnswer(call->List.of(row(41L,"alice")));
+        when(db.queryForList(contains("FROM users WHERE lower(username)=lower(?)"),eq("alice"))).thenAnswer(call->List.of(row(41L,"alice")));
         when(db.queryForList(contains("FROM user_solved_problems"),eq(41L))).thenReturn(solved());
         assertEquals("41",data(controller.me(principal(41L,"alice",UserStatus.ACTIVE))).get("id"));
         assertPublic(data(controller.profile("alice")));assertPublic(data(controller.profileQuery("alice")));
@@ -88,7 +88,7 @@ class ProfileIdentityTest {
     @Test void missingPrivateOrPublicProfileRemainsNotFoundInsteadOfFabricatingIdentity() {
         var db=mock(JdbcTemplate.class);var controller=new ProfileController(db);
         when(db.queryForList(contains("FROM users WHERE id=?"),eq(41L))).thenReturn(List.of());
-        when(db.queryForList(contains("FROM users WHERE username=?"),eq("alice"))).thenReturn(List.of());
+        when(db.queryForList(contains("FROM users WHERE lower(username)=lower(?)"),eq("alice"))).thenReturn(List.of());
         assertEquals(404,assertThrows(ResponseStatusException.class,()->controller.me(principal(41L,"alice",UserStatus.ACTIVE))).getStatusCode().value());
         assertEquals(404,assertThrows(ResponseStatusException.class,()->controller.profile("alice")).getStatusCode().value());
         assertEquals(404,assertThrows(ResponseStatusException.class,()->controller.profileQuery("alice")).getStatusCode().value());

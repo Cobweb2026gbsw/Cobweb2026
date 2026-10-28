@@ -17,7 +17,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // 인증 상태를 변경하는 트랜잭션 전용입니다. 일반 조회/JWT 필터는 잠그지 않습니다.
     // JPA 변경감지가 오래된 password/status/통계를 덮어쓰지 않도록 읽는 시점부터 잠급니다.
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("select u from User u where u.username = :username")
+    @org.springframework.data.jpa.repository.Query("select u from User u where lower(u.username) = lower(:username)")
     Optional<User> findLockedByUsername(@org.springframework.data.repository.query.Param("username") String username);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
@@ -25,20 +25,27 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findLockedById(@org.springframework.data.repository.query.Param("id") Long id);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("select u from User u where u.email = :email")
+    @org.springframework.data.jpa.repository.Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findLockedByEmail(@org.springframework.data.repository.query.Param("email") String email);
 
     // OAuth 재로그인도 사용자 행을 먼저 잠가 refresh 토큰 회전과 계정 상태 변경을 직렬화합니다.
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("select u from User u where u.provider = :provider and u.providerId = :providerId")
+    @org.springframework.data.jpa.repository.Query("select u from User u where u.provider = :provider and lower(u.providerId) = lower(:providerId)")
     Optional<User> findLockedByProviderAndProviderId(
             @org.springframework.data.repository.query.Param("provider") Provider provider,
             @org.springframework.data.repository.query.Param("providerId") String providerId);
 
-    Optional<User> findByUsername(String username); // 로그인 시 아이디로 유저 조회
-    Optional<User> findByEmail(String email); // 비밀번호 재설정 등 이메일로 유저 조회
-    boolean existsByUsername(String username); // 회원가입 시 아이디 중복 체크
-    boolean existsByEmail(String email); // 회원가입 시 이메일 중복 체크
-    Optional<User> findByProviderAndProviderId(Provider provider, String providerId); // 소셜 로그인 계정 조회
+    // PostgreSQL의 대소문자 구분 기본값과 무관하게 기존 계정 식별 규칙을 보존합니다.
+    @org.springframework.data.jpa.repository.Query("select u from User u where lower(u.username) = lower(:username)")
+    Optional<User> findByUsername(@org.springframework.data.repository.query.Param("username") String username);
+    @org.springframework.data.jpa.repository.Query("select u from User u where lower(u.email) = lower(:email)")
+    Optional<User> findByEmail(@org.springframework.data.repository.query.Param("email") String email);
+    @org.springframework.data.jpa.repository.Query("select (count(u) > 0) from User u where lower(u.username) = lower(:username)")
+    boolean existsByUsername(@org.springframework.data.repository.query.Param("username") String username);
+    @org.springframework.data.jpa.repository.Query("select (count(u) > 0) from User u where lower(u.email) = lower(:email)")
+    boolean existsByEmail(@org.springframework.data.repository.query.Param("email") String email);
+    @org.springframework.data.jpa.repository.Query("select u from User u where u.provider = :provider and lower(u.providerId) = lower(:providerId)")
+    Optional<User> findByProviderAndProviderId(@org.springframework.data.repository.query.Param("provider") Provider provider,
+            @org.springframework.data.repository.query.Param("providerId") String providerId);
 
 }

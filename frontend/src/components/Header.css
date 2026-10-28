@@ -15,8 +15,8 @@
   align-items: center;
   gap: 32px;
 
-  height: 88px;
-  padding: 0 32px;
+  min-height: 88px;
+  padding: 16px 32px;
 
   background-color: var(--h-bg);
   color: var(--h-text);
@@ -45,6 +45,7 @@
   flex: none;
   white-space: nowrap;
   color: var(--h-accent);
+  font-family: var(--font);
   font-size: 28px;
   font-weight: 700;
   text-decoration: none;
@@ -86,14 +87,17 @@
   padding: 0 6px 0 20px;
 
   background-color: var(--h-field);
-  border: 1px solid var(--h-line);
+  border: none;
   border-radius: 999px;
+  outline: none;
+  box-shadow: none;
 }
 
 .cw-header-search:focus-within {
-  border-color: var(--h-accent);
-  /* 입력·버튼을 하나의 검색 컨트롤로 묶어 둥근 바깥 경계만 강조합니다. */
-  box-shadow: 0 0 0 1px var(--h-accent);
+  /* 검색 입력은 바깥 프레임까지 테두리·포커스 경계를 표시하지 않습니다. */
+  border: none;
+  outline: none;
+  box-shadow: none;
 }
 
 .cw-header-search input {
@@ -104,6 +108,7 @@
   color: var(--h-text);
   border: none;
   outline: none;
+  box-shadow: none;
 
   font-size: 14px;
 }
@@ -179,26 +184,37 @@
   outline-offset: 2px;
 }
 
-/* 공통 헤더 포커스 규칙이 input의 outline:none을 다시 덮지 않게 합니다.
-   검색 입력의 포커스는 위 focus-within 경계가 표시하며, 검색 버튼과
+/* 검색 입력은 포커스 때도 프레임을 표시하지 않습니다. 검색 버튼과
    다른 헤더 링크/버튼의 키보드 포커스 표시는 그대로 유지합니다. */
 .cw-header-search input:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
-/* 넓은 화면은 간격을 확보하고, 관리 메뉴가 늘면 왼쪽 영역 안에서만 줄바꿈합니다. */
-.cw-menu-toggle {
-  display: none;
+.cw-header-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding: 12px 20px;
+  color: #f8ddd6;
+  background: #522b25;
+  overflow-wrap: anywhere;
 }
 
+/* 메뉴를 숨기는 버튼 대신 두 번째 행을 항상 표시합니다. 메뉴가 많은
+   관리자/작은 화면에서는 이 행만 가로 스크롤하며 키보드로도 이동할 수 있습니다. */
 @media (max-width: 1250px) {
   .cw-header {
-    gap: 16px;
-    padding: 0 20px;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 8px 16px;
+    padding: 12px 20px;
   }
 
   .cw-header-left {
-    gap: 16px;
+    display: contents;
   }
 
   .cw-header-search {
@@ -206,37 +222,40 @@
   }
 
   .cw-header nav {
-    display: none;
-  }
-
-  .cw-menu-toggle {
-    display: inline-flex;
-  }
-
-  .cw-header nav.open {
     display: flex;
-    position: absolute;
-    top: 87px;
-    left: 0;
-    right: 0;
-    padding: 20px;
-    background: var(--h-bg);
-    border-bottom: 1px solid var(--h-line);
-    box-shadow: 0 12px 24px #0002;
-    z-index: 25;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+    padding: 2px 2px 6px;
+    scrollbar-width: thin;
+  }
+
+  .cw-header nav a {
+    flex: none;
   }
 
   .cw-header-logo {
+    grid-column: 1;
+    grid-row: 1;
     font-size: 24px;
+  }
+
+  .cw-header-right {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    min-width: 0;
+    margin-left: 0;
   }
 }
 
-@media(max-width:520px){.cw-header{padding:0 12px;gap:8px}.cw-header-left{gap:10px}.cw-header-right{gap:5px}.cw-header-btn{padding:0 9px;font-size:12px}.cw-header-right>a{max-width:90px;overflow:hidden;text-overflow:ellipsis}}
+@media(max-width:520px){.cw-header{padding:12px;gap:8px}.cw-header nav{gap:20px}.cw-header-right{gap:5px}.cw-header-btn{padding:0 9px;font-size:12px}.cw-header-right>a{max-width:90px;overflow:hidden;text-overflow:ellipsis}}
 
 /* 작은 휴대폰에서도 계정 이름 때문에 메뉴·로그아웃이 밀리지 않게 합니다. */
 @media (max-width: 380px) {
-  .cw-header { padding: 0 8px; gap: 6px; }
-  .cw-header-left { gap: 6px; }
+  .cw-header { padding: 12px 8px; gap: 6px; }
   .cw-header-right { gap: 4px; }
   .cw-header-btn { padding: 0 6px; }
   .cw-header-right > a { max-width: 48px; }

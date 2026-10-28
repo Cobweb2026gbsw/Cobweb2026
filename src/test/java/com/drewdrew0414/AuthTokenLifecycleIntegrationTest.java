@@ -18,10 +18,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 인증 토큰의 계정 단위 폐기와 같은 초에 발급된 코드의 순서를 실제 MySQL에서 확인합니다. */
+/** 인증 토큰의 계정 단위 폐기와 같은 초에 발급된 코드의 순서를 실제 PostgreSQL에서 확인합니다. */
 @SpringBootTest
 @ActiveProfiles("test")
 class AuthTokenLifecycleIntegrationTest {
@@ -72,11 +73,11 @@ class AuthTokenLifecycleIntegrationTest {
                 () -> emailVerification.verifyCode(email, first, VerificationPurpose.JOIN));
         emailVerification.verifyCode(email, second, VerificationPurpose.JOIN);
 
-        assertEquals(1, db.queryForObject(
+        assertTrue(db.queryForObject(
                 "SELECT is_verified FROM email_verifications WHERE email=? ORDER BY id DESC LIMIT 1",
-                Integer.class, email));
-        assertEquals(0, db.queryForObject(
+                Boolean.class, email));
+        assertFalse(db.queryForObject(
                 "SELECT is_verified FROM email_verifications WHERE email=? ORDER BY id ASC LIMIT 1",
-                Integer.class, email));
+                Boolean.class, email));
     }
 }

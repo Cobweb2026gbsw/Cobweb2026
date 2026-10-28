@@ -18,7 +18,7 @@ class RevalidationIntegrationTest {
         for(String column:new String[]{"submitted_at","judged_at"}) {
             Integer precision=db.queryForObject("""
                 SELECT DATETIME_PRECISION FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='submissions' AND COLUMN_NAME=?
+                WHERE TABLE_SCHEMA=current_schema() AND TABLE_NAME='submissions' AND COLUMN_NAME=?
                 """,Integer.class,column);
             assertEquals(6,precision,column+" must match contest UTC DATETIME(6) precision");
         }

@@ -28,7 +28,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 전용 MySQL에서 V15, 공개/비공개 분리, 생략 보존 및 코테 시간창을 실제 HTTP로 검증합니다. */
+/** 전용 PostgreSQL에서 V15, 공개/비공개 분리, 생략 보존 및 코테 시간창을 실제 HTTP로 검증합니다. */
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class ProblemStarterCodeIntegrationTest {
@@ -110,13 +110,13 @@ class ProblemStarterCodeIntegrationTest {
         String endpoint="/api/groups/"+gid+"/contests/"+cid+"/problems/"+number;
         assertEquals(403,http("GET",endpoint,null,member).statusCode());
         assertEquals(404,http("GET","/api/problems/"+number,null,member).statusCode());
-        db.update("UPDATE group_contests SET starts_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),ends_at=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minute'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
         var response=http("GET",endpoint,null,member);
         assertEquals(200,response.statusCode(),response.body());
         assertTrue(json.readTree(response.body()).get("data").get("functionAbi").isNull());
         assertEquals(STARTER,json.readTree(response.body()).get("data").get("starterCodes").get(0).get("sourceCode").asText());
         assertFalse(response.body().contains("PRIVATE_REFERENCE_SENTINEL"));
-        db.update("UPDATE group_contests SET ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second') WHERE id=?",cid);
         assertEquals(403,http("GET",endpoint,null,member).statusCode());
         var error=assertThrows(ResponseStatusException.class,()->contests.problem(gid,cid,number,member));
         assertEquals(403,error.getStatusCode().value());

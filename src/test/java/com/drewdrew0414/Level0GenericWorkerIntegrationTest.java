@@ -58,7 +58,7 @@ class Level0GenericWorkerIntegrationTest {
     @BeforeEach void setup() {
         // HTTP는 별도 DB 연결을 쓰므로 fixture를 커밋한 뒤 각 테스트가 만든 ID만 원자적으로 정리합니다.
         assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test")
-            .contains(db.queryForObject("SELECT DATABASE()",String.class)),"A dedicated test database is required");
+            .contains(db.queryForObject("SELECT current_database()",String.class)),"A dedicated test database is required");
         author=account(Role.OPERATOR);solver=account(Role.USER);
     }
     @AfterEach void cleanupOwnFixtures() {
@@ -102,7 +102,7 @@ class Level0GenericWorkerIntegrationTest {
         var caseIds=db.queryForList("SELECT id FROM problem_test_cases WHERE problem_id=? ORDER BY display_order",Long.class,arrayId);
         var renamed=new FunctionSignature("solution",arraySignature.parameters(),arraySignature.returnType());
         // 캐시 방어를 독립적으로 검증하기 위해 테스트 ID/본문/정답/제한은 그대로 두고 계약만 바꿉니다.
-        db.update("UPDATE problems SET function_signature=? WHERE id=?",renamed.toJson(json),arrayId);
+        db.update("UPDATE problems SET function_signature=CAST(? AS jsonb) WHERE id=?",renamed.toJson(json),arrayId);
         long third=submit(arrayProblem,Language.PYTHON,python);
         finish(worker,third,3);
         assertNull(db.queryForObject("SELECT reused_from_submission_id FROM submissions WHERE id=?",Long.class,third));

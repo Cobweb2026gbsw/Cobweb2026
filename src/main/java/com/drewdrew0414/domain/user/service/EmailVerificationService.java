@@ -51,7 +51,7 @@ public class EmailVerificationService {
             return;
         }
         authRateLimitService.lockVerification(email, purpose.name());
-        long recentRequestCount = emailVerificationRepository.countByEmailAndPurposeAndCreatedAtAfter(
+        long recentRequestCount = emailVerificationRepository.countByEmailIgnoreCaseAndPurposeAndCreatedAtAfter(
                 email, purpose, LocalDateTime.now().minus(REQUEST_WINDOW));
         if (recentRequestCount >= MAX_REQUESTS_PER_WINDOW) {
             // 메일을 만들거나 저장하기 전에 막아, 제한된 요청이 DB와 SMTP 서버에 추가 부담을 주지 않게 함
@@ -71,7 +71,7 @@ public class EmailVerificationService {
         authRateLimitService.hit("mail-verify-" + purpose, email, 10, REQUEST_WINDOW);
         authRateLimitService.lockVerification(email, purpose.name());
         EmailVerification verification = emailVerificationRepository
-                .findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(email, purpose)
+                .findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(email, purpose)
                 .orElseThrow(EmailVerificationNotFoundException::new);
         // 코드를 요청한 적 자체가 없는 경우
 
@@ -88,7 +88,7 @@ public class EmailVerificationService {
 
     public boolean isVerified(String email, VerificationPurpose purpose) {
         // UserService.signup()이 가입을 허용하기 전에 "이 이메일이 이미 인증을 마쳤는지"만 가볍게 확인할 때 씀
-        return emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDescIdDesc(email, purpose)
+        return emailVerificationRepository.findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(email, purpose)
                 // 코드 확인 당시뿐 아니라 가입/소비 시점에도 유효 시간이 남아 있어야 합니다.
                 .map(verification -> verification.isVerified() && !verification.isExpired())
                 .orElse(false); // 요청 기록 자체가 없으면 당연히 인증 안 된 것으로 취급
@@ -99,12 +99,12 @@ public class EmailVerificationService {
         authRateLimitService.lockVerification(email, purpose.name());
         // 가입이나 재설정 절차에서 검증 결과를 실제로 사용한 시점에 관련 기록을 모두 제거합니다.
         // 잠금 조회는 오래된 REPEATABLE READ 스냅샷 대신 현재 커밋된 행을 확인합니다.
-        var latest = emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(email, purpose);
+        var latest = emailVerificationRepository.findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(email, purpose);
         if (latest.isEmpty() || !latest.get().isVerified() || latest.get().isExpired()) {
             throw new EmailNotVerifiedException();
         }
         // 최신 기록만 지우면 오래된 verified 기록이 다시 사용될 수 있으므로 전부 삭제합니다.
-        emailVerificationRepository.deleteAllByEmailAndPurpose(email, purpose);
+        emailVerificationRepository.deleteAllByEmailIgnoreCaseAndPurpose(email, purpose);
     }
 
     private String generateCode() {

@@ -2,8 +2,8 @@ spring:
   config:
     import: ""
   datasource:
-    url: ${TEST_DB_URL:jdbc:mysql://127.0.0.1:13307/cobweb_test}
-    username: ${TEST_DB_USERNAME:root}
+    url: ${TEST_DB_URL:jdbc:postgresql://127.0.0.1:15433/cobweb_test}
+    username: ${TEST_DB_USERNAME:cobweb}
     password: ${TEST_DB_PASSWORD:cobweb-test-only}
   flyway:
     enabled: true

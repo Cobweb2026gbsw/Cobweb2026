@@ -44,6 +44,7 @@
   background-color: transparent;
 
   border: none;
+  /* 기본 밑줄은 유지하며 포커스에서도 두께와 색을 바꾸지 않습니다. */
   border-bottom: 1px solid #777;
 
   color: white;
@@ -51,6 +52,7 @@
   font-size: 15px;
 
   outline: none;
+  box-shadow: none;
 
   box-sizing: border-box;
 }
@@ -59,8 +61,10 @@
   color: #777;
 }
 
-.SignupBox input:focus {
-  border-bottom: 1px solid #64e6ca;
+.SignupBox input:focus,
+.SignupPage.light .SignupBox input:focus {
+  outline: none;
+  box-shadow: none;
 }
 
 /* 이메일 / 인증번호 한 줄 */
@@ -162,7 +166,7 @@
   color: #536260;
 }
 .SignupPage.light .SignupBox input {
-  border-bottom-color: #9dbab8;
+  border-bottom-color: #a0a0a0;
   color: #121414;
 }
 .SignupPage.light .SignupBox input::placeholder {
@@ -187,5 +191,6 @@
 .SignupBox button:disabled { opacity: .45; cursor: not-allowed; }
 .SignupPage.light .SignupBox .auth-error { color: #c4263c; }
 .SignupPage.light .SignupBox .auth-notice { color: #0a7f76; }
-.SignupBox input:focus-visible,.SignupBox button:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
+.SignupBox input:focus-visible { outline: none; box-shadow: none; }
+.SignupBox button:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
 @media(max-width: 540px) { .SignupPage { padding: 28px 14px; box-sizing: border-box; }.SignupBox { width: 100%; padding: 34px 24px; }.signup-row input { min-width: 0; }.signup-row button { flex: none; width: 102px; } }

@@ -51,7 +51,7 @@ class RevalidationBoundaryIntegrationTest {
         problems.review(number,new ProblemRequests.Review("PUBLISHED","준비"),owner);
         long cid=contests.create(gid,new ContestRequests.Write("경계 시험",Instant.now().plusSeconds(60),
             Instant.now().plusSeconds(3600),List.of(number),true,false,false),owner);
-        db.update("UPDATE group_contests SET starts_at=UTC_TIMESTAMP(6),ends_at=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET starts_at=(clock_timestamp() AT TIME ZONE 'UTC'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
         return new Fixture(owner,gid,cid,number);
     }
 

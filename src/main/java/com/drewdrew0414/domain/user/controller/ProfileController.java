@@ -32,7 +32,7 @@ public class ProfileController {
         return ApiResponse.success(profileData(username));
     }
     private java.util.Map<String,Object> profileData(String username) {
-        return profileData(db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE username=?",username));
+        return profileData(db.queryForList("SELECT id,username,bio,github_url,solved_count,submit_count,rank_type,rank_int FROM users WHERE lower(username)=lower(?)",username));
     }
     private java.util.Map<String,Object> profileData(java.util.List<java.util.Map<String,Object>> rows) {
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);

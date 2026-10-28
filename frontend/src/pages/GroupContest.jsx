@@ -3,7 +3,7 @@ import {Link, useParams} from 'react-router-dom';
 import {useAuth} from '../context/AuthContext';
 import {api, getSessionEpoch} from '../lib/api';
 import {CONTEST_STATUS, countdown, formatDate, questionAccessKey, shouldRecordEvent} from '../lib/groupContracts';
-import {FILE_NAMES, languageHelp, sourceBytes, starterCode} from '../lib/problemModel';
+import {FILE_NAMES, sourceBytes, starterCode} from '../lib/problemModel';
 import {preferredLanguage,rememberLanguage} from '../lib/editorLanguagePreference';
 import {ContestForm} from './GroupDetail';
 import CodeEditor from '../components/CodeEditor';
@@ -137,7 +137,7 @@ function ContestQuestion({base, number, contest, canTake, onSubmitted}) {
     }}>
       <label className="cw-label">제출 언어<select className="cw-select" value={language} onChange={event => {setLanguage(event.target.value);rememberLanguage(event.target.value);}} disabled={!open || busy}>{allowed.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
       <CodeEditor value={code} onChange={setCode} language={language} fileName={FILE_NAMES[language]} allowCopy={!contest.captureProtection || contest.status !== 'ACTIVE'} required disabled={!open || busy} />
-      <p className="gp-muted">{languageHelp(language, problem.execution_mode, problem)}</p><button className="cw-btn primary" disabled={!open || busy || !code.trim()}>시험 답안 제출</button>
+      <button className="cw-btn primary" disabled={!open || busy || !code.trim()}>시험 답안 제출</button>
       <p className="gp-muted">종료된 시험은 다시 보기가 허용되어도 제출할 수 없습니다.</p>
       {result && <p role="status" className="gc-result">제출 #{result.id} · {result.status}{result.score != null ? ` · ${result.score}점` : ''}</p>}
       <SubmissionDiagnostic submission={result}/>

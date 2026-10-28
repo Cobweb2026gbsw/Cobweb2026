@@ -64,11 +64,11 @@ class LanguageTest {
     }
 
     @Test void freshChainLaserSeedIncludesExactlyEveryFunctionLanguage() throws Exception {
-        try(var resource=LanguageTest.class.getResourceAsStream("/demo/chain-laser.sql")) {
+        try(var resource=LanguageTest.class.getResourceAsStream("/db/migration/V1__postgresql_schema.sql")) {
             assertNotNull(resource,"the fresh DB seed must be packaged");
             String sql=new String(resource.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
             var block=java.util.regex.Pattern.compile(
-                "SELECT @chain_laser_problem_id, language FROM \\((.*?)\\) supported_languages;",
+                "SELECT chain_laser_problem_id, language FROM \\((.*?)\\) supported_languages ON CONFLICT DO NOTHING;",
                 java.util.regex.Pattern.DOTALL).matcher(sql);
             assertTrue(block.find(),"the seed language insert must remain explicit");
             var ids=java.util.regex.Pattern.compile("SELECT\\s+'([A-Z0-9_]+)'")

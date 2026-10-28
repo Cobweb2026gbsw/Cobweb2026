@@ -64,6 +64,7 @@
 .cw-footer-logo,
 .cw-footer-logo:visited {
   color: var(--footer-link);
+  font-family: var(--font);
   font-size: 22px;
   font-weight: 750;
   letter-spacing: -0.6px;

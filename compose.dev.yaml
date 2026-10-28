@@ -1,19 +1,23 @@
 services:
-  mysql:
-    image: mysql:8.4
+  postgres:
+    image: postgres:18
+    entrypoint: ["/bin/bash", "/cobweb-init/entrypoint.sh"]
+    command: ["postgres"]
     environment:
-      MYSQL_DATABASE: cobweb2026
-      MYSQL_USER: cobweb
-      MYSQL_PASSWORD: ${DEV_DB_PASSWORD:?DEV_DB_PASSWORD를 설정하세요}
-      MYSQL_ROOT_PASSWORD: ${DEV_ROOT_PASSWORD:?DEV_ROOT_PASSWORD를 설정하세요}
+      POSTGRES_DB: cobweb2026
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEV_ADMIN_PASSWORD:?DEV_ADMIN_PASSWORD를 설정하세요}
+      COBWEB_APP_PASSWORD: ${DEV_DB_PASSWORD:?DEV_DB_PASSWORD를 설정하세요}
     ports:
-      - "127.0.0.1:3307:3306"
+      - "127.0.0.1:5433:5432"
     volumes:
-      - cobweb_mysql:/var/lib/mysql
+      # PostgreSQL 18은 major별 PGDATA를 이 경로 아래에 둡니다. MySQL 볼륨을 재사용하지 않습니다.
+      - cobweb_postgres:/var/lib/postgresql
+      - ./deploy/postgres:/cobweb-init:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d cobweb2026"]
       interval: 5s
       timeout: 3s
       retries: 30
 volumes:
-  cobweb_mysql:
+  cobweb_postgres:

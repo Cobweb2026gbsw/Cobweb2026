@@ -121,6 +121,6 @@ export default function CodeEditor({value='',onChange,language='',fileName='',ro
     <div className="cw-editor-host" ref={host} style={{height:Math.min(520,Math.max(180,rows*22+32))}}/>
     {validation&&<p className="cw-editor-validation" role="alert">{validation}</p>}
     {copyNotice&&<p className="cw-editor-validation" role="status">{copyNotice}</p>}
-    <div className="pd-editor-status cw-mono"><span>Ln {cursor.ln}, Col {cursor.col}</span><span>UTF-8 · Spaces: 4 · Ctrl+Space 추천 · Esc 다음 Tab: 포커스 이동</span></div>
+    <div className="pd-editor-status cw-mono"><span>Ln {cursor.ln}, Col {cursor.col}</span></div>
   </div>;
 }

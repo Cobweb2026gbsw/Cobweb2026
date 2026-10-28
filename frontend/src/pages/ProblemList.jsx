@@ -3,6 +3,7 @@ import {Link,useLocation,useNavigate,useSearchParams} from 'react-router-dom';
 import {useAuth} from '../context/AuthContext';
 import useApiData from '../lib/useApiData';
 import {rankLabel,RANKS} from '../lib/problemModel';
+import {requestedProblemPage,problemPageData,problemPageButtons} from '../lib/problemPagination';
 import Icon from '../components/Icon';
 import './common.css';
 import './ProblemList.css';
@@ -11,16 +12,21 @@ const DIFFICULTIES=RANKS.flatMap(rank=>[1,2,3,4,5].map(level=>`${rank}:${level}`
 
 export default function ProblemList({dark,mine=false}){
   const {user,epoch}=useAuth(),navigate=useNavigate(),location=useLocation();const [params,setParams]=useSearchParams();
-  const search=params.get('q')||'',page=Math.max(0,Number(params.get('page'))||0),difficulties=params.getAll('difficulty'),solved=params.get('solved')||'all';
+  const search=params.get('q')||'',page=requestedProblemPage(params.get('page')),difficulties=params.getAll('difficulty'),solved=params.get('solved')||'all';
   const [draft,setDraft]=useState(search),[sort,setSort]=useState('number');
   useEffect(()=>setDraft(search),[search,epoch]);
   // 난이도·풀이 여부는 서버가 페이지를 나누기 전에 검색합니다. URL의 반복
   // difficulty 값을 보존해 새로고침·뒤로 가기·다음 페이지도 같은 범위를 사용합니다.
-  const query=new URLSearchParams({page:String(page),search,solved});
+  const query=new URLSearchParams({page:String(page),search,solved,pagination:'true'});
   for(const difficulty of difficulties)query.append('difficulty',difficulty);
   const {data,error,loading}=useApiData(`${mine?'/api/problems/mine':'/api/problems'}?${query}`);
+  const result=useMemo(()=>problemPageData(data,page),[data,page]);
+  const resultError=!loading&&!error&&!result?'문제 페이지 정보를 확인하지 못했습니다. 다시 시도해주세요.':'';
+  const currentPage=result?.page??page,totalPages=result?.totalPages??0;
+  // 삭제/검색 결과 변경으로 URL이 마지막 페이지를 넘으면 서버가 보정한 주소를 사용합니다.
+  useEffect(()=>{if(result&&!result.legacy&&result.page!==page){const next=new URLSearchParams(params);next.set('page',String(result.page));setParams(next,{replace:true});}},[result,page,params,setParams]);
   // 개인 해결 표시는 서버의 solved===true만 사용합니다. accepted_count는 전체 통계입니다.
-  const rows=useMemo(()=>[...(data||[])].sort((a,b)=>sort==='submits'?Number(b.submission_count)-Number(a.submission_count):Number(a.problem_number)-Number(b.problem_number)),[data,sort]);
+  const rows=useMemo(()=>[...(result?.items||[])].sort((a,b)=>sort==='submits'?Number(b.submission_count)-Number(a.submission_count):Number(a.problem_number)-Number(b.problem_number)),[result,sort]);
   const changePage=value=>{const next=new URLSearchParams(params);next.set('page',String(value));setParams(next);};
   function updateFilters(change){const next=new URLSearchParams(params);change(next);next.set('page','0');setParams(next);}
   function toggleDifficulty(value){
@@ -41,8 +47,8 @@ export default function ProblemList({dark,mine=false}){
       <label>현재 페이지 정렬<select className="cw-select" value={sort} onChange={e=>setSort(e.target.value)}><option value="number">문제 번호</option><option value="submits">제출 많은 순</option></select></label>
       <button className="cw-btn primary">검색</button><button type="button" className="cw-btn" onClick={()=>{setDraft('');setSort('number');setParams({});}}>초기화</button>
     </div>{!user&&<p className="cw-hint pl-login-hint"><Link to="/login" state={{from:location.pathname+location.search}}>로그인</Link>하면 이미 푼 문제·아직 안 푼 문제로 검색할 수 있습니다.</p>}</form>
-    {error&&<p className="cw-status-message error" role="alert">{error}</p>}<section className="cw-card pl-result"><div className="pl-result-head"><h2>{loading?'불러오는 중…':`현재 페이지 ${rows.length}개`}</h2><span className="cw-hint">서버 페이지당 최대 30개</span></div><div className="pl-table"><div className="pl-row pl-row-head"><span>번호</span><span>문제</span><span>난이도</span><span>정답률</span><span>제출 수</span><span>{mine?'상태':'공개'}</span></div>
+    {(error||resultError)&&<p className="cw-status-message error" role="alert">{error||resultError}</p>}<section className="cw-card pl-result"><div className="pl-result-head"><h2>{loading?'불러오는 중…':`현재 페이지 ${rows.length}개`}</h2><span className="cw-hint">{result?.totalItems!=null?`전체 ${result.totalItems}개 · `:''}페이지당 최대 30개</span></div><div className="pl-table"><div className="pl-row pl-row-head"><span>번호</span><span>문제</span><span>난이도</span><span>정답률</span><span>제출 수</span><span>{mine?'상태':'공개'}</span></div>
     {!loading&&!rows.length&&<p className="pl-empty">등록된 문제가 없습니다.</p>}{rows.map(p=><Link className="pl-row pl-row-item" key={p.problem_number} to={mine?`/problems/${p.problem_number}/edit`:`/problems/${p.problem_number}`}><span className="cw-mono">{p.problem_number}</span><span className="pl-name"><span className="pl-title" title={p.problem_title}>{p.problem_title}</span>{user&&p.solved===true&&<span className="pl-solved"><Icon name="check" size={12}/><span>해결 완료</span></span>}</span><span className="cw-badge mint">{rankLabel(p)}</span><span>{Number(p.submission_count)?(100*Number(p.accepted_count)/Number(p.submission_count)).toFixed(1)+'%':'—'}</span><span>{p.submission_count??0}</span><span className="cw-hint">{mine?`${p.status} · ${p.visibility}`:'PUBLIC'}</span></Link>)}</div></section>
-    <nav className="cw-pager pl-pager" aria-label="문제 페이지"><button className="cw-btn" disabled={page===0||loading} onClick={()=>changePage(page-1)}>이전</button><span>{page+1}</span><button className="cw-btn" disabled={loading||(data||[]).length<30} onClick={()=>changePage(page+1)}>다음</button></nav>
+    <nav className="cw-pager pl-pager" aria-label="문제 페이지"><button type="button" className="cw-btn" disabled={currentPage===0||loading||Boolean(error||resultError)} onClick={()=>changePage(currentPage-1)}>이전</button><div className="pl-page-numbers">{problemPageButtons(currentPage,totalPages).map(value=><button type="button" key={value} className={`cw-btn pl-page-number${value===currentPage?' is-current':''}`} aria-label={`${value+1}페이지`} aria-current={value===currentPage?'page':undefined} disabled={loading||Boolean(error||resultError)||totalPages===0} onClick={()=>{if(value!==currentPage)changePage(value);}}>{value+1}</button>)}</div><button type="button" className="cw-btn" disabled={loading||Boolean(error||resultError)||currentPage>=totalPages-1} onClick={()=>changePage(currentPage+1)}>다음</button></nav>
   </div></main>;
 }

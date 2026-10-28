@@ -19,7 +19,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 실제 MySQL과 HTTP 서버에서 마이그레이션, 권한, 검수, 큐, 집계를 함께 검증합니다.
+ * 실제 PostgreSQL과 HTTP 서버에서 마이그레이션, 권한, 검수, 큐, 집계를 함께 검증합니다.
  * 사용자마다 고유 아이디를 사용하므로 테스트를 재실행해도 기존 테스트 기록과 충돌하지 않습니다.
  */
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -384,7 +384,7 @@ class MvpIntegrationTest {
     }
     @Test void stoppedAccountCannotRefreshTokens(){
         String token=jwt.generateRefreshToken(author.getUserId());
-        db.update("INSERT INTO refresh_token(user_id,token,expires_at) VALUES(?,?,DATE_ADD(NOW(),INTERVAL 1 DAY))",
+        db.update("INSERT INTO refresh_token(user_id,token,expires_at) VALUES(?,?,((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 day'))",
             author.getUserId(),com.drewdrew0414.global.security.TokenHash.sha256(token));
         db.update("UPDATE users SET status='STOPPED' WHERE id=?",author.getUserId());
         assertThrows(com.drewdrew0414.domain.user.exception.BannedUserException.class,()->
@@ -565,7 +565,7 @@ class MvpIntegrationTest {
 
     @Test void additionalLanguageMigrationPreservesFunctionAndSqlBoundaries() {
         assertEquals(1,db.queryForObject(
-            "SELECT COUNT(*) FROM flyway_schema_history WHERE version='14' AND success=TRUE",Integer.class));
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE version='1' AND success=TRUE",Integer.class));
         assertEquals(3,db.queryForObject("""
             SELECT COUNT(*) FROM problem_languages l JOIN problems p ON p.id=l.problem_id
             WHERE p.problem_number=1000 AND l.language IN ('PASCAL','PHP','DART')

@@ -22,7 +22,7 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 실제 MySQL 제약·트랜잭션·HTTP 보안으로 제작/그룹/시험/커뮤니티 회귀를 검증합니다. */
+/** 실제 PostgreSQL 제약·트랜잭션·HTTP 보안으로 제작/그룹/시험/커뮤니티 회귀를 검증합니다. */
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class FeatureIntegrationTest {
@@ -72,10 +72,10 @@ class FeatureIntegrationTest {
             Instant.now().plusSeconds(7200),List.of(number),replay,protection,protection),owner);
     }
     private void activate(long cid) {
-        db.update("UPDATE group_contests SET starts_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),ends_at=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minute'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
     }
     private void end(long cid) {
-        db.update("UPDATE group_contests SET ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second') WHERE id=?",cid);
     }
     private void status(int expected,Runnable action) {
         assertEquals(expected,assertThrows(ResponseStatusException.class,action::run).getStatusCode().value());

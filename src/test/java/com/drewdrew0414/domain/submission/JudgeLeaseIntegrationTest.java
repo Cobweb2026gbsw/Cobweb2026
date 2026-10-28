@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 실제 MySQL에서 lease 회수와 오래된 토큰의 결과 반영 차단을 검증합니다. */
+/** 실제 PostgreSQL에서 lease 회수와 오래된 토큰의 결과 반영 차단을 검증합니다. */
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
@@ -25,7 +25,7 @@ class JudgeLeaseIntegrationTest {
 
     @Test void aLiveHeartbeatPreservesAClaimEvenWhenItsOriginalClaimIsOld() {
         var fixture=runningSubmission(1);
-        db.update("UPDATE submissions SET claimed_at=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 21 MINUTE) WHERE id=?",fixture.id());
+        db.update("UPDATE submissions SET claimed_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '21 minute') WHERE id=?",fixture.id());
 
         var claimed=submission(fixture.id());
         java.time.LocalDateTime before=dateTime(claimed.get("judge_heartbeat_at"));
@@ -54,7 +54,7 @@ class JudgeLeaseIntegrationTest {
         String nextToken=UUID.randomUUID().toString();
         db.update("""
             UPDATE submissions SET status='RUNNING',judge_token=?,judge_attempts=judge_attempts+1,
-                claimed_at=CURRENT_TIMESTAMP(6),judge_heartbeat_at=CURRENT_TIMESTAMP(6) WHERE id=?
+                claimed_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_heartbeat_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=?
             """,nextToken,fixture.id());
         var current=submission(fixture.id());
         assertEquals(2,((Number)current.get("judge_attempts")).intValue());
@@ -94,13 +94,13 @@ class JudgeLeaseIntegrationTest {
         var claimed=runningSubmission(1);
         db.update("""
             UPDATE submissions SET judge_heartbeat_at=NULL,
-                claimed_at=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 21 MINUTE)
+                claimed_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '21 minute')
             WHERE id=?
             """,claimed.id());
         var submitted=runningSubmission(3);
         db.update("""
             UPDATE submissions SET judge_heartbeat_at=NULL,claimed_at=NULL,
-                submitted_at=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 21 MINUTE)
+                submitted_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '21 minute')
             WHERE id=?
             """,submitted.id());
 
@@ -124,23 +124,23 @@ class JudgeLeaseIntegrationTest {
             """,number,"Lease test "+UUID.randomUUID(),userId);
         long problemId=db.queryForObject("SELECT id FROM problems WHERE problem_number=?",Long.class,number);
         String token=UUID.randomUUID().toString();
-        db.update("""
+        long id=db.queryForObject("""
             INSERT INTO submissions(user_id,problem_id,language,source_code,status,judge_token,claimed_at,
                 judge_heartbeat_at,judge_attempts)
-            VALUES(?,?,'PYTHON','print(1)','RUNNING',?,CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6),?)
-            """,userId,problemId,token,attempts);
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+            VALUES(?,?,'PYTHON','print(1)','RUNNING',?,(clock_timestamp() AT TIME ZONE 'UTC'),(clock_timestamp() AT TIME ZONE 'UTC'),?)
+            RETURNING id
+            """,Long.class,userId,problemId,token,attempts);
         return new Fixture(id,userId,problemId,token);
     }
 
     private void expire(long id) {
-        db.update("UPDATE submissions SET judge_heartbeat_at=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 21 MINUTE) WHERE id=?",id);
+        db.update("UPDATE submissions SET judge_heartbeat_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '21 minute') WHERE id=?",id);
     }
     private Map<String,Object> submission(long id) {
         return db.queryForMap("SELECT * FROM submissions WHERE id=?",id);
     }
     private java.time.LocalDateTime dateTime(Object value) {
-        // Connector/J가 DATETIME을 LocalDateTime으로 반환하는 설정도 지원합니다.
+        // JDBC Timestamp와 LocalDateTime 표현을 모두 지원합니다.
         return value instanceof Timestamp t?t.toLocalDateTime():(java.time.LocalDateTime)value;
     }
     private int caseResults(long id) {

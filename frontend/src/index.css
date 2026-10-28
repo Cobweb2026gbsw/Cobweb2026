@@ -1,3 +1,30 @@
+/* 공식 Wanted Sans v1.0.3 원본을 자체 제공하며 OFL.txt·NOTICE.txt도 함께 배포합니다. */
+@font-face {
+  font-family: "Wanted Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 1000;
+  src: url("/assets/fonts/wanted-sans/WantedSansVariable.woff2") format("woff2-variations");
+}
+
+/* 텍스트 입력란은 테두리 없이 표시합니다.
+   체크박스·라디오의 선택 표시와 버튼·링크의 키보드 포커스는 유지합니다. */
+:root {
+  --font: "Wanted Sans Variable", -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+  --input-focus-dark: #a3a3a3;
+  --input-focus-light: #666666;
+  --input-focus: var(--input-focus-dark);
+}
+
+:where(.dark) {
+  --input-focus: var(--input-focus-dark);
+}
+
+:where(.light) {
+  --input-focus: var(--input-focus-light);
+}
+
 *,
 *::before,
 *::after {
@@ -12,8 +39,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-    "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+  font-family: var(--font);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -22,4 +48,15 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable]:not([contenteditable="false"])) {
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+:where(input[type="checkbox"], input[type="radio"]):focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
 }

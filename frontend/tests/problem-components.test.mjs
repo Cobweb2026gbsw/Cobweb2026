@@ -61,9 +61,11 @@ test('problem content is a labelled keyboard-scrollable panel with independently
   reset();const Statement=await component('components/ProblemStatement.jsx'),css=readFileSync(new URL('../src/components/ProblemStatement.css',import.meta.url),'utf8');
   const view=render(React.createElement('div',null,React.createElement('style',null,css),React.createElement(Statement,{problem:{description:'문제 본문',inputDescription:'입력 안내',outputDescription:'출력 안내',constraints:'제한 안내',tags:['탐색']}})));
   const panel=view.getByRole('article',{name:'문제 설명 스크롤 영역'});assert.equal(panel.tabIndex,0);act(()=>panel.focus());assert.equal(document.activeElement,panel);
-  const style=window.getComputedStyle(panel);assert.equal(style.overflow,'auto');assert.equal(style.overscrollBehaviorY,'contain');assert.equal(style.scrollbarGutter,'stable');assert.match(style.maxHeight,/clamp\(260px/);
+  const style=window.getComputedStyle(panel);assert.equal(style.overflow,'auto');assert.equal(style.overscrollBehaviorY,'contain');assert.equal(style.scrollbarGutter,'stable');assert.match(style.height,/clamp/);
+  // jsdom의 CSS 산술 직렬화는 calc를 포함한 clamp를 재배열하므로 정확한 경계는 원본 규칙으로 검사합니다.
+  assert.match(css,/height:\s*clamp\(600px,\s*calc\(100dvh \+ 240px\),\s*1200px\)/);
   for(const text of ['문제 본문','입력 안내','출력 안내','제한 안내','탐색'])assert.ok(panel.textContent.includes(text));
-  assert.match(css,/@media\s*\(max-width:\s*1100px\)/);assert.match(css,/60dvh/);cleanup();
+  assert.match(css,/@media\s*\(max-width:\s*1100px\)/);assert.match(css,/65dvh/);cleanup();
 });
 
 test('problem detail uses requested real problem and posts exact submission DTO',async()=>{
@@ -71,6 +73,9 @@ test('problem detail uses requested real problem and posts exact submission DTO'
   globalThis.__problemApi=async(path,method='GET',body)=>{calls.push({path,method,body});if(path==='/api/languages')return [{id:'PYTHON',label:'Python',modes:['STDIN','FUNCTION']},{id:'DART',label:'Dart',modes:['STDIN','FUNCTION']}];if(path==='/api/submissions')return 77;if(path==='/api/submissions/77')return {id:77,status:'ACCEPTED',score:100,cases:[{status:'ACCEPTED',execution_time_ms:1}]};return {problem_number:10828,problem_title:'실제 스택 문제',description:'본문',execution_mode:'STDIN',rank_type:'ELITE',rank_int:5,time_limit_ms:1000,memory_limit_mb:256,languages:['PYTHON','DART'],examples:[]};};
   const view=render(route(Page,'/problems/10828'));await waitFor(()=>view.getByRole('heading',{name:'10828. 실제 스택 문제'}));
   assert.ok(calls.some(c=>c.path==='/api/problems/10828'));assert.equal(view.getByLabelText('언어').options.length,2);
+  const testButton=view.getByRole('button',{name:'테스트 및 실행'}),submitButton=view.getByRole('button',{name:'제출 및 채점'});
+  assert.equal(testButton.parentElement,submitButton.parentElement);assert.equal(testButton.parentElement.firstElementChild,testButton);assert.equal(submitButton.parentElement.lastElementChild,submitButton);
+  assert.doesNotMatch(view.container.textContent,/작성 코드는 이 브라우저에 계정·문제·언어별로 최대 30일|UTF-8 · Spaces: 4|함수 반환값을 채점합니다/);
   act(()=>setEditorValue(view.getByRole('textbox',{name:'풀이 코드'}),'print(1)'));fireEvent.click(view.getByRole('button',{name:'제출 및 채점'}));await waitFor(()=>view.getByText('정답입니다. 해결 완료로 기록되었습니다.'));
   assert.equal(view.queryByText('real-result-route'),null);assert.equal(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),'print(1)');assert.ok(view.getByRole('heading',{name:'10828. 실제 스택 문제'}));
   assert.deepEqual(calls.find(c=>c.path==='/api/submissions'),{path:'/api/submissions',method:'POST',body:{problemNumber:10828,language:'PYTHON',sourceCode:'print(1)'}});cleanup();

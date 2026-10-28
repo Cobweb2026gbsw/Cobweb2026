@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
-/** 실제 MySQL에서 일회용 토큰의 검사와 사용 처리가 경쟁 요청에도 원자적인지 검증합니다. */
+/** 실제 PostgreSQL에서 일회용 토큰의 검사와 사용 처리가 경쟁 요청에도 원자적인지 검증합니다. */
 @SpringBootTest
 @ActiveProfiles("test")
 class PasswordResetConcurrencyTest {

@@ -226,6 +226,16 @@
   outline-offset: 2px;
 }
 
+/* 입력란에는 클릭·키보드 포커스에서도 별도 외곽선을 그리지 않습니다. */
+.cw-page :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable]:not([contenteditable="false"])):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.cw-page :where(input[type="checkbox"], input[type="radio"]):focus-visible {
+  outline-color: var(--input-focus);
+}
+
 /* ---------- 폼 요소 ---------- */
 .cw-label {
   display: block;
@@ -257,14 +267,14 @@
   background-color: var(--field);
   color: var(--text);
 
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 10px;
 
   font: inherit;
   font-size: 14px;
 
   outline: none;
-  transition: border-color 0.2s;
+  box-shadow: none;
 }
 
 .cw-input::placeholder,
@@ -276,7 +286,9 @@
 .cw-input:focus,
 .cw-select:focus,
 .cw-textarea:focus {
-  border-color: var(--accent-text);
+  border: none;
+  outline: none;
+  box-shadow: none;
 }
 
 .cw-select {

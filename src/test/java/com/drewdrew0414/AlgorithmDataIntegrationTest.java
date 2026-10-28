@@ -35,7 +35,7 @@ class AlgorithmDataIntegrationTest {
     private long chainId,author;
 
     @BeforeEach void setup(TestInfo info) {
-        assertTrue(db.queryForObject("SELECT DATABASE()",String.class).endsWith("_test"),"Only a dedicated test database is allowed");
+        assertTrue(db.queryForObject("SELECT current_database()",String.class).endsWith("_test"),"Only a dedicated test database is allowed");
         importer=new AlgorithmData(db,new Level0Data(db,json));
         level1=importer.readLevel1Catalog();level2=importer.readLevel2Catalog();
         if(!info.getTestMethod().orElseThrow().getName().equals("allThreeImportsRollBackTogetherAfterALateTransactionFailure")) prepare();
@@ -61,8 +61,7 @@ class AlgorithmDataIntegrationTest {
         long tests=db.queryForObject("SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=?",Long.class,chainId);
         long references=db.queryForObject("SELECT COUNT(*) FROM reference_solutions WHERE problem_id=?",Long.class,chainId);
         db.update("UPDATE problems SET description='Preserved chain body' WHERE id=?",chainId);
-        db.update("INSERT INTO submissions(user_id,problem_id,language,source_code,status) VALUES(?,?,'PYTHON','previous chain answer','WRONG_ANSWER')",author,chainId);
-        long submission=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long submission=db.queryForObject("INSERT INTO submissions(user_id,problem_id,language,source_code,status) VALUES(?,?,'PYTHON','previous chain answer','WRONG_ANSWER') RETURNING id",Long.class,author,chainId);
 
         importer.importCatalogs(level1,level2);
 
@@ -156,7 +155,7 @@ class AlgorithmDataIntegrationTest {
         assertEquals(preservedReferences,db.queryForList("SELECT * FROM reference_solutions WHERE problem_id=? ORDER BY language",chainId));
     }
 
-    @Test void freshChainPreflightLocksBothEmptyUniqueKeysBeforeAnySeedWrite() {
+    @Test void freshChainPreflightChecksBothUniqueKeysBeforeAnySeedWrite() {
         db.update("UPDATE problems SET problem_number=?,problem_title=? WHERE id=?",temporary(),"Saved for key-lock contract "+UUID.randomUUID(),chainId);
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM problems WHERE problem_number=1100 OR (title_scope=0 AND problem_title='체인 레이저')",Integer.class));
         JdbcTemplate observed=spy(db);
@@ -164,7 +163,7 @@ class AlgorithmDataIntegrationTest {
         assertNotNull(ReflectionTestUtils.invokeMethod(checked,"chainPlan"));
         var order=inOrder(observed);
         order.verify(observed).queryForList("SELECT id FROM problems WHERE problem_number=1100 FOR UPDATE");
-        order.verify(observed).queryForList("SELECT id FROM problems WHERE title_scope=0 AND problem_title=? FOR UPDATE","체인 레이저");
+        order.verify(observed).queryForList("SELECT id FROM problems WHERE title_scope=0 AND lower(problem_title)=lower(?) FOR UPDATE","체인 레이저");
         verify(observed,never()).update(anyString());
         assertEquals(0,packEntries());
     }

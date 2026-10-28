@@ -1,6 +1,6 @@
 # Cobweb
 
-Java 21 / Spring Boot / MySQL 8.4 기반 알고리즘 문제 풀이 MVP입니다.
+Java 21 / Spring Boot / PostgreSQL 18 기반 알고리즘 문제 풀이 MVP입니다.
 회원 인증, 문제 작성·검수·조회, 17개 언어 제출, DB 채점 대기열, Docker 실행,
 결과·해결 수·랭킹·프로필, 문제 제작·관리 화면, 그룹·시간제 코딩 테스트,
 커뮤니티·공지와 관리자 전용 수정 이력을 포함합니다.
@@ -15,29 +15,34 @@ Java JDK 21, Node.js 20 이상/npm과 Docker를 준비하고 Docker Desktop/Engi
 ./run.sh
 ```
 
-- 웹 서버, 별도 채점 워커, 전용 로컬 MySQL을 순서대로 실행합니다. 정상 준비 완료 후 `Ctrl+C`는 이 실행의 프로세스·채점 컨테이너·DB를
-  중지하며 DB 데이터와 `.local/run/<프로젝트>/config.env`는 보존합니다. 실행용 설정을 삭제하면 기존 DB/HTTPS 비밀번호를 잃으므로 함께 백업하세요.
+- 웹 서버, 별도 채점 워커, 전용 로컬 PostgreSQL을 순서대로 실행합니다. 정상 준비 완료 후 `Ctrl+C`는 이 실행의 프로세스·채점 컨테이너·DB를
+  중지하며 DB 데이터와 `.local/run/<프로젝트>/postgres/config.env`는 보존합니다. 기본 프로젝트는 `cobweb-postgres-local`입니다. 기존 MySQL 설정·볼륨을 재사용하거나 지우지 않습니다.
 - 기동 도중 실패·취소하거나 준비 완료 후 웹/워커가 비정상 종료되면, 이번 실행의 프로세스를 정리하고 DB의 **시작 전 실행/정지 상태만** 복구합니다.
   이번 실행에서 처음 만든 DB 컨테이너와 비어 있는 전용 네트워크만 제거합니다. 기존 컨테이너·네트워크와 다른 프로젝트는 삭제하지 않습니다.
   **DB 내용·Flyway 변경·데이터 볼륨·설정·인증서·로그·빌드 산출물은 되돌리거나 삭제하지 않습니다.** DB 백업 복원 기능은 아닙니다.
 - JAR를 실행별 `logs/<실행 ID>/app.jar`로 복사하고 SHA-256을 대조한 뒤 웹과 워커가 같은 사본을 사용합니다.
   이후 재빌드가 실행 중인 JAR를 덮지 않으며, 워커도 시작 당시의 채점 이미지 ID와 실행별 작업 디렉터리를 사용합니다.
-  상태와 로그는 `.local/run/<프로젝트>/logs/<실행 ID>/`에 남습니다. 정리가 실패하면 잠금을 남기고 복구 미완료를 알립니다.
+  상태와 로그는 `.local/run/<프로젝트>/postgres/logs/<실행 ID>/`에 남습니다. 정리가 실패하면 잠금을 남기고 복구 미완료를 알립니다.
   `kill -9`, 전원 차단, Docker 자체 장애에는 자동 정리를 보장할 수 없습니다. 프로세스·컨테이너를 확인한 뒤 비어 있는 잠금 디렉터리만 정리하세요.
-- 웹 시작 전 동일 JAR의 **로컬 전용 단발 마이그레이션**을 실행합니다. V17 트리거 생성에 필요한 기존 로컬 root 자격은
+- 웹 시작 전 동일 JAR의 **로컬 전용 단발 마이그레이션**을 실행합니다. 새 PostgreSQL `postgres` 관리자 자격은
   이 자식 JVM의 Flyway 연결에만 환경변수로 전달하고 앱 datasource와 웹·워커는 `cobweb` 제한 계정을 유지합니다.
-  전역 DB 설정/binlog를 완화하거나 앱 계정에 SUPER 권한을 추가하지 않습니다. 성공 후 컨텍스트·스케줄러·DB 풀을 닫고 정상 종료하며,
+  앱 계정에 SUPERUSER 권한을 추가하지 않습니다. 성공 후 컨텍스트·스케줄러·DB 풀을 닫고 정상 종료하며,
   실패·취소 시 웹/워커를 시작하지 않고 실행 상태만 복구합니다. DB 내용은 유지하며 진단은 실행별 `migrate.log`를 확인하세요.
-  root 비밀번호가 있는 `config.env`를 앱에 직접 가져오지 않으며, 앱에 필요한 키만 실행별 `runtime.properties`(권한 600)에 담습니다.
+  관리자 비밀번호가 있는 `config.env`를 앱에 직접 가져오지 않으며, 앱에 필요한 키만 실행별 `runtime.properties`(권한 600)에 담습니다.
   단발 마이그레이션은 이 파일만 가져오고 웹·워커만 기존 `.env`의 OAuth/메일 설정도 함께 사용합니다.
   외부 `SPRING_APPLICATION_JSON`, `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS`,
   `SPRING_CONFIG_LOCATION`/`ADDITIONAL_LOCATION`/`NAME`과 연결값 3개 외의 `SPRING_FLYWAY_*`가
   비어 있지 않으면 실행 전에 거절합니다. 연결값은 전용 로컬 DB·계정으로 덮어쓰며 외부 JVM/Flyway 옵션은 자동으로 적용하지 않습니다.
 - HTTP는 **http://localhost:8080**, HTTPS는 **https://localhost:8443**입니다. 두 포트는 프로토콜이 다릅니다.
   `https://localhost:8080`처럼 HTTP 포트에 TLS를 보내면 `Invalid character found in method name [0x16...]` 오류가 납니다.
-- 기본 웹 바인딩은 기존 설정대로 `0.0.0.0`입니다. DB는 `127.0.0.1:3307`로만 노출됩니다.
+- 기본 웹 바인딩은 기존 설정대로 `0.0.0.0`입니다. DB는 `127.0.0.1:5433`으로만 노출됩니다.
   기본 인증서는 `localhost`와 `127.0.0.1`에만 유효하므로 서버 LAN IP/외부 도메인 접속용 인증서는 아닙니다.
-- 처음 실행할 때 `.local/run/<프로젝트>/tls/localhost.p12`와 `localhost.crt`를 생성하고 이후 재사용합니다.
+- 아이디 로그인 화면의 **로그인 유지**를 선택하면 Secure·HttpOnly refresh 쿠키를 기본 14일 유지합니다.
+  미선택 시에는 세션 쿠키이며, 브라우저의 종료·세션 복원 정책에 따라 보존될 수 있습니다. 토큰이나 비밀번호를 localStorage에 넣지 않습니다.
+  일반 IP의 HTTP 주소에서는 Secure 쿠키를 쓸 수 없으므로 로그인 전에 HTTPS 이동을 안내합니다.
+  로컬 HTTPS 커넥터가 켜져 있으면 같은 IP의 설정된 HTTPS 포트로 이동하는 링크를 보여주며, 미설정 시 임의 포트를 추정하지 않습니다.
+  `localhost`와 IP 주소는 다른 사이트이므로 최초 로그인은 각각 필요합니다. LAN 접속에는 해당 IP/호스트에 유효하고 접속 기기가 신뢰하는 인증서가 필요하며, 실제 LAN 기기의 신뢰·쿠키 동작은 별도 검증 대상입니다.
+- 처음 실행할 때 `.local/run/<프로젝트>/postgres/tls/localhost.p12`와 `localhost.crt`를 생성하고 이후 재사용합니다.
   키 저장소 비밀번호는 개인 `config.env`에 저장하고 프로세스 인자나 로그에 출력하지 않습니다.
   HTTPS 준비 검사는 `curl --cacert`로 이 인증서를 확인하며, 인증서 검증을 끄지 않습니다.
 - **자체서명 로컬 인증서는 브라우저에 자동 신뢰되지 않습니다.** 시스템 CA 신뢰 설치나 브라우저 보안 설정 변경은 자동으로 하지 않습니다.
@@ -53,7 +58,7 @@ Java JDK 21, Node.js 20 이상/npm과 Docker를 준비하고 Docker Desktop/Engi
 
 1. Java 21과 Docker를 준비하고 `.env.example`을 참고해 `.env`에 값을 설정합니다.
    `JWT_SECRET`은 최소 32바이트 임의 비밀값입니다. 메일과 OAuth는 실제 제공자 설정이 필요합니다.
-2. `DEV_DB_PASSWORD`, `DEV_ROOT_PASSWORD`를 설정합니다.
+2. `DEV_DB_PASSWORD`, `DEV_ADMIN_PASSWORD`를 설정합니다. 최초 PostgreSQL 초기화에서 비관리자 `cobweb` 계정을 생성합니다.
 3. `docker compose -f compose.dev.yaml up -d`
 4. `docker build -t cobweb-languages:local judge` (첫 빌드는 여러 컴파일러를 내려받으므로 시간/디스크가 필요합니다.)
 5. `JUDGE_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local --demo.seed=true'`
@@ -70,7 +75,7 @@ ZIP 기반 새 화면 소스는 `frontend/src/`이며 Gradle이 잠금 파일로
 [보안 검토 기록](docs/security/REVIEW.md)을 참고하세요.
 전체 API의 요청·응답·권한, DB와 채점 동작은 [백엔드 구현 명세](docs/BACKEND_SPEC.md)에 정리했습니다.
 
-local 프로필은 3307 포트의 DB를 사용하고 Flyway V1–V21을 적용합니다.
+local 프로필은 5433 포트의 PostgreSQL DB를 사용하고 단일 Flyway `V1__postgresql_schema.sql`을 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력이며 PostgreSQL 검증을 뜻하지 않습니다.
 기본 웹 기동에서는 Lv.0 입문 100문제와 Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제를 등록합니다. 기존 사용자 문제의 번호·제목과 충돌하면
 트랜잭션 전체를 중단하며 덮어쓰지 않습니다. 기존 체인 레이저는 ID·제출·테스트를 보존한 채
 1100번으로 보존한 뒤 ELITE 과정 등록 시 같은 ID로 공개를 복구합니다. SKILLED는 1101~1175, 새 ELITE는 1176~1265입니다.
@@ -98,7 +103,9 @@ ELITE의 여섯 영역은 5·4·3·3·2·1로 배정합니다. 채점기는 알�
 일반 함수 입력·정답 JSON은 각각 UTF-8 16MiB, 모든 인자에 걸친 배열 슬롯(바깥 행+내부 원소) 합은 100만 개까지입니다.
 행 길이가 다른 중첩 배열과 빈 행을 지원합니다. 문자열 하나는 16KiB ASCII, private 테스트 묶음은 32MiB,
 범용 함수 제작 JSON 전체는40MiB까지입니다(일반 문제 제작은 기존2MiB).
-수동 테스트는 입력·예상값·표시 출력마다 64KiB를 유지하며, 테스트 케이스/실행 출력을 같은 내부 스크롤 영역의 탭으로 전환합니다.
+풀이 화면의 테스트는 서버가 실제 채점 케이스 2개를 골라 실행하며 통과/실패·시간만 표시합니다.
+입력·예상값·실제 출력·진단은 이 테스트 응답에 포함하지 않습니다. 테스트 케이스/실행 출력은 같은 내부 스크롤 영역의 탭으로 전환합니다.
+기존 사용자 입력 테스트 API는 별도 호환 모드로 유지하며 입력·예상값·표시 출력마다 64KiB 상한을 적용합니다.
 
 문제 제작 HTTP 본문은 스트리밍40MiB 상한과 JVM당 동시1개 제한으로 보호합니다. 웹·워커·단발 마이그레이션의
 JVM 힙은 각각64MiB로 시작해512MiB까지만 사용하며 OOM 시 종료합니다. 이는 Docker·DB·JVM 비힙을 포함한 전체 메모리 상한은 아닙니다.
@@ -134,15 +141,15 @@ JVM 힙은 각각64MiB로 시작해512MiB까지만 사용하며 OOM 시 종료�
 별도 테스트 DB `cobweb_test`를 준비합니다. 기존 개발 DB를 테스트 대상으로 지정하지 마세요.
 
 ```sh
-docker run -d --name cobweb-mvp-test-mysql \
-  -p 127.0.0.1:13307:3306 \
-  -e MYSQL_ROOT_PASSWORD=cobweb-test-only \
-  -e MYSQL_DATABASE=cobweb_test mysql:8.4
+docker run -d --name cobweb-mvp-test-postgres \
+  -p 127.0.0.1:15433:5432 \
+  -e POSTGRES_USER=cobweb -e POSTGRES_PASSWORD=cobweb-test-only \
+  -e POSTGRES_DB=cobweb_test postgres:18
 docker build -t cobweb-languages:local judge
 DOCKER_JUDGE_TEST=true ./gradlew build
 ```
 
-이미 해당 테스트 컨테이너가 있으면 `docker start cobweb-mvp-test-mysql`을 사용합니다.
+이미 해당 테스트 컨테이너가 있으면 `docker start cobweb-mvp-test-postgres`를 사용합니다. 이 예제의 계정·암호는 분리 테스트 전용이며 운영에 사용하지 않습니다.
 다른 테스트 DB는 `TEST_DB_URL`, `TEST_DB_USERNAME`, `TEST_DB_PASSWORD`로 지정합니다.
 Docker 테스트는 `DOCKER_JUDGE_TEST=true`일 때 실제 컨테이너를 사용합니다.
 빌드 보고서는 `build/reports/tests/test/index.html`에 생성됩니다.
@@ -151,20 +158,20 @@ Docker 테스트는 `DOCKER_JUDGE_TEST=true`일 때 실제 컨테이너를 사�
 ### CI와 같은 로컬 검증
 
 `bash scripts/verify-ci-local.sh static`은 Node 인증·세션 경합·문제 편집·그룹·커뮤니티·코드 들여쓰기·Markdown의 7종 회귀와 개발·웹·워커 Compose 설정을 검사합니다.
-`static`에는 React 회귀, Python 회귀 43개(엄랭 원본 해시·입출력·오류 처리 23개, 범용 함수 13개, Lv.0 카탈로그 7개)와 `run.sh` 격리 회귀 43개도 포함합니다.
+`static`에는 React 회귀, Python 회귀와 `run.sh` 격리 회귀 45개도 포함합니다.
 런처 회귀는 모의 명령을 사용하므로 실제 Docker·DB·서비스를 변경하지 않습니다. 별도 실행은 `bash src/test/bash/run-sh.test.sh`입니다.
-`quick`은 여기에 MySQL 연동 테스트를 추가하고, `full`은 채점 이미지를 빌드한 뒤 Docker를 포함한
+`quick`은 여기에 PostgreSQL 연동 테스트를 추가하고, `full`은 채점 이미지를 빌드한 뒤 Docker를 포함한
 전체 빌드와 결과 검사를 실행합니다. `all`은 두 경로를 순서대로 실행합니다. 이 스크립트는
-`.env` 대신 전용 로컬 테스트 DB와 테스트용 값만 사용합니다. 기본은 `127.0.0.1:13307/cobweb_test`이며,
-`TEST_DB_URL=jdbc:mysql://127.0.0.1:13308/cobweb_feature_test`도 명시적으로 지정할 수 있습니다.
-재검증용 새 DB `jdbc:mysql://127.0.0.1:13309/cobweb_revalidation_test`도 허용합니다.
-기존 테스트 DB에 중복 제목이 있으면 V10이 중단합니다. 기존 데이터를 임의로 고치지 말고 새 테스트 DB를 사용하세요.
+`.env` 대신 전용 로컬 테스트 DB와 테스트용 값만 사용합니다. 기본은 `127.0.0.1:15433/cobweb_test`이며,
+`TEST_DB_URL=jdbc:postgresql://127.0.0.1:15433/cobweb_feature_test`도 명시적으로 지정할 수 있습니다.
+재검증용 새 DB `jdbc:postgresql://127.0.0.1:15433/cobweb_revalidation_test`도 허용합니다.
+기존 MySQL 테스트 DB를 이 URL로 바꾸어 재사용하지 말고 새로운 PostgreSQL 테스트 DB를 사용하세요.
 
-`scripts/verify-local-linkage.py`는 **과거 V17·체인 레이저 환경용** 별도 웹/자동 워커 HTTP 연동 검사입니다.
-서버나 DB를 만들지 않으며, 대상은 전용 컨테이너 `cobweb-feature-verify-mysql`의 `cobweb_linkage_test`와
-`127.0.0.1:18083`으로 고정합니다. 스크립트가 요구하는 스키마는 최소 V17이 아니라 **V1–V17 모두 성공·최대 버전 정확히 17**입니다.
+`scripts/verify-local-linkage.py`는 **체인 레이저 전용 fixture**의 별도 웹/자동 워커 HTTP 연동 검사입니다.
+서버나 DB를 만들지 않으며, 대상은 전용 PostgreSQL 컨테이너 `cobweb-feature-verify-postgres`의 `cobweb_linkage_test`와
+`127.0.0.1:18083`으로 고정합니다. 단일 PostgreSQL V1 적용 성공을 요구합니다.
 1000번이 공개 체인 레이저 FUNCTION이고 비공개 10케이스를 갖는 당시 fixture가 필요합니다.
-Lv.0 가져오기를 끈 웹/워커와 해당 스키마에 맞는 앱을 사용하는 격리된 레거시 검증에만 적용하세요.
+Lv.0 가져오기를 끈 웹/워커와 test 프로필의 고정 테스트 JWT 키를 사용하는 격리 검증에만 적용하세요. 테스트 계정은 자체 생성하며 다른 DB의 암호 해시를 복사하지 않습니다.
 현재 V21·Lv.0 기본 환경에는 그대로 실행할 수 없으며, 맞추려고 기존 DB를 다운그레이드하거나 문제를 되돌리지 마세요.
 현재 범용 함수의 HTTP→DB 큐→실제 워커·판정 재사용은 전체 Gradle 검사의 `Level0GenericWorkerIntegrationTest`로 확인합니다.
 레거시 검사는 `.env` 없는 임시 디렉터리와 테스트용 DB/JWT/메일/OAuth 설정·검증 계정을 사용하며 실제 외부 연동을 사용하지 않습니다.
@@ -355,50 +362,31 @@ Pascal FUNCTION의 `TMatrix = array[0..14,0..14] of LongInt`와 `TTarget = array
 
 ## 기존 DB 마이그레이션
 
-새 DB의 기준은 `src/main/resources/db/migration/`입니다. 중복된 루트의 `table.sql`은
-제거하고 Flyway 파일만 유지합니다. 이미 적용된 마이그레이션은 수정하지 않고 새 버전을 추가합니다.
-입문 과정은 `src/main/resources/problems/level0.json`, 보존한 체인 레이저 데모는 `src/main/resources/demo/chain-laser.sql`에서 각각 관리합니다.
-Flyway 기본값은 기존 로컬 DB 자동 변경 방지를 위해 꺼져 있고 local/prod/test에서 켜집니다.
-`baseline-on-migrate`는 자동 활성화하지 않습니다.
+스키마의 정식 SQL 원본은 **`src/main/resources/db/migration/V1__postgresql_schema.sql` 하나**입니다.
+기존 MySQL V1–V22의 최종 35개 테이블, 제약·인덱스·시스템 그룹 보호 트리거와 선택적 체인 레이저 시드 함수까지 통합했습니다.
+입문·알고리즘 문제의 JSON 카탈로그는 문제 데이터의 원본이므로 유지합니다. 체인 레이저 SQL은 별도 파일로 복제하지 않습니다.
 
-1. 기존 DB를 백업하고 복제 DB에서 검증합니다.
-2. V1의 18개 테이블·제약·인덱스를 기존 구조와 비교합니다.
-3. 기존 테이블이 V1과 정확히 일치할 때만 Flyway baseline을 버전 1로 기록한 뒤 V2–V21을 적용합니다.
-4. 인증 테이블 5개만 있는 구형 DB는 바로 baseline 1 처리하면 안 됩니다. 누락 테이블 생성과
-   이메일 중복/토큰 중복 정리 등 별도 전환이 먼저 필요합니다.
+- 새 PostgreSQL DB는 Flyway가 이 V1 하나를 적용합니다. 독립 초기화는 `psql -v ON_ERROR_STOP=1 --single-transaction -d <새DB> -f src/main/resources/db/migration/V1__postgresql_schema.sql`로도 가능합니다.
+  수동 초기화와 Flyway 초기화를 같은 DB에 중복 실행하지 마세요. SQL에는 비밀번호·CREATE DATABASE·실사용자 데이터가 없습니다.
+- SQL 적용만으로 문제를 무조건 공개하지 않습니다. Java의 기존 `curriculum.level0.enabled`/`demo.seed` 설정이 시드 함수를 선택적으로 호출합니다.
+- PostgreSQL은 identity PK, JSONB, BOOLEAN, UTC `TIMESTAMP(6)`와 `ON CONFLICT`/`RETURNING`을 사용합니다.
+  제출 원문은 TEXT와 UTF-8 바이트 제약으로 보존하며, 판정 재사용에는 해시와 실제 원문을 모두 비교합니다.
+- 대소문자 중복은 `lower()` 고유 인덱스로 막습니다. 이전 MySQL의 악센트 무시 규칙과 완전히 같지는 않습니다.
+  PostgreSQL TEXT/JSONB는 U+0000 문자를 허용하지 않으므로, 실제 자료 이관 전에 해당 문자와 대소문자·제목 충돌을 별도 조사해야 합니다.
+- **기존 MySQL DB에 이 V1을 적용하거나 Flyway 이력을 덮어쓰지 마세요.** MySQL 데이터 디렉터리를 PostgreSQL 볼륨으로 마운트해도 안 됩니다.
+  실제 계정·제출·문제·수정 이력 이관은 원본 백업 → 새 PostgreSQL DB → 타입/ID·시퀀스/UTC/JSON 변환 → 건수·FK·인증·채점 검증 → 승인된 서비스 전환 순서의 별도 작업입니다.
+  이번 코드 전환은 기존 MySQL 서비스·데이터·비밀번호 파일을 자동 변환하거나 삭제하지 않습니다.
+- 기존 SQL 23개는 로컬 `.local/verification/postgresql-source-backup/`에 원문 그대로 보존했습니다. Git 이력도 보존됩니다.
+  Gradle은 삭제된 예전 SQL 생성물을 정리해 JAR에 PostgreSQL SQL 하나만 넣습니다.
 
-기존 데이터 정리나 실제 DB 스키마 변경을 자동으로 수행하지 않습니다.
-V3는 SQL 실행 형식/케이스 컴파일 오류 상태를 추가하고 기존 STDIN 문제에 12개 언어를 허용합니다.
-V6는 기존 FUNCTION 문제에도 SQL 외 12개 언어를 허용합니다.
-V4는 저장된 refresh·비밀번호 재설정 토큰을 SHA-256 지문으로 바꾸고 컬럼을 64자로 줄입니다.
-V5는 access 토큰 버전과 공유 인증 시도 제한 테이블을 추가합니다. V7은 이메일 인증 코드 원문 열을
-서버 키 기반 HMAC 지문 열로 바꾸며 기존 미완료 인증 코드 기록을 삭제합니다. 해당 사용자는 새 코드를
-요청해야 합니다. V8은 기존 FUNCTION 테스트의 언어 어댑터 호환 여부를 표시합니다. 비호환 문제는
-Python만 제출 가능하며 데이터는 삭제하지 않습니다. V5 이후의 이전 access 토큰은 버전 클레임이 없으므로 즉시 무효화됩니다.
-V9는 채점 heartbeat·실행 시도 횟수를 추가하고 중단된 작업의 횟수 제한 재시도를 지원합니다.
-V10은 범위별 고유 제목·공개 의도·비공개 정답 코드를, V11은 그룹 역할과 시험 답안·이벤트를,
-V12는 커뮤니티·댓글과 삭제되지 않는 수정 이력을 추가합니다.
-V13은 기존 제출·판정 시각 값을 유지하면서 저장 컬럼을 DATETIME(6)으로 확장해 시험의 소수초 경계와 맞춥니다.
-V14는 기존 STDIN 문제에 Pascal·PHP·Dart·엄랭을, 공통 어댑터에 호환되는 FUNCTION 문제에
-Pascal·PHP·Dart를 추가합니다. SQL·기존 비정형 FUNCTION의 언어 범위는 유지합니다.
-V15는 공개 시작 코드의 `problem_starter_codes` 테이블만 추가합니다. 비공개 정답에서 코드를 복사하지 않고 기존 행도 변경하지 않습니다.
-V16은 제출 원문 바이트 제약과 본인 동일 코드 판정 재사용 메타데이터를 추가합니다. 과거 판정의 컨텍스트는 추정하지 않아
-기존 완료 기록은 재사용하지 않습니다. 기존 빈 코드/64KiB 초과 원문이 있으면 제약 적용을 중단하고 데이터를 보존합니다.
-V17은 내장 `COBWEB GROUP`과 모든 회원의 기본 MEMBER 소속을 추가하고 DB 고유 키·트리거로 내장 정체성을 보호합니다.
-V18은 문제 공개 범위와 별개인 제작자 표시 동의 `author_public`을 추가합니다. 기존/새 문제는 비공개가 기본이며 제작·수정 화면에서 공개를 선택하면
-난이도 오른쪽에 실제 제작 계정명을 표시합니다. 비공개 상세 API는 이름을 null로 반환하고 ID·이메일은 공개하지 않습니다.
-일반 풀이·코테에 함께 적용하며 구형 수정 요청의 `authorPublic` 생략/null은 기존 설정을 보존합니다. 복제한 새 초안은 비공개로 시작합니다.
-기존 V1–V17 파일을 수정하지 않으므로 이미 적용한 Flyway 체크섬은 바뀌지 않습니다.
-V10 적용 전 `SELECT COALESCE(group_id,0),problem_title,COUNT(*) FROM problems GROUP BY COALESCE(group_id,0),problem_title HAVING COUNT(*)>1;`로 충돌을 확인하세요.
-충돌을 자동 삭제·재명명하지 않습니다. 운영 DB 백업 후 제목 정책을 정하고 승인된 별도 전환을 해야 합니다.
-기존 쿠키·재설정 링크의 원문은 새 코드에서 계속 사용할 수 있지만 이전 앱 코드는 지문을 조회할 수
-없으므로, 기존 앱과 워커를 중지한 뒤 백업 → 마이그레이션 → 새 앱/워커 기동 순서로 갱신하세요.
+Flyway 기본값은 기존 DB 자동 변경 방지를 위해 꺼져 있고 local/prod/test에서 켜집니다. `baseline-on-migrate=false`를 유지합니다.
+이미 사용 중인 PostgreSQL V1의 체크섬은 승인 없이 재작성하거나 repair하지 않습니다.
 
 ## 배포
 
 검증 환경에서 `DOCKER_JUDGE_TEST=true ./gradlew build`를 완료하고, 두 호스트에 동일 버전의
 저장소와 빌드된 `build/libs/*-SNAPSHOT.jar`을 준비합니다. 공개 웹 호스트에서는 `.env`에
-DB_PASSWORD/MYSQL_ROOT_PASSWORD/SITE_DOMAIN과 인증 환경변수를 설정한 뒤
+DB_PASSWORD/POSTGRES_ADMIN_PASSWORD/SITE_DOMAIN과 인증 환경변수를 설정한 뒤
 `docker compose -f compose.prod.yaml build` 및 `docker compose -f compose.prod.yaml up -d`를 실행합니다.
 Caddy가 도메인 TLS를 처리합니다. 실제 도메인의 DNS와 80/443 접근, OAuth 제공자 콘솔의 운영
 콜백 URL 등록이 필요합니다. 웹 컨테이너에는 Docker 소켓을 제공하지 않습니다.
@@ -406,17 +394,17 @@ Caddy가 도메인 TLS를 처리합니다. 실제 도메인의 DNS와 80/443 접
 채점은 **별도 전용 호스트**에서만 `compose.worker.yaml`로 실행합니다. 먼저 웹 호스트에서
 Flyway 마이그레이션을 완료하고, 워커 호스트에서 `docker build -t cobweb-languages:local judge`,
 `docker compose -f compose.worker.yaml build`, `docker compose -f compose.worker.yaml up -d`를 순서대로
-실행합니다. 워커 Compose에는 MySQL이나 공개 포트가 없고, 웹 앱과 **동일한 DB**를 가리키는
+실행합니다. 워커 Compose에는 PostgreSQL이나 공개 포트가 없고, 웹 앱과 **동일한 DB**를 가리키는
 WORKER_DB_URL/WORKER_DB_USERNAME/WORKER_DB_PASSWORD가 필수입니다. 워커는 마이그레이션을 수행하지 않습니다.
 
-기본 `compose.prod.yaml`의 MySQL은 호스트 포트를 열지 않으므로, `WORKER_DB_URL`만 적는다고
+기본 `compose.prod.yaml`의 PostgreSQL은 호스트 포트를 열지 않으므로, `WORKER_DB_URL`만 적는다고
 원격 워커가 연결되지는 않습니다. 운영자가 사설 DB 엔드포인트 또는 보호된 터널을 준비해야 합니다.
-웹 호스트의 MySQL을 직접 연결할 경우에도 사설 인터페이스에만 바인드하는 운영별 Compose override와
-워커 호스트 IP만 허용하는 방화벽 규칙을 별도로 적용하세요. 공용 인터페이스의 3306 포트는 열지 않습니다.
+웹 호스트의 PostgreSQL을 직접 연결할 경우에도 사설 인터페이스에만 바인드하는 운영별 Compose override와
+워커 호스트 IP만 허용하는 방화벽 규칙을 별도로 적용하세요. 공용 인터페이스의 5432 포트는 열지 않습니다.
 직접 JDBC 연결에는 인증서 체인과 DB 호스트 이름을 검증하는 TLS 설정(예: JDBC URL의
-`sslMode=VERIFY_IDENTITY`와 신뢰할 CA)을 사용하고, 워커 전용 DB 계정에는 채점 큐·문제·결과 처리에
+`sslmode=verify-full`과 신뢰할 CA)을 사용하고, 워커 전용 DB 계정에는 채점 큐·문제·결과 처리에
 필요한 데이터 권한만 부여하며 DDL/관리자 권한은 주지 마세요. 연결 경로와 인증서, 방화벽, 동일 DB
 접속을 실제 호스트에서 확인한 다음 워커를 기동해야 합니다. Docker 소켓은 호스트 관리자 권한에
 준하므로 이 호스트에 공개 앱을 함께 두지 말고 Docker/커널 패치와 작업공간 정리·모니터링을 유지하세요.
 DB 백업·복구, 관측 및 부하 시험은 운영 환경에서 추가로 준비해야 합니다.
-CI의 전체 검사도 MySQL과 다중 언어 채점 이미지를 준비한 뒤 `DOCKER_JUDGE_TEST=true ./gradlew clean build`를 실행합니다.
+CI의 전체 검사도 PostgreSQL과 다중 언어 채점 이미지를 준비한 뒤 `DOCKER_JUDGE_TEST=true ./gradlew clean build`를 실행합니다.

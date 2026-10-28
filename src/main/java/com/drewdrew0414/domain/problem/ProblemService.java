@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
@@ -61,23 +62,13 @@ public class ProblemService {
     }
     public List<Map<String,Object>> list(int page,String search,List<String> difficulty,String solved,
                                          CustomUserDetails user) {
-        Long uid=user!=null && user.isEnabled()?user.getUserId():null;
-        var filters=listingFilters(difficulty,solved,uid!=null);
-        // 전체 정답 수가 아니라 요청한 계정의 최초 해결 원장만 확인합니다.
-        // 원장의 (user_id,problem_id) PK로 단일 JOIN하므로 목록 행 중복이나 문제별 추가 조회가 없습니다.
-        var sql=new StringBuilder("""
-            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.submission_count,p.accepted_count,
-                   (s.problem_id IS NOT NULL) AS solved
-            FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id
-            WHERE p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
-            AND p.problem_title LIKE ?
-            """);
-        List<Object> parameters=new ArrayList<>();
-        parameters.add(uid);parameters.add("%"+Objects.toString(search,"")+"%");
-        appendListingFilters(sql,parameters,filters);
-        sql.append(" ORDER BY p.problem_number LIMIT 30 OFFSET ?");parameters.add(offset(page));
-        var rows=db.queryForList(sql.toString(),parameters.toArray());
-        return solvedRows(rows,uid!=null);
+        return listingRows(listingQuery(search,difficulty,solved,user,false),page);
+    }
+    /** 개수와 행은 같은 읽기 스냅샷에서 조회하며, 기본 배열 API는 변경하지 않습니다. */
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public ListingPage listPage(int page,String search,List<String> difficulty,String solved,
+                                CustomUserDetails user) {
+        return listingPage(listingQuery(search,difficulty,solved,user,false),page);
     }
     public Map<String,Object> permissions(CustomUserDetails user) {
         requireUser(user);
@@ -88,19 +79,59 @@ public class ProblemService {
     }
     public List<Map<String,Object>> mine(int page,String search,List<String> difficulty,String solved,
                                          CustomUserDetails user) {
-        long uid=requireUser(user);
-        var filters=listingFilters(difficulty,solved,true);
-        var sql=new StringBuilder("""
+        return listingRows(listingQuery(search,difficulty,solved,user,true),page);
+    }
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public ListingPage minePage(int page,String search,List<String> difficulty,String solved,
+                                CustomUserDetails user) {
+        return listingPage(listingQuery(search,difficulty,solved,user,true),page);
+    }
+    /** COUNT도 동일한 권한/필터 WHERE를 사용하므로 비공개 문제 수가 공개 목록에 섞이지 않습니다. */
+    private record ListingQuery(String columns,String from,List<Object> parameters,String order,boolean authenticated) {}
+    public record ListingPage(List<Map<String,Object>> items,int page,int pageSize,long totalItems,long totalPages) {}
+    private ListingQuery listingQuery(String search,List<String> difficulty,String solved,
+                                      CustomUserDetails user,boolean mine) {
+        Long uid=user!=null && user.isEnabled()?user.getUserId():null;
+        if(mine)uid=requireUser(user);
+        var filters=listingFilters(difficulty,solved,uid!=null);
+        // 전체 정답 수가 아니라 요청한 계정의 최초 해결 원장을 한 번 JOIN합니다.
+        // (user_id,problem_id) PK 덕분에 결과 행과 COUNT 모두 중복되지 않습니다.
+        String columns=mine?"""
             SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.status,p.visibility,p.execution_mode,
                    p.submission_count,p.accepted_count,p.updated_at,(s.problem_id IS NOT NULL) AS solved
-            FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id
-            WHERE p.author_id=? AND p.problem_title LIKE ?
-            """);
-        List<Object> parameters=new ArrayList<>(List.of(uid,uid,"%"+Objects.toString(search,"")+"%"));
-        appendListingFilters(sql,parameters,filters);
-        sql.append(" ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET ?");parameters.add(offset(page));
-        var rows=db.queryForList(sql.toString(),parameters.toArray());
-        return solvedRows(rows,true);
+            """:"""
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.submission_count,p.accepted_count,
+                   (s.problem_id IS NOT NULL) AS solved
+            """;
+        var from=new StringBuilder("FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id ");
+        List<Object> parameters=new ArrayList<>();parameters.add(uid);
+        if(mine) {
+            from.append("WHERE p.author_id=? AND p.problem_title ILIKE ?");parameters.add(uid);
+        } else {
+            from.append("WHERE p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL AND p.problem_title ILIKE ?");
+        }
+        parameters.add("%"+Objects.toString(search,"")+"%");
+        appendListingFilters(from,parameters,filters);
+        return new ListingQuery(columns,from.toString(),parameters,
+            mine?" ORDER BY p.updated_at DESC,p.id DESC":" ORDER BY p.problem_number",uid!=null);
+    }
+    private List<Map<String,Object>> listingRows(ListingQuery query,int page) {
+        return listingRowsAtOffset(query,offset(page));
+    }
+    private List<Map<String,Object>> listingRowsAtOffset(ListingQuery query,Number offset) {
+        var parameters=new ArrayList<>(query.parameters());parameters.add(offset);
+        var rows=db.queryForList(query.columns()+query.from()+query.order()+" LIMIT 30 OFFSET ?",parameters.toArray());
+        return solvedRows(rows,query.authenticated());
+    }
+    private ListingPage listingPage(ListingQuery query,int requestedPage) {
+        long total=Objects.requireNonNull(db.queryForObject("SELECT COUNT(*) "+query.from(),Long.class,query.parameters().toArray()));
+        if(total<0)throw new IllegalStateException("Problem listing count must not be negative");
+        // 빼기 후 나눗셈으로 ceil을 구해 long 덧셈 오버플로를 피합니다.
+        long totalPages=total==0?0:(total-1)/30+1;
+        int page=(int)Math.min(Math.max(requestedPage,0),Math.max(0,totalPages-1));
+        // 새 메타데이터 모드는 실제 전체 페이지를 지원하고 OFFSET은 long으로 계산합니다.
+        // 기존 배열 모드만 offset(page)의 10000페이지 상한을 그대로 유지합니다.
+        return new ListingPage(listingRowsAtOffset(query,30L*page),page,30,total,totalPages);
     }
     private record ListingFilters(List<String> difficulties,String solved) {}
     private static ListingFilters listingFilters(List<String> difficulty,String solved,boolean authenticated) {
@@ -154,7 +185,7 @@ public class ProblemService {
                    p.execution_mode,p.submission_count,p.accepted_count,p.updated_at,
                    u.username AS author_username
             FROM problems p JOIN users u ON u.id=p.author_id
-            WHERE p.problem_title LIKE ? AND (?='' OR p.status=?) AND (?='' OR p.visibility=?)
+            WHERE p.problem_title ILIKE ? AND (?='' OR p.status=?) AND (?='' OR p.visibility=?)
             ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET ?
             ""","%"+Objects.toString(search,"")+"%",state,state,access,access,offset(page));
     }
@@ -260,7 +291,7 @@ public class ProblemService {
             WHERE pt.problem_id=? ORDER BY t.name
             """,String.class,p.get("id")));
         result.put("referenceSolutions",db.queryForList("""
-            SELECT language,file_name AS fileName,source_code AS sourceCode
+            SELECT language,file_name AS "fileName",source_code AS "sourceCode"
             FROM reference_solutions WHERE problem_id=? ORDER BY language
             """,p.get("id")));
         result.put("starterCodes",starterCodes(p.get("id")));
@@ -268,7 +299,7 @@ public class ProblemService {
     }
     private List<Map<String,Object>> starterCodes(Object problemId) {
         return db.queryForList("""
-            SELECT language,source_code AS sourceCode FROM problem_starter_codes
+            SELECT language,source_code AS "sourceCode" FROM problem_starter_codes
             WHERE problem_id=? ORDER BY language
             """,problemId);
     }
@@ -301,7 +332,7 @@ public class ProblemService {
                 INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,
                   constraints_text,rank_type,rank_int,time_limit_ms,memory_limit_mb,execution_mode,
                   author_id,group_id,status,visibility,requested_visibility,function_abi_compatible,source_name,source_url,author_public,function_signature)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?,?)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?,CAST(? AS jsonb))
                 """,number,prepared.title(),request.description(),request.inputDescription(),request.outputDescription(),
                     request.constraints(),request.rankType(),request.rankInt(),request.timeLimitMs(),
                     request.memoryLimitMb(),request.executionMode(),uid,prepared.groupId(),
@@ -371,7 +402,7 @@ public class ProblemService {
                 UPDATE problems SET problem_title=?,description=?,input_description=?,output_description=?,
                  constraints_text=?,rank_type=?,rank_int=?,time_limit_ms=?,memory_limit_mb=?,execution_mode=?,
                  function_abi_compatible=?,source_name=?,source_url=?,requested_visibility=?,
-                 author_public=COALESCE(?,author_public),function_signature=?
+                 author_public=COALESCE(?,author_public),function_signature=CAST(? AS jsonb)
                 WHERE id=?
                 """,prepared.title(),r.description(),r.inputDescription(),r.outputDescription(),r.constraints(),
                     r.rankType(),r.rankInt(),r.timeLimitMs(),r.memoryLimitMb(),r.executionMode(),
@@ -456,8 +487,8 @@ public class ProblemService {
         for(String language:prepared.languages())
             db.update("INSERT INTO problem_languages(problem_id,language) VALUES(?,?)",problemId,language);
         for(String tag:prepared.tags()) {
-            db.update("INSERT IGNORE INTO tags(name) VALUES(?)",tag);
-            long tagId=db.queryForObject("SELECT id FROM tags WHERE name=?",Long.class,tag);
+            db.update("INSERT INTO tags(name) VALUES(?) ON CONFLICT DO NOTHING",tag);
+            long tagId=db.queryForObject("SELECT id FROM tags WHERE lower(name)=lower(?)",Long.class,tag);
             db.update("INSERT INTO problem_tags(problem_id,tag_id) VALUES(?,?)",problemId,tagId);
         }
         if(prepared.references()!=null) for(var ref:prepared.references())
@@ -579,8 +610,8 @@ public class ProblemService {
     private void titleAvailable(String title,Long groupId,Long excludeId) {
         long scope=groupId==null?0:groupId;
         Long count=excludeId==null
-            ? db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=? AND problem_title=?",Long.class,scope,title)
-            : db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=? AND problem_title=? AND id<>?",Long.class,
+            ? db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=? AND lower(problem_title)=lower(?)",Long.class,scope,title)
+            : db.queryForObject("SELECT COUNT(*) FROM problems WHERE title_scope=? AND lower(problem_title)=lower(?) AND id<>?",Long.class,
                 scope,title,excludeId);
         if(count!=null && count>0)
             throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 문제 제목입니다.");
@@ -667,7 +698,7 @@ public class ProblemService {
         }
         db.update("""
             UPDATE problems SET visibility=?,status=?,requested_visibility=?,
-                published_at=IF(?='PUBLISHED',CURRENT_TIMESTAMP,published_at) WHERE id=?
+                published_at=CASE WHEN ?='PUBLISHED' THEN (clock_timestamp() AT TIME ZONE 'UTC') ELSE published_at END WHERE id=?
             """,targetVisibility,targetStatus,requested,targetStatus,p.get("id"));
         String cause="공개 범위 "+request.visibility()+(request.cause()==null || request.cause().isBlank()
             ? "" : ": "+request.cause().strip());
@@ -691,8 +722,8 @@ public class ProblemService {
     private void change(Map<String,Object> p,String state,String cause,long uid) {
         String publishedVisibility=p.get("group_id")!=null?"GROUP":(String)p.get("requested_visibility");
         db.update("""
-            UPDATE problems SET status=?,visibility=IF(?='PUBLISHED',?,visibility),
-                published_at=IF(?='PUBLISHED',CURRENT_TIMESTAMP,published_at) WHERE id=?
+            UPDATE problems SET status=?,visibility=CASE WHEN ?='PUBLISHED' THEN ? ELSE visibility END,
+                published_at=CASE WHEN ?='PUBLISHED' THEN (clock_timestamp() AT TIME ZONE 'UTC') ELSE published_at END WHERE id=?
             """,state,state,publishedVisibility,state,p.get("id"));
         db.update("INSERT INTO problem_status_history(problem_id,status,cause,checker_id) VALUES(?,?,?,?)",p.get("id"),state,cause,uid);
     }

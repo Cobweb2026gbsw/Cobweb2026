@@ -15,7 +15,7 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 별도 MySQL DB에서 원문 보존·캐시 scope·완전 비교·통계·fencing을 확인합니다. */
+/** 별도 PostgreSQL DB에서 원문 보존·캐시 scope·완전 비교·통계·fencing을 확인합니다. */
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
@@ -61,12 +61,12 @@ class SubmissionReuseIntegrationTest {
     @Test void databaseAlsoRejectsEmptyAndOverLimitUtf8SourcesWithoutTruncation() {
         var f=fixture();
         for(String code:List.of("","x".repeat(65537),"가".repeat(21846))) {
-            var failure=assertThrows(org.springframework.dao.DataAccessException.class,()->db.update(
+            var failure=com.drewdrew0414.PostgresTestSupport.rejected(db,()->db.update(
                 "INSERT INTO submissions(user_id,problem_id,language,source_code) VALUES(?,?,'PYTHON',?)",
                 f.user().getUserId(),f.problemId(),code));
-            // MySQL CHECK 위반 3819는 Connector/J에서 HY000으로 전달될 수 있습니다.
+            // PostgreSQL CHECK 위반은 SQLSTATE 23514로 구분합니다.
             var sql=assertInstanceOf(java.sql.SQLException.class,failure.getMostSpecificCause());
-            assertEquals(3819,sql.getErrorCode());
+            assertEquals("23514",sql.getSQLState());
             assertTrue(sql.getMessage().contains("chk_submissions_source_bytes"));
         }
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM submissions WHERE problem_id=?",Integer.class,f.problemId()));
@@ -150,7 +150,7 @@ class SubmissionReuseIntegrationTest {
         var f=fixture();long contest=contest(f);
         complete(f,"print(2)","ACCEPTED",contest);
         var pending=queued(f,"print(2)",contest);
-        db.update("UPDATE group_contests SET starts_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 2 HOUR),ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR),replay_allowed=FALSE WHERE id=?",contest);
+        db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '2 hour'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 hour'),replay_allowed=FALSE WHERE id=?",contest);
         assertFalse(submissions.tryReuse(pending,IMAGE,ENGINE));
     }
 
@@ -178,7 +178,7 @@ class SubmissionReuseIntegrationTest {
         return running(id);
     }
     private Map<String,Object> running(long id) {
-        db.update("UPDATE submissions SET status='RUNNING',judge_token=?,judge_attempts=1,claimed_at=CURRENT_TIMESTAMP(6),judge_heartbeat_at=CURRENT_TIMESTAMP(6) WHERE id=?",UUID.randomUUID().toString(),id);
+        db.update("UPDATE submissions SET status='RUNNING',judge_token=?,judge_attempts=1,claimed_at=(clock_timestamp() AT TIME ZONE 'UTC'),judge_heartbeat_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=?",UUID.randomUUID().toString(),id);
         return row(id);
     }
     private long complete(Fixture f,String code,String status,Long contest) {
@@ -194,20 +194,16 @@ class SubmissionReuseIntegrationTest {
     }
     private Map<String,Object> row(long id) { return db.queryForMap("SELECT * FROM submissions WHERE id=?",id); }
     private long contest(Fixture f) {
-        db.update("INSERT INTO study_groups(group_name,status) VALUES(?,'ACCEPTED')","c"+UUID.randomUUID().toString().replace("-","").substring(0,12));
-        long gid=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
-        db.update("INSERT INTO group_roles(group_id,role_name,builtin_key,can_take_contests,can_view_problems) VALUES(?,'member','MEMBER',TRUE,TRUE)",gid);
-        long role=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long gid=db.queryForObject("INSERT INTO study_groups(group_name,status) VALUES(?,'ACCEPTED') RETURNING id",Long.class,"c"+UUID.randomUUID().toString().replace("-","").substring(0,12));
+        long role=db.queryForObject("INSERT INTO group_roles(group_id,role_name,builtin_key,can_take_contests,can_view_problems) VALUES(?,'member','MEMBER',TRUE,TRUE) RETURNING id",Long.class,gid);
         db.update("INSERT INTO group_members(user_id,group_id,member_number,permission,role_id) VALUES(?,?,1,'MEMBER',?)",f.user().getUserId(),gid,role);
         db.update("UPDATE problems SET group_id=?,visibility='GROUP' WHERE id=?",gid,f.problemId());
-        db.update("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) VALUES(?,'cache',DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR),DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR),?)",gid,f.user().getUserId());
-        long cid=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long cid=db.queryForObject("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) VALUES(?,'cache',((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 hour'),((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour'),?) RETURNING id",Long.class,gid,f.user().getUserId());
         db.update("INSERT INTO contest_problems(contest_id,problem_id,display_order) VALUES(?,?,1)",cid,f.problemId());
         return cid;
     }
     private long additionalContest(Fixture f,long prior) {
-        db.update("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) SELECT group_id,'other',starts_at,ends_at,created_by FROM group_contests WHERE id=?",prior);
-        long id=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
+        long id=db.queryForObject("INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by) SELECT group_id,'other',starts_at,ends_at,created_by FROM group_contests WHERE id=? RETURNING id",Long.class,prior);
         db.update("INSERT INTO contest_problems(contest_id,problem_id,display_order) VALUES(?,?,1)",id,f.problemId());return id;
     }
     private record Fixture(int number,long problemId,CustomUserDetails user) {}

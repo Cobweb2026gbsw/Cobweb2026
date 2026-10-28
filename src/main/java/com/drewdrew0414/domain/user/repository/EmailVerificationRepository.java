@@ -16,15 +16,15 @@ import java.time.LocalDateTime;
  */
 // JpaRepository<EmailVerification, Long> -> 기본 CRUD는 자동으로 생김
 public interface EmailVerificationRepository extends JpaRepository<EmailVerification, Long> {
-    // DATETIME(0)에 같은 초의 발급 기록이 묶일 수 있으므로 ID로 순서를 확정합니다.
-    Optional<EmailVerification> findTopByEmailAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
+    // 같은 시각의 발급도 ID로 순서를 확정하고 이메일의 대소문자 무시 정책을 보존합니다.
+    Optional<EmailVerification> findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<EmailVerification> findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
+    Optional<EmailVerification> findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(String email, VerificationPurpose purpose);
 
     // 최근 일정 시간 안에 같은 주소/목적으로 발급한 횟수를 세어 메일 발송 요청 제한에 사용
-    long countByEmailAndPurposeAndCreatedAtAfter(String email, VerificationPurpose purpose, LocalDateTime createdAfter);
+    long countByEmailIgnoreCaseAndPurposeAndCreatedAtAfter(String email, VerificationPurpose purpose, LocalDateTime createdAfter);
 
     // 인증을 실제 회원가입/비밀번호 재설정에 사용한 뒤 과거 기록까지 지워 같은 인증 결과의 재사용을 막음
-    void deleteAllByEmailAndPurpose(String email, VerificationPurpose purpose);
+    void deleteAllByEmailIgnoreCaseAndPurpose(String email, VerificationPurpose purpose);
 }

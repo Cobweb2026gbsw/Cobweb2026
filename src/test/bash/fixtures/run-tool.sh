@@ -17,6 +17,9 @@ case "$tool" in
   ps)
     # PID 시작 시각/그룹 identity는 격리 fixture 프로세스 자체를 조회합니다.
     if [[ "${1:-}" == -p ]]; then
+      if [[ "${MOCK_FAIL_STAGE:-}" == gradle_orphan && "${2:-}" == "${MOCK_CHILD_PID:-}" && " $* " == *' lstart= '* ]]; then
+        : > "$MOCK_STATE/orphan-child-observed"
+      fi
       # 실제 다른 프로세스의 PID를 빌리지 않고 시작 identity 조회 결과만 바꿉니다.
       if [[ " $* " == *' lstart= '* && -f "$MOCK_STATE/identity-shift.pid" && "${2:-}" == "$(< "$MOCK_STATE/identity-shift.pid")" ]]; then
         printf 'fixture-reused-pid-different-start\n'
@@ -30,7 +33,7 @@ case "$tool" in
     # 실제 TTY Ctrl+C가 launcher 대신 foreground sleep만 종료하는 경로를 재현합니다.
     # 준비 완료 뒤 첫 main-loop sleep만 길게 대기하고 cleanup의 sleep은 막지 않습니다.
     if [[ "${MOCK_FAIL_STAGE:-}" == foreground_interrupt && "${1:-}" == 1 && ! -e "$MOCK_STATE/foreground-sleep.claimed" ]]; then
-      for state_file in "${MOCK_STATE%/state}/.local/run/$COBWEB_RUN_PROJECT/logs/"*/state.txt; do
+      for state_file in "${MOCK_STATE%/state}/.local/run/$COBWEB_RUN_PROJECT/postgres/logs/"*/state.txt; do
         if [[ -f "$state_file" ]] && grep -Fx 'startup_complete=true' "$state_file" >/dev/null; then
           : > "$MOCK_STATE/foreground-sleep.claimed"
           printf '%s\n' "$$" > "$MOCK_STATE/foreground-sleep.pid"
@@ -58,6 +61,13 @@ case "$tool" in
     if [[ "${MOCK_FAIL_STAGE:-}" == cleanup_query ]]; then : > "$MOCK_STATE/cleanup-query-failed"; exit 23; fi
     if [[ "${MOCK_FAIL_STAGE:-}" == gradle_orphan ]]; then
       printf '%s %s\n' "$MOCK_CHILD_PID" "$$" > "$MOCK_STATE/ps.rows"
+      # 고정 200ms만 기다리면 다른 병렬 검증의 부하 때문에 ps 표본이 누락될 수 있습니다.
+      # 런처가 분리 자식의 identity를 실제 조회한 뒤 leader를 종료합니다.
+      for ((sample=0;sample<200;sample++)); do
+        [[ ! -f "$MOCK_STATE/orphan-child-observed" ]] || break
+        /bin/sleep 0.01
+      done
+      [[ -f "$MOCK_STATE/orphan-child-observed" ]] || exit 23
       /bin/sleep 0.2
       exit 0
     fi
@@ -89,17 +99,17 @@ case "$tool" in
     : > "$MOCK_STATE/$kind.jvm-options-checked"
     # fake credential의 값은 진단에 출력하지 않고 역할 분리 계약만 확인합니다.
     [[ "${SPRING_DATASOURCE_USERNAME:-}" == cobweb && "${SPRING_DATASOURCE_PASSWORD:-}" == fake-db-password ]] || exit 94
-    [[ "${SPRING_FLYWAY_URL:-}" == "${SPRING_DATASOURCE_URL:-}" && -z "${DEV_ROOT_PASSWORD+x}" ]] || exit 94
+    [[ "${SPRING_FLYWAY_URL:-}" == "${SPRING_DATASOURCE_URL:-}" && -z "${DEV_ADMIN_PASSWORD+x}" ]] || exit 94
     runtime_config="${jar%/app.jar}/runtime.properties"
     [[ -f "$runtime_config" ]] || exit 94
-    ! grep -F 'DEV_ROOT_PASSWORD' "$runtime_config" >/dev/null || exit 94
-    ! grep -F 'fake-root-password' "$runtime_config" >/dev/null || exit 94
+    ! grep -F 'DEV_ADMIN_PASSWORD' "$runtime_config" >/dev/null || exit 94
+    ! grep -F 'fake-admin-password' "$runtime_config" >/dev/null || exit 94
     ! grep -F 'NOT_AN_APP_KEY' "$runtime_config" >/dev/null || exit 94
     grep -Fx 'MAIL_USERNAME=fixture-mail@example.invalid' "$runtime_config" >/dev/null || exit 94
     [[ "$(ls -ld "$runtime_config" | awk '{print substr($1,1,10)}')" == -rw------- ]] || exit 94
     if [[ "$kind" == migrate ]]; then
       [[ "${SPRING_CONFIG_IMPORT:-}" == "file:$runtime_config[.properties]" ]] || exit 94
-      [[ "${SPRING_FLYWAY_USER:-}" == root && "${SPRING_FLYWAY_PASSWORD:-}" == fake-root-password ]] || exit 94
+      [[ "${SPRING_FLYWAY_USER:-}" == postgres && "${SPRING_FLYWAY_PASSWORD:-}" == fake-admin-password ]] || exit 94
       [[ " $* " == *' --spring.profiles.active=local '* && " $* " == *' --spring.main.web-application-type=none '* \
         && " $* " == *' --spring.flyway.enabled=true '* && " $* " == *' --judge.enabled=false '* \
         && " $* " == *' --demo.seed=false '* && " $* " == *' --curriculum.level0.enabled=false '* ]] || exit 94
@@ -173,7 +183,7 @@ case "$command" in
     elif [[ " $* " == *'.State.Running'* ]]; then [[ "$(< "$MOCK_STATE/db.status")" == running ]] && printf 'true\n' || printf 'false\n';
     elif [[ " $* " == *'com.docker.compose.project.working_dir'* ]]; then
       owner_root="${MOCK_STATE%/state}"; [[ ! -f "$MOCK_STATE/foreign-owner" ]] || owner_root=/different/project/root
-      printf '%s|mysql|%s\n' "$COBWEB_RUN_PROJECT" "$owner_root"
+      printf '%s|postgres|%s\n' "$COBWEB_RUN_PROJECT" "$owner_root"
     fi
     exit 0 ;;
   ps) exit 0 ;;

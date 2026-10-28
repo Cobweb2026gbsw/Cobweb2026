@@ -46,9 +46,9 @@ class ProblemAuthorVisibilityIntegrationTest {
         publish(number);
         assertPrivate(data(http("GET","/api/problems/"+number,null,null)),author.getUsername());
         assertFalse(data(http("GET","/api/problems/"+number+"/edit",null,author)).get("authorPublic").asBoolean());
-        assertEquals("0",db.queryForObject("""
+        assertEquals("false",db.queryForObject("""
             SELECT COLUMN_DEFAULT FROM information_schema.columns
-            WHERE table_schema=DATABASE() AND table_name='problems' AND column_name='author_public'
+            WHERE table_schema=current_schema() AND table_name='problems' AND column_name='author_public'
             """,String.class));
         assertFalse(db.queryForObject("SELECT author_public FROM problems WHERE problem_number=?",Boolean.class,number));
     }
@@ -103,12 +103,12 @@ class ProblemAuthorVisibilityIntegrationTest {
         String path="/api/groups/"+gid+"/contests/"+cid+"/problems/";
         assertEquals(403,http("GET",path+visible,null,other).statusCode());
         assertEquals(401,http("GET",path+visible,null,null).statusCode());
-        db.update("UPDATE group_contests SET starts_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),ends_at=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 1 HOUR) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minute'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
         assertPrivate(data(http("GET",path+hidden,null,other)),author.getUsername());
         assertPublic(data(http("GET",path+visible,null,other)),author.getUsername());
         // 시험에 사용된 문제의 일반 편집 금지를 제작자 표시 설정으로도 우회하지 않습니다.
         assertEquals(409,http("PUT","/api/problems/"+visible,payload("Visible contest author "+unique(),gid,false),author).statusCode());
-        db.update("UPDATE group_contests SET ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND) WHERE id=?",cid);
+        db.update("UPDATE group_contests SET ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second') WHERE id=?",cid);
         assertEquals(403,http("GET",path+visible,null,other).statusCode());
     }
 

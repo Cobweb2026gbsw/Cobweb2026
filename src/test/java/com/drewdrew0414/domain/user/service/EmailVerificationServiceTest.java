@@ -65,7 +65,7 @@ class EmailVerificationServiceTest {
 
     @Test
     void sendCode_blocksFourthRequestWithinTenMinutes() {
-        when(emailVerificationRepository.countByEmailAndPurposeAndCreatedAtAfter(
+        when(emailVerificationRepository.countByEmailIgnoreCaseAndPurposeAndCreatedAtAfter(
                 any(), any(), any(LocalDateTime.class))).thenReturn(3L);
 
         assertThrows(TooManyVerificationRequestsException.class,
@@ -79,12 +79,12 @@ class EmailVerificationServiceTest {
     @Test
     void consumeVerification_deletesAllRecordsAfterSuccessfulVerification() {
         EmailVerification verification = verifiedEmailVerification();
-        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
+        when(emailVerificationRepository.findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(
                 "user@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(verification));
 
         emailVerificationService.consumeVerification("user@example.com", VerificationPurpose.JOIN);
 
-        verify(emailVerificationRepository).deleteAllByEmailAndPurpose(
+        verify(emailVerificationRepository).deleteAllByEmailIgnoreCaseAndPurpose(
                 "user@example.com", VerificationPurpose.JOIN);
     }
 
@@ -92,13 +92,13 @@ class EmailVerificationServiceTest {
     void consumeVerification_rejectsUnverifiedEmail() {
         EmailVerification verification = new EmailVerification(
                 "user@example.com", "12345678", VerificationPurpose.JOIN, LocalDateTime.now().plusMinutes(5));
-        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
+        when(emailVerificationRepository.findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(
                 "user@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(verification));
 
         assertThrows(EmailNotVerifiedException.class,
                 () -> emailVerificationService.consumeVerification("user@example.com", VerificationPurpose.JOIN));
 
-        verify(emailVerificationRepository, never()).deleteAllByEmailAndPurpose(any(), any());
+        verify(emailVerificationRepository, never()).deleteAllByEmailIgnoreCaseAndPurpose(any(), any());
     }
 
     private EmailVerification verifiedEmailVerification() {
@@ -113,10 +113,10 @@ class EmailVerificationServiceTest {
         EmailVerification expired = new EmailVerification("expired@example.com", "12345678",
                 VerificationPurpose.JOIN, LocalDateTime.now().minusMinutes(1));
         expired.markAsVerified();
-        when(emailVerificationRepository.findFirstByEmailAndPurposeOrderByCreatedAtDescIdDesc(
+        when(emailVerificationRepository.findFirstByEmailIgnoreCaseAndPurposeOrderByCreatedAtDescIdDesc(
                 "expired@example.com", VerificationPurpose.JOIN)).thenReturn(Optional.of(expired));
         assertThrows(EmailNotVerifiedException.class, () ->
                 emailVerificationService.consumeVerification("expired@example.com", VerificationPurpose.JOIN));
-        verify(emailVerificationRepository, never()).deleteAllByEmailAndPurpose(any(), any());
+        verify(emailVerificationRepository, never()).deleteAllByEmailIgnoreCaseAndPurpose(any(), any());
     }
 }

@@ -13,10 +13,16 @@ import org.springframework.web.bind.annotation.*;
 public class ProblemController {
     private final ProblemService service;
     @GetMapping
-    public Object list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
+    public Object listResponse(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
                        @RequestParam(required=false) List<String> difficulty,
                        @RequestParam(defaultValue="all") String solved,
+                       @RequestParam(defaultValue="false") boolean pagination,
                        @AuthenticationPrincipal CustomUserDetails user) {
+        return pagination?ApiResponse.success(service.listPage(page,search,difficulty,solved,user)):
+            list(page,search,difficulty,solved,user);
+    }
+    /** 기존 Java 호출과 pagination 생략 시의 배열 응답을 보존합니다. */
+    public Object list(int page,String search,List<String> difficulty,String solved,CustomUserDetails user) {
         return ApiResponse.success(service.list(page,search,difficulty,solved,user));
     }
     @GetMapping("/permissions")
@@ -24,10 +30,15 @@ public class ProblemController {
         return ApiResponse.success(service.permissions(user));
     }
     @GetMapping("/mine")
-    public Object mine(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
+    public Object mineResponse(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
                        @RequestParam(required=false) List<String> difficulty,
                        @RequestParam(defaultValue="all") String solved,
+                       @RequestParam(defaultValue="false") boolean pagination,
                        @AuthenticationPrincipal CustomUserDetails user) {
+        return pagination?ApiResponse.success(service.minePage(page,search,difficulty,solved,user)):
+            mine(page,search,difficulty,solved,user);
+    }
+    public Object mine(int page,String search,List<String> difficulty,String solved,CustomUserDetails user) {
         return ApiResponse.success(service.mine(page,search,difficulty,solved,user));
     }
     @GetMapping("/{number}")

@@ -42,7 +42,7 @@ public class AuthController {
         String userAgent = httpRequest.getHeader("User-Agent");
 
         TokenResponse tokenResponse = authService.login(
-                request.getUsername(), request.getPassword(), clientIp, userAgent, httpResponse);
+                request.getUsername(), request.getPassword(), clientIp, userAgent, request.isRememberMe(), httpResponse);
 
         return ApiResponse.success(tokenResponse);
     }

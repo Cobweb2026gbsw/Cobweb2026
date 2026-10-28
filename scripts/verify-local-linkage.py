@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """전용 로컬 DB·앱에서 문제→커뮤니티와 그룹→코테의 실제 HTTP 연동을 확인합니다.
 
-실행 전 root가 cobweb_linkage_test를 만들고 웹 앱의 Flyway V1~V17 및 자동 채점
-워커를 켜야 합니다. 테스트 계정과 콘텐츠는 보존하며 SQL DELETE는 사용하지 않습니다.
+실행 전 운영자가 분리 PostgreSQL cobweb_linkage_test를 만들고 통합 Flyway V1 및 자동 채점
+워커를 이 스크립트와 같은 시간대로 켜야 합니다. 테스트 계정과 콘텐츠는 보존하며
+SQL DELETE는 사용하지 않습니다.
 """
 
 import json
+import hashlib
+import hmac
 import subprocess
 import sys
 import time
@@ -15,9 +18,10 @@ from urllib import error, parse, request
 
 
 APP = "http://127.0.0.1:18083"
-CONTAINER = "cobweb-feature-verify-mysql"
+CONTAINER = "cobweb-feature-verify-postgres"
 DATABASE = "cobweb_linkage_test"
 PASSWORD = "Feature-test-only-2026!"
+JWT_TEST_SECRET = "test-only-secret-0123456789-0123456789-0123456789"
 CHECKS = []
 IDS = {}
 USER_NAMES = {}
@@ -50,38 +54,36 @@ def check_targets():
             and base.port == 18083 and not base.username and not base.password
             and not base.path and not base.query and not base.fragment,
             "앱 대상은 지정된 18083 루프백만 허용합니다")
-    require(CONTAINER == "cobweb-feature-verify-mysql" and DATABASE == "cobweb_linkage_test",
+    require(CONTAINER == "cobweb-feature-verify-postgres" and DATABASE == "cobweb_linkage_test",
             "전용 Docker 컨테이너·DB만 허용합니다")
-    applied = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1 "
-                         "AND CAST(version AS UNSIGNED) BETWEEN 1 AND 17"))
-    maximum = int(scalar("SELECT COALESCE(MAX(CAST(version AS UNSIGNED)),0) "
-                         "FROM flyway_schema_history"))
-    failures = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success=0"))
-    require(applied == 17 and maximum == 17 and failures == 0,
-            "전용 DB Flyway V1~V17 적용/성공 조건 미충족")
+    applied = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success AND version='1'"))
+    total = int(scalar("SELECT COUNT(*) FROM flyway_schema_history"))
+    failures = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE NOT success"))
+    require(applied == 1 and total == 1 and failures == 0,
+            "전용 DB의 단일 PostgreSQL Flyway V1 적용/성공 조건 미충족")
     seed = int(scalar("SELECT COUNT(*) FROM problems WHERE problem_number=1000 "
                       "AND status='PUBLISHED' AND visibility='PUBLIC' AND execution_mode='FUNCTION'"))
     require(seed == 1, "전용 DB의 공개 FUNCTION 시드 문제 1000번이 없습니다")
 
 
 def sql_string(value):
-    return "'" + str(value).replace("\\", "\\\\").replace("'", "''") + "'"
+    return "'" + str(value).replace("'", "''") + "'"
 
 
-def mysql(sql):
-    command = ["docker", "exec", "-e", "MYSQL_PWD=cobweb-test-only", CONTAINER,
-               "mysql", "-N", "-B", "-uroot", DATABASE, "-e", sql]
+def postgres(sql):
+    command = ["docker", "exec", "-e", "PGPASSWORD=cobweb-test-only", CONTAINER,
+               "psql", "-X", "-v", "ON_ERROR_STOP=1", "-At", "-U", "cobweb", "-d", DATABASE, "-c", sql]
     try:
         done = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise CheckError("전용 로컬 MySQL 호출 실패: " + type(exc).__name__) from None
+        raise CheckError("전용 로컬 PostgreSQL 호출 실패: " + type(exc).__name__) from None
     if done.returncode != 0:
-        raise CheckError("전용 로컬 MySQL 명령 실패 (SQL/비밀값은 출력하지 않음)")
+        raise CheckError("전용 로컬 PostgreSQL 명령 실패 (SQL/비밀값은 출력하지 않음)")
     return done.stdout.strip()
 
 
 def scalar(sql):
-    value = mysql(sql)
+    value = postgres(sql)
     require(value and "\n" not in value and "\t" not in value, "DB 단일 값 조회 실패")
     return value
 
@@ -123,12 +125,18 @@ def http(method, path, body=None, token=None, expected=200):
 def account(prefix, role, solved):
     name = prefix + uuid.uuid4().hex[:12]
     require(len(name) == 16, "검증 계정 이름 길이 오류")
-    # 기존 검증 계정의 같은 임시 비밀번호 해시를 서버 안에서 복사합니다. 해시는 Python/로그에 오지 않습니다.
-    mysql("INSERT INTO users(username,password,role,solved_count) "
-          "SELECT " + sql_string(name) + ",password," + sql_string(role) + "," + str(solved) +
-          " FROM cobweb_revalidation_test.users "
-          "WHERE username LIKE 'f%' AND CHAR_LENGTH(username)=16 LIMIT 1")
-    uid = int(scalar("SELECT id FROM users WHERE username=" + sql_string(name)))
+    # 다른 DB/실계정의 암호 해시를 복사하지 않고 전용 테스트 키로 가입 fixture를 만듭니다.
+    email, code = name + "@example.invalid", "12840379"
+    key = hmac.new(JWT_TEST_SECRET.encode(), b"cobweb-email-code-v1", hashlib.sha256).digest()
+    digest = hmac.new(key, (email.lower() + "\0JOIN\0" + code).encode(), hashlib.sha256).hexdigest()
+    # 인증 엔티티는 JVM LocalDateTime을 쓰므로 DB 서버의 UTC 시간대와 섞지 않습니다.
+    expires_at = (datetime.now() + timedelta(minutes=5)).isoformat(timespec="microseconds")
+    postgres("INSERT INTO email_verifications(email,code_hash,purpose,is_verified,expires_at) VALUES(" +
+             sql_string(email) + "," + sql_string(digest) + ",'JOIN',TRUE," +
+             "CAST(" + sql_string(expires_at) + " AS timestamp(6)))")
+    uid = http("POST", "/api/auth/signup", {"username": name, "email": email,
+               "password": PASSWORD, "verificationCode": code})
+    postgres("UPDATE users SET role=" + sql_string(role) + ",solved_count=" + str(int(solved)) + " WHERE id=" + str(int(uid)))
     response = http("POST", "/api/auth/login", {"username": name, "password": PASSWORD})
     token = response.get("accessToken") if isinstance(response, dict) else None
     require(isinstance(token, str) and token, "검증 계정 로그인 응답 오류")
@@ -363,8 +371,8 @@ def sol(matrix, target):
     CHECKS.append("group_problem_scope_and_prestart_gate")
 
     phase("시험 활성화·C++ 실제 채점·결과와 일반 통계 분리")
-    mysql("UPDATE group_contests SET starts_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),"
-          "ends_at=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 10 MINUTE) WHERE id=" + str(int(contest_id)))
+    postgres("UPDATE group_contests SET starts_at=(clock_timestamp() AT TIME ZONE 'UTC')-INTERVAL '1 minute',"
+             "ends_at=(clock_timestamp() AT TIME ZONE 'UTC')+INTERVAL '10 minutes' WHERE id=" + str(int(contest_id)))
     require(http("GET", base, token=member["token"]).get("status") == "ACTIVE",
             "시험 활성 시각 오류")
     exam_questions = http("GET", base + "/problems", token=member["token"])
@@ -410,7 +418,7 @@ def sol(matrix, target):
     CHECKS.append("contest_results_permissions_and_statistics")
 
     phase("종료·다시보기 OFF/ON·미참여 회원 차단")
-    mysql("UPDATE group_contests SET ends_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND) WHERE id=" +
+    postgres("UPDATE group_contests SET ends_at=(clock_timestamp() AT TIME ZONE 'UTC')-INTERVAL '1 second' WHERE id=" +
           str(int(contest_id)))
     require(http("GET", base, token=member["token"]).get("status") == "ENDED",
             "시험 종료 시각 오류")

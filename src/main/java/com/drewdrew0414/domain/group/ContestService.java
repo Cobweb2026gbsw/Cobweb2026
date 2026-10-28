@@ -36,7 +36,7 @@ public class ContestService {
         throw new IllegalStateException("Unexpected UTC datetime value");
     }
     private static String iso(Object value) { return local(value).toInstant(ZoneOffset.UTC).toString(); }
-    private LocalDateTime now() { return local(db.queryForObject("SELECT UTC_TIMESTAMP(6)",Timestamp.class)); }
+    private LocalDateTime now() { return local(db.queryForObject("SELECT (clock_timestamp() AT TIME ZONE 'UTC')",Timestamp.class)); }
     private static String status(Map<String,Object> contest,LocalDateTime now) {
         if(now.isBefore(local(contest.get("starts_at")))) return "UPCOMING";
         return now.isBefore(local(contest.get("ends_at")))?"ACTIVE":"ENDED";
@@ -129,13 +129,12 @@ public class ContestService {
             throw new ApiException(HttpStatus.NOT_FOUND,"그룹을 찾을 수 없습니다.");
         groups.requirePermission(gid,user,GroupPermission.CREATE_CONTESTS);
         validateWrite(request,true,null);
-        db.update("""
+        long cid=db.queryForObject("""
             INSERT INTO group_contests(group_id,title,starts_at,ends_at,replay_allowed,
               capture_protection,window_switch_protection,created_by)
-            VALUES(?,?,?,?,?,?,?,?)
-            """,gid,request.title().trim(),utc(request.startsAt()),utc(request.endsAt()),
+            VALUES(?,?,?,?,?,?,?,?) RETURNING id
+            """,Long.class,gid,request.title().trim(),utc(request.startsAt()),utc(request.endsAt()),
             request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),uid);
-        long cid=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
         var problemIds=lockProblems(gid,request.problemNumbers());
         insertProblems(cid,request.problemNumbers(),problemIds);
         if(!utc(request.startsAt()).isAfter(now()))
@@ -300,7 +299,7 @@ public class ContestService {
         // 문제 접근 권한·시험 시간창을 확인한 뒤 공개 시작 코드만 제공합니다.
         var allowedLanguages=languages;
         result.put("starterCodes",db.queryForList("""
-            SELECT language,source_code AS sourceCode FROM problem_starter_codes
+            SELECT language,source_code AS "sourceCode" FROM problem_starter_codes
             WHERE problem_id=? ORDER BY language
             """,p.get("id")).stream()
             .filter(code->allowedLanguages.contains(code.get("language"))).toList());
@@ -343,7 +342,7 @@ public class ContestService {
         groups.requirePermission(gid,user,GroupPermission.VIEW_CONTEST_RESULTS);
         var rows=db.queryForList("""
             SELECT u.id AS user_id,u.username,COUNT(first_ac.problem_id) AS solved_count,
-                COALESCE(SUM(GREATEST(0,TIMESTAMPDIFF(SECOND,c.starts_at,first_ac.first_ac_at))),0)
+                COALESCE(SUM(GREATEST(0,FLOOR(EXTRACT(EPOCH FROM (first_ac.first_ac_at-c.starts_at))))),0)
                     AS time_sum_seconds
             FROM (SELECT DISTINCT user_id FROM submissions WHERE contest_id=?) participants
             JOIN users u ON u.id=participants.user_id
@@ -382,13 +381,13 @@ public class ContestService {
             """,Long.class,cid,uid,event.eventId().toString())>0) return;
         long recent=db.queryForObject("""
             SELECT COUNT(*) FROM contest_events WHERE contest_id=? AND user_id=?
-              AND occurred_at>=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE)
+              AND occurred_at>=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minutes')
             """,Long.class,cid,uid);
         if(recent>=60) throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,"감시 이벤트가 너무 잦습니다.");
         int inserted=db.update("""
             INSERT INTO contest_events(contest_id,user_id,event_id,event_type,occurred_at)
-            SELECT id,?,?,?,UTC_TIMESTAMP(6) FROM group_contests
-            WHERE id=? AND starts_at<=UTC_TIMESTAMP(6) AND ends_at>UTC_TIMESTAMP(6)
+            SELECT id,?,?,?,(clock_timestamp() AT TIME ZONE 'UTC') FROM group_contests
+            WHERE id=? AND starts_at<=(clock_timestamp() AT TIME ZONE 'UTC') AND ends_at>(clock_timestamp() AT TIME ZONE 'UTC')
             """,uid,event.eventId().toString(),event.type().name(),cid);
         if(inserted!=1) throw new ApiException(HttpStatus.FORBIDDEN,"시험 응시 시간이 아닙니다.");
     }

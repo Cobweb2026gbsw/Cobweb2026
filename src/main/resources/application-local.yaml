@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3307/cobweb2026?serverTimezone=UTC
+    url: jdbc:postgresql://127.0.0.1:5433/cobweb2026
     username: cobweb
     password: ${DEV_DB_PASSWORD}
   flyway:

@@ -1,15 +1,19 @@
 # 공개 웹 호스트에서 실행하는 구성입니다. 채점 워커는 전용 호스트의 compose.worker.yaml로 분리합니다.
 services:
-  mysql:
-    image: mysql:8.4
+  postgres:
+    image: postgres:18
+    entrypoint: ["/bin/bash", "/cobweb-init/entrypoint.sh"]
+    command: ["postgres"]
     environment:
-      MYSQL_DATABASE: cobweb2026
-      MYSQL_USER: cobweb
-      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD required}
-    volumes: [mysql_data:/var/lib/mysql]
+      POSTGRES_DB: cobweb2026
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD required}
+      COBWEB_APP_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./deploy/postgres:/cobweb-init:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d cobweb2026"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -18,13 +22,18 @@ services:
     build: .
     env_file: .env
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/cobweb2026?serverTimezone=UTC
+      # env_file의 DB 관리자 비밀은 앱 프로세스에 상속하지 않습니다.
+      POSTGRES_ADMIN_PASSWORD: ''
+      DEV_ADMIN_PASSWORD: ''
+      DEV_ROOT_PASSWORD: ''
+      MYSQL_ROOT_PASSWORD: ''
+      DB_URL: jdbc:postgresql://postgres:5432/cobweb2026
       DB_USERNAME: cobweb
       FLYWAY_ENABLED: 'true'
       JUDGE_ENABLED: 'false'
       PUBLIC_BASE_URL: https://${SITE_DOMAIN:?SITE_DOMAIN required}
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
   proxy:
@@ -38,5 +47,5 @@ services:
     depends_on: [app]
     restart: unless-stopped
 volumes:
-  mysql_data:
+  postgres_data:
   caddy_data:

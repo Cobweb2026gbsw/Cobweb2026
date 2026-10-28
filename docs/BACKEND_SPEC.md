@@ -4,7 +4,7 @@
 
 현재 구현 범위는 회원 인증, 이메일 인증, 비밀번호 재설정, OAuth 연동, 문제 제작과 관리, 코드 제출과 비동기 채점, 그룹 역할·시간제 시험, 커뮤니티·공지와 수정 이력, 프로필과 랭킹입니다. 아래 기존 API 표에 더해 신규 기능 절의 API가 제공됩니다. 전체 카탈로그는 17개 언어이며 SQL 문제는 SQLite만, 일반 입출력은 SQL을 제외한 16개, 함수형은 SQL·엄랭을 제외한 15개 언어를 지원합니다.
 
-현재 스키마는 Flyway V1–V21입니다. 검증은 별도 테스트 DB와 ARM64 Docker를 사용하며, 과거 인증·함수형 호환성 보강 및 2026-10-21 V14 검증 이력은 마지막 절에서 날짜별로 구분합니다. 현재 작업의 최종 검증 결과는 `PROGRESS.md`를 기준으로 확인합니다.
+현재 스키마는 PostgreSQL 18의 단일 Flyway `V1__postgresql_schema.sql`입니다. 기존 MySQL V1–V22의 35개 테이블·보호 규칙·선택적 시드 정의를 통합했습니다. 기존 MySQL DB·설정·볼륨은 자동 변환하거나 삭제하지 않습니다. 검증은 별도 테스트 DB와 ARM64 Docker를 사용하며, 아래 과거 V2–V22 설명과 MySQL 검증 숫자는 전환 전 이력입니다. 현재 작업의 최종 검증 결과는 `PROGRESS.md`를 기준으로 확인합니다.
 
 ## 문서 구성
 
@@ -24,16 +24,16 @@
 |---|---|
 | 언어와 프레임워크 | Java 21, Spring Boot 4.1.1, Spring MVC |
 | 빌드 | Gradle Kotlin DSL, Gradle Wrapper |
-| 데이터베이스 | MySQL 8.4 기반 Compose 구성 |
+| 데이터베이스 | PostgreSQL 18 기반 Compose 구성 |
 | 영속성 | 인증과 회원은 Spring Data JPA, 문제·제출·프로필·랭킹은 JdbcTemplate |
-| 스키마 관리 | Flyway V1–V21. Hibernate `ddl-auto=none` |
+| 스키마 관리 | 단일 PostgreSQL V1. Hibernate `ddl-auto=none` |
 | 인증 | Spring Security, JJWT 0.12.6, BCrypt |
 | 입력 검증 | Jakarta Bean Validation |
 | 메일 | JavaMailSender, Gmail SMTP 설정, STARTTLS |
 | 외부 로그인 | RestClient 기반 Google, GitHub, Naver OAuth 클라이언트 |
-| 비동기 채점 | MySQL 제출 테이블을 큐로 사용, Spring Scheduled 워커 |
+| 비동기 채점 | PostgreSQL 제출 테이블을 큐로 사용, Spring Scheduled 워커 |
 | 코드 실행 | Docker CLI, 고정 Python 실행기, 다중 언어 이미지 |
-| 배포 구성 | MySQL, 웹 앱, 채점 워커, Caddy 리버스 프록시 |
+| 배포 구성 | PostgreSQL, 웹 앱, 채점 워커, Caddy 리버스 프록시 |
 
 HTTP 요청 스레드는 코드 제출을 저장할 뿐 사용자 코드를 실행하지 않습니다. 별도 워커가 DB 큐에서 제출을 가져와 컴파일하고 테스트 케이스를 실행한 후 판정과 통계를 트랜잭션으로 반영합니다. 별도의 Redis, 메시지 브로커, 객체 저장소는 사용하지 않습니다.
 
@@ -77,7 +77,9 @@ OAuth 콜백 성공은 JSON이 아닌 리다이렉트입니다. 애플리케이�
 
 ### 페이지 처리
 
-문제 목록과 랭킹은 `page`가 0부터 시작하고 페이지당 30건입니다. `page`는 0 이상 10000 이하로 보정되며 음수는 0, 초과 값은 10000으로 처리됩니다. 응답은 배열만 반환하고 `total`, `totalPages`, `hasNext`는 없습니다. 내 제출은 최근 50건 고정이며 페이지 매개변수가 없습니다.
+문제 목록과 랭킹은 `page`가 0부터 시작하고 페이지당 30건입니다. 기존 배열 응답의 `page`는 0 이상 10000 이하로 보정되며 음수는 0, 초과 값은 10000으로 처리됩니다. 공개/내 제작 문제 목록에 `pagination=true`를 지정하면 아래의 페이지 메타데이터 객체를 반환합니다. 지정하지 않거나 false이면 기존 배열 계약을 유지하며, 랭킹 API는 계속 배열만 반환합니다. 내 제출은 최근 50건 고정이며 페이지 매개변수가 없습니다.
+
+`pagination=true`의 data는 `{items, page, pageSize, totalItems, totalPages}`이며 `pageSize=30`입니다. `totalItems`와 `totalPages`는 현재 검색·난이도·개인 풀이 여부·공개 범위/소유권을 모두 적용한 정수입니다. 행과 COUNT가 같은 WHERE 및 읽기 전용 REPEATABLE READ 스냅샷을 사용하므로 비공개 문제의 존재나 다른 계정의 내 제작 문제 개수를 추가로 노출하지 않습니다. 새 모드는 음수 page를 0으로, 존재하지 않는 페이지를 실제 마지막 페이지로 보정하며 OFFSET을 long으로 계산합니다. 결과가 없으면 `items=[]`, `page=0`, `totalItems=0`, `totalPages=0`입니다. problem_number의 INT 고유 범위상 개수/총페이지는 JavaScript의 정확한 정수 범위 안에 있습니다.
 
 ## 전체 API 목록
 
@@ -89,6 +91,7 @@ OAuth 콜백 성공은 JSON이 아닌 리다이렉트입니다. 애플리케이�
 | POST | `/api/email-verifications/verify` | 공개 | 이메일 코드 확인 | null |
 | POST | `/api/auth/signup` | 공개 | 일반 회원가입 | 회원 ID 숫자 |
 | POST | `/api/auth/login` | 공개 | 아이디와 비밀번호 로그인 | TokenResponse |
+| GET | `/api/auth/login-options` | 공개 | Secure 쿠키 필요 여부와 활성 로컬 HTTPS 포트(null 가능), 호스트·비밀값 미반환 | LoginOptions |
 | POST | `/api/auth/reissue` | refresh 쿠키 | 토큰 재발급 | TokenResponse |
 | POST | `/api/auth/logout` | 회원 | refresh 토큰 폐기 | null |
 | POST | `/api/auth/password-reset/request` | 공개 | 재설정 코드 요청 | null |
@@ -135,10 +138,10 @@ JWT 필터는 토큰 서명과 만료를 검증한 후 username으로 DB의 현�
 | access 만료 | 기본 1,800,000 ms, 30분 |
 | access 클레임 | subject는 사용자 ID, username, role, tokenVersion, issuedAt, expiration |
 | refresh 만료 | 기본 1,209,600,000 ms, 14일 |
-| refresh 클레임 | subject는 사용자 ID, UUID jti, issuedAt, expiration |
+| refresh 클레임 | subject는 사용자 ID, UUID jti, rememberMe(쿠키 영속 여부), issuedAt, expiration |
 | 서버 저장 | refresh 원문의 SHA-256 지문과 만료 시각을 DB에 저장. 사용자당 1개 UNIQUE |
 | refresh 회전 | 로그인·재발급 시 기존 토큰 삭제와 flush 후 새 토큰 저장 |
-| refresh 쿠키 | `refreshToken`, HttpOnly, Secure, SameSite=Lax, Path=/ |
+| refresh 쿠키 | `refreshToken`, HttpOnly, Secure, SameSite=Lax, Path=/. 아이디 로그인 rememberMe=true이면 Max-Age=기본14일, false/누락이면 세션 쿠키 |
 | 세션 | STATELESS. 서버 HTTP 세션을 로그인 상태 저장용으로 사용하지 않음 |
 
 토큰 응답 예시는 다음과 같습니다. `expiresIn`은 초가 아니라 밀리초입니다.
@@ -209,7 +212,9 @@ SecureRandom으로 숫자 8자리 코드를 만들며 앞자리 0을 보존하�
 
 ### 로그인과 재발급과 로그아웃
 
-`POST /api/auth/login` 요청은 `{"username":"sample_user","password":"example-password"}`입니다. 두 필드 모두 비공백 문자열이고 username은 최대 16자입니다. 사용자 행을 비관적 잠금으로 조회하여 상태와 비밀번호를 검사합니다.
+`POST /api/auth/login` 요청은 `{"username":"sample_user","password":"example-password","rememberMe":false}`입니다. username/password 모두 비공백 문자열이고 username은 최대 16자입니다. rememberMe는 선택 boolean이며 누락 시 false입니다. true이면 refresh 쿠키가 기본 14일 유지되고 false이면 Max-Age/Expires 없는 세션 쿠키입니다. 이 정책은 서명된 refresh JWT에 저장하여 재발급 때 유지하며, 필드 없는 기존 토큰과 OAuth 경로는 종전의 영속 정책을 보존합니다. 브라우저의 세션 복원 기능까지 강제로 종료하는 기능은 아닙니다. 사용자 행을 비관적 잠금으로 조회하여 상태와 비밀번호를 검사합니다.
+
+프런트는 일반 IP/호스트의 HTTP에서 비밀번호·소셜 로그인 요청을 보내지 않고 HTTPS 접속을 안내합니다. `GET /api/auth/login-options`는 `{secureCookieRequired:true,httpsPort:<활성 local.https.port 또는 null>}`만 반환하며 외부 URL이나 인증서 정보를 반환하지 않습니다. 현재 브라우저의 동일 호스트에만 HTTPS 링크를 만들고 설정되지 않은 포트는 추정하지 않습니다. localhost/127.0.0.1 루프백 개발 예외는 유지합니다. Secure 쿠키의 보안을 낮추거나 토큰을 localStorage/URL로 옮기지 않습니다. localhost와 IP의 로그인 상태는 공유되지 않으며 각 호스트 최초 로그인이 필요합니다. 서버 LAN IP 인증서·다른 기기의 신뢰 설정과 실제 쿠키 전달은 별도 검증 대상입니다.
 
 - 없는 사용자: 404, 사용자 ID 없는 FAIL_USER_NOT_FOUND 감사 로그 저장.
 - ACTIVE가 아닌 사용자: 403, BANNED_USER 로그 저장.
@@ -267,6 +272,8 @@ SecureRandom으로 숫자 8자리 코드를 만들며 앞자리 0을 보존하�
 ### 공개 목록
 
 `GET /api/problems?page=0&search=제목`
+
+번호 버튼에 필요한 총페이지를 함께 받으려면 `GET /api/problems?page=0&search=제목&pagination=true`를 사용합니다. 같은 선택 매개변수는 `GET /api/problems/mine`에도 적용되며 본인 인증을 그대로 요구합니다. 반복 `difficulty=ELITE:1&difficulty=EXPERT:5`와 `solved=all|solved|unsolved`도 COUNT와 행에 동일하게 적용합니다.
 
 PUBLISHED이면서 PUBLIC인 문제만 반환합니다. 제목에 SQL LIKE `%search%`를 적용하며 problem_number 오름차순입니다. 검색값은 바인딩하지만 `%`와 `_`를 검색용 리터럴로 이스케이프하지 않으므로 LIKE 와일드카드로 동작합니다.
 
@@ -547,7 +554,7 @@ def sol(matrix: list[list[int]], target: tuple[int, int]) -> bool:
 
 ### SQL 모드
 
-SQL은 서비스 MySQL과 연결하지 않고 케이스마다 새로운 SQLite `:memory:` DB를 만듭니다. 테스트 input_data는 테이블 생성과 데이터 입력 SQL이며, 제출 소스는 SELECT나 WITH 등의 단일 읽기 쿼리입니다.
+SQL 문제 채점은 서비스 PostgreSQL과 연결하지 않고 케이스마다 새로운 SQLite `:memory:` DB를 만듭니다. 테스트 input_data는 테이블 생성과 데이터 입력 SQL이며, 제출 소스는 SELECT나 WITH 등의 단일 읽기 쿼리입니다. 앱 DB 전환과 제출 SQL 채점 엔진은 별개입니다.
 
 ```sql
 -- 테스트 입력 예시
@@ -622,11 +629,17 @@ API가 빈 코드·잘못된 유니코드·UTF-8 64KiB 초과를 거절하며, V
 
 이 예시의 ID·시간은 설명용입니다. 판정 전 execution_time_ms와 judged_at은 null이고 cases는 빈 배열일 수 있습니다. 결과는 최종 반영 트랜잭션에서 저장하므로 실행 중 개별 케이스 진행 상황을 계속 반환하지 않습니다. 일반 제출의 소스 코드, 테스트 입력·정답, 실제 출력, stderr 원문, 최대 메모리 사용량은 이 API로 반환하지 않습니다. 컴파일/실행 오류일 때만 `diagnostic`에 `phase`, 허용된 `errorType`, 고정 한국어 `message`, 제출 파일의 유효한 `locations`(최대 5개)를 반환합니다. 원문 로그·코드 조각·인자값·내부 경로는 저장/반환하지 않습니다. 기존 제출 조회 및 시험 다시보기 권한을 그대로 적용하고 캐시 재사용 시에도 안전 진단만 복제합니다. 제출 상세에는 problem_number와 problem_title도 없으므로 필요한 경우 목록의 값을 함께 보관해야 합니다.
 
-### 사용자 입력 테스트 실행
+### 비공개 2개 샘플 및 사용자 입력 테스트 실행
 
-`POST /api/problems/{number}/test-runs`는 인증된 현재 사용자의 문제 열람 권한과 허용 언어를 확인하고 `{language,sourceCode,cases:[{input,expected}]}`를 별도 DB 큐에 접수해 ID를 반환합니다. 테스트는 최대 3개, 코드·각 입력·각 예상값은 UTF-8 64KiB, 직렬화한 전체 입력 목록은 512KiB까지입니다. 범용 함수는 공개 서명과 인자/반환값 타입을 검증합니다. 진행 중 사용자당 2개·전체 60개, 사용자당 분당 10회 제한이며 시험에 연결된 문제는 이 API로 우회 실행할 수 없습니다.
+`POST /api/problems/{number}/test-runs`는 인증된 현재 사용자의 문제 열람 권한과 허용 언어를 확인하고 별도 DB 큐에 접수해 ID를 반환합니다. 진행 중 사용자당 2개·전체 60개, 사용자당 분당 10회 제한이며 시험에 연결된 문제는 이 API로 우회 실행할 수 없습니다. 소스는 UTF-8 64KiB 이하입니다.
 
-`GET /api/test-runs/{id}`는 **본인만** 현재 문제 열람 권한을 다시 검사한 뒤 `{id,problemNumber,language,status,results}`를 반환합니다. 상태는 QUEUED/RUNNING/COMPLETED/SYSTEM_ERROR이며 각 결과는 사용자 입력의 `input`, `expected`, `actual`, `status`, `timeMs`, 안전한 `diagnostic`입니다. 정식 제출·해결·문제 통계와 별개이며 비공개 테스트 테이블은 읽지 않습니다. 웹은 Docker를 실행하지 않고 별도 워커만 기존 격리 실행기를 사용합니다. 입력·예상값을 컨테이너에 함께 주지 않으며 예상값은 호스트 비교에만 사용합니다. RUNNING의 4분 lease와 fencing token으로 늦은 완료를 거절하고 중단된 테스트는 SYSTEM_ERROR로 마감합니다. 사용자 테스트 출력만 최대 64KiB 수집하며 정식 채점 경로의 실제 출력은 공개하지 않습니다.
+풀이 화면은 `{language,sourceCode,privateSample:true}`를 전송합니다. 서버는 활성 채점 케이스를 display_order·id 순으로 정확히 2개 선택해 별도 비공개 테이블에 스냅샷을 저장합니다. 케이스가 부족하면 409이며 클라이언트 지정 cases와 섞지 않습니다. 각 입력/예상값은 16MiB, 두 케이스의 입력·예상값 합은 32MiB 이하입니다. V22는 모드 플래그와 이 스냅샷 테이블을 추가하며 기존 512KiB 수동 입력 JSON 제약은 완화하지 않습니다. 워커는 정식 채점 경로로 실행하므로 64KiB 수동 출력 상한 때문에 큰 함수 반환을 오답 처리하지 않습니다.
+
+`GET /api/test-runs/{id}`는 **본인만** 현재 문제 열람 권한을 다시 검사한 뒤 결과를 반환합니다. 상태는 QUEUED/RUNNING/COMPLETED/SYSTEM_ERROR입니다. privateSample=true이면 `{id,problemNumber,language,status,privateSample:true,testCount:2,results:[{status,timeMs}]}`만 반환하며 입력·예상값·실제 출력·진단·케이스 ID를 포함하지 않습니다. DB의 모드 플래그를 기준으로 저장과 응답 두 경계에서 허용 필드만 다시 구성하므로 저장 결과에 원문 필드가 섞여도 전달하지 않습니다. 제출 코드가 입력을 그대로 출력해도 테스트 응답으로 볼 수 없습니다.
+
+기존 호환 수동 모드는 privateSample을 생략/false로 두고 `{language,sourceCode,cases:[{input,expected}]}`를 보냅니다. 사용자가 제공한 테스트 최대 3개, 각 입력·예상값·표시 출력은 UTF-8 64KiB, 직렬화 입력 목록은 512KiB 상한을 유지합니다. 범용 함수는 공개 서명과 타입을 검사하며 이 모드만 사용자 입력의 input/expected/actual/status/timeMs/안전한 diagnostic을 반환합니다. 비공개 케이스는 이 모드에서 조회하지 않습니다.
+
+두 모드 모두 정식 제출·해결·문제 통계와 별개입니다. 웹은 Docker를 실행하지 않고 별도 워커만 기존 격리 실행기를 사용합니다. 예상값은 컨테이너에 전달하지 않고 호스트에서만 비교합니다. RUNNING의 4분 lease와 fencing token으로 늦은 완료를 거절하고 중단된 테스트는 SYSTEM_ERROR로 마감합니다. 정식 채점 경로의 실제 출력은 공개하지 않습니다.
 
 `reusedFromSubmissionId`는 이번 판정이 재사용한 본인 원본 제출 ID 또는 null입니다. 재사용해도 새 제출 ID와 이번 submitted_at/judged_at을
 유지하며, 케이스 결과와 execution_time_ms는 원본 측정값입니다. 일반 상세는 소스를 반환하지 않지만 시험 상세는 기존 다시보기/결과 권한 검사 후 `sourceCode`를 반환합니다.
@@ -844,6 +857,10 @@ V16은 user_id·problem_id·language·contest_id·source_sha256·judge_context_s
 
 ### 마이그레이션과 시드
 
+현재 정식 SQL은 `db/migration/V1__postgresql_schema.sql` 하나입니다. PostgreSQL identity, JSONB 5필드, BOOLEAN, UTC `TIMESTAMP(6)`, lower() 고유 인덱스, 공식 그룹 보호 6개 및 수정 시각 갱신 2개의 트리거를 사용합니다. 체인 레이저는 같은 파일의 `cobweb_seed_chain_laser(integer)` 함수를 Java가 선택적으로 호출하므로 별도 시드 SQL 파일이 없습니다. 문제 JSON 카탈로그는 기존 단일 데이터 원본을 유지합니다. 실제 MySQL 데이터 이관에는 별도 백업·타입/ID·시퀀스/UTC·대소문자·NUL 검사와 승인된 전환이 필요합니다. 이전 MySQL의 Flyway 이력을 새 PostgreSQL에 복사하거나 repair로 덮어쓰지 않습니다.
+
+아래 V1–V22 항목은 **통합 전 MySQL 버전별 기능 이력**입니다. 현재 배포가 이 파일들을 순서대로 실행한다는 의미는 아닙니다.
+
 - V1은 회원·인증·그룹·문제·제출·통계 관련 18개 테이블을 정의합니다.
 - V2는 problem_number_sequence, execution_mode, claimed_at, judge_token, 큐 인덱스를 추가합니다. 번호 1000이며 제목이 체인 레이저인 기존 문제의 모드를 FUNCTION으로 지정합니다.
 - V3는 SQL 모드와 케이스 COMPILATION_ERROR를 추가하고 기존 STDIN 문제에 12개 언어를 INSERT IGNORE합니다.
@@ -864,6 +881,7 @@ V16은 user_id·problem_id·language·contest_id·source_sha256·judge_context_s
 - V19는 nullable `problems.function_signature` JSON과 `curriculum_problem_entries` 등록 원장을 추가합니다. 기존 체인 레이저 함수 규격은 NULL로 보존합니다.
 - V20은 최대 8192바이트의 안전한 `submissions.diagnostic_json`을 추가합니다. 원문 stderr 컬럼은 만들지 않습니다.
 - V21은 정식 제출 통계와 분리된 `user_test_runs` 큐 및 접수 상한 잠금 행을 추가합니다. 사용자 입력 목록은 512KiB, 결과 JSON은 2MiB 이하이며 사용자/문제 FK와 lease·토큰을 보관합니다.
+- V22는 `private_sample` 플래그와 `user_test_run_private_cases` 스냅샷을 추가합니다. 정확히 두 케이스의 서버 전용 입력/예상값과 비교 규격을 고정하고, 결과는 저장/응답 양쪽에서 status/timeMs만 남깁니다. 비공개 샘플의 수용량 검사는 대용량 스냅샷 조회·서명 JSON 처리보다 먼저 수행하며 기존 수동 모드의 검증 순서는 유지합니다.
 - 기본 웹 기동의 `curriculum.level0.enabled=true`는 Level0Data가 1000~1099 입문 문제를 하나의 트랜잭션으로 등록합니다. 5개 단계에 INITIATE 5~1을 각 20개 배정합니다. 번호/일반 문제 제목 충돌과 불완전한 등록 원장은 전체 거절하며 사용자 자료를 덮어쓰지 않습니다.
 - 기존 시스템 작성자의 1000번 체인 레이저는 Level0Data에서 1100 이상의 빈 번호로 보존합니다. 후속 AlgorithmData는 1100번만 허용하고 같은 ID로 한 번 공개를 복구하며, 다른 번호이면 임의 변경하지 않고 전체 신규 등록을 거절합니다. 문제 ID·제출·테스트·시험 연결은 유지합니다. 재기동은 등록 원장과 카탈로그 지문을 확인하며 관리자의 이후 편집을 덮어쓰지 않습니다.
 - 같은 활성화 설정에서 AlgorithmData가 SKILLED 75개(1101~1175), ELITE 90개(1176~1265)와 체인 공개 복구를 한 트랜잭션으로 등록합니다. `level1-v1`, `level2-v1`, `elite-chain-v1` 원장은 중복·불완전 등록·원본 변경을 거절합니다. 최초 신규 DB에서만 비어 있는 1100번에 기존 체인 시드를 사용합니다. 두 과정 사이의 제목 중복과 기존 번호·일반 제목 충돌을 먼저 검사하며 이후 관리자 편집/비공개 전환을 덮어쓰지 않습니다.
@@ -926,8 +944,8 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 
 | 환경변수 또는 설정 | 용도와 기본값 |
 |---|---|
-| DB_URL | 기본 localhost:3306/cobweb2026 JDBC URL, 기본 URL의 serverTimezone은 Asia/Seoul |
-| DB_USERNAME, DB_PASSWORD | DB 접속. 기본 사용자 root, 비밀번호는 외부 값 |
+| DB_URL | 기본 jdbc:postgresql://localhost:5432/cobweb2026 |
+| DB_USERNAME, DB_PASSWORD | DB 접속. 기본 사용자 cobweb, 비밀번호는 외부 값 |
 | FLYWAY_ENABLED | 기본 false. local과 prod 프로필은 true |
 | JUDGE_ENABLED | 기본 false. true일 때 워커 실행 |
 | JUDGE_IMAGE | 기본 cobweb-languages:local |
@@ -940,22 +958,22 @@ Security 필터 오류나 프록시의 요청 크기 초과는 위 Advice 밖에
 | GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET | GitHub OAuth 설정 |
 | NAVER_CLIENT_ID, NAVER_CLIENT_SECRET | Naver OAuth 설정 |
 | PUBLIC_BASE_URL | 기본 http://localhost:8080. OAuth callback URL의 기준 |
-| DEV_DB_PASSWORD, DEV_ROOT_PASSWORD | 개발 Compose DB 설정 |
-| MYSQL_ROOT_PASSWORD, SITE_DOMAIN | 운영 Compose DB와 프록시 설정 |
+| DEV_DB_PASSWORD, DEV_ADMIN_PASSWORD | 개발 PostgreSQL의 앱/관리자 비밀번호 |
+| POSTGRES_ADMIN_PASSWORD, SITE_DOMAIN | 운영 PostgreSQL 관리자와 프록시 설정 |
 | WORKER_DB_URL, WORKER_DB_USERNAME, WORKER_DB_PASSWORD | 전용 워커 호스트에서 웹 앱과 동일한 DB의 사설 TLS 엔드포인트 및 전용 계정 |
 | TEST_DB_URL, TEST_DB_USERNAME, TEST_DB_PASSWORD | 별도 테스트 DB 접속 설정 |
 | DOCKER_JUDGE_TEST | true일 때 Docker 조건부 테스트 실행 |
 | demo.seed | true일 때 선택적 1000번 시드. 명시적 Spring 설정으로 전달 |
 
-애플리케이션의 기본 Flyway 비활성화는 기존 DB를 의도 없이 변경하지 않기 위한 설정입니다. `baseline-on-migrate=false`이며 local 프로필은 localhost:3307, 사용자 cobweb, UTC JDBC URL을 사용합니다. prod는 Flyway 활성화, SQL 출력 비활성화, graceful shutdown, 전달 헤더 자동 해석 비활성화입니다. JVM·DB·JSON에 걸친 시간대 통일은 별도 운영 확인이 필요합니다.
+애플리케이션의 기본 Flyway 비활성화는 기존 DB를 의도 없이 변경하지 않기 위한 설정입니다. `baseline-on-migrate=false`이며 local 프로필은 localhost:5433의 PostgreSQL, 사용자 cobweb을 사용합니다. run.sh는 postgres 관리자로 단발 마이그레이션 후 웹·워커를 비관리자로 시작합니다. 기본 프로젝트는 cobweb-postgres-local, 설정·로그·TLS는 `.local/run/<project>/postgres/`로 분리합니다. prod는 Flyway 활성화, SQL 출력 비활성화, graceful shutdown, 전달 헤더 자동 해석 비활성화입니다. DB의 UTC timestamp와 런타임 clock_timestamp UTC 변환을 사용하지만 운영 JVM·DB·JSON 시간대 전체는 별도 배포 검증이 필요합니다.
 
 ### 배포 구성과 신뢰 경계
 
-- 개발 Compose는 MySQL 8.4를 127.0.0.1:3307에 노출하고 영속 볼륨과 healthcheck를 사용합니다.
+- 개발 Compose는 PostgreSQL 18을 127.0.0.1:5433에 노출하고 별도 영속 볼륨과 healthcheck를 사용합니다. 기존 MySQL 볼륨은 재사용하지 않습니다.
 - 앱 Dockerfile은 Java 21 JRE와 Docker CLI, 빌드된 JAR을 포함하고 기본 UID 10001로 prod 프로필을 실행합니다.
 - 운영 Compose의 app은 JUDGE_ENABLED=false이며 Docker 소켓을 받지 않습니다.
 - worker는 전용 호스트의 `compose.worker.yaml`에서 같은 버전의 앱 JAR 이미지로 실행합니다. JUDGE_ENABLED=true, user 0:0, Docker 소켓과 호스트 /tmp/cobweb-judge를 마운트합니다. 워커 자체는 root지만 제출 컨테이너는 UID 65534입니다. 웹 호스트의 `compose.prod.yaml`에는 worker가 없습니다.
-- worker는 web application과 Flyway를 끄고 Linux capability 제거·no-new-privileges·PID 한도를 둡니다. MySQL을 함께 기동하지 않고 `WORKER_DB_URL`로 웹 앱과 동일한 DB의 사설 TLS 엔드포인트에 연결합니다. 기본 운영 MySQL에는 공개 포트가 없으므로 사설 경로/터널, DB 호스트 인증서, 방화벽, 최소 권한 워커 DB 계정을 별도로 준비해야 합니다. Docker 소켓은 호스트 관리자 권한에 준합니다. 운영 프록시는 app만 대상으로 하며 worker 포트를 호스트에 publish하지 않습니다.
+- worker는 web application과 Flyway를 끄고 Linux capability 제거·no-new-privileges·PID 한도를 둡니다. PostgreSQL을 함께 기동하지 않고 `WORKER_DB_URL`로 웹 앱과 동일한 DB의 사설 TLS 엔드포인트에 연결합니다. 기본 운영 DB에는 공개 포트가 없으므로 사설 경로/터널, DB 호스트 인증서, 방화벽, 최소 권한 워커 DB 계정을 별도로 준비해야 합니다. Docker 소켓은 호스트 관리자 권한에 준합니다. 운영 프록시는 app만 대상으로 하며 worker 포트를 호스트에 publish하지 않습니다.
 - 제출 컨테이너에는 .env, DB 자격 증명, Docker 소켓, 기대 정답을 전달하지 않습니다.
 - Caddy는 80·443을 공개하고 app:8080으로 프록시하며 요청 본문 최대 2MB와 nosniff·no-referrer·DENY 헤더를 설정합니다. DTO상 가능한 큰 테스트 묶음도 이 프록시 제한에는 걸릴 수 있습니다.
 - 별도 CORS 허용 정책은 없고 현재 정적 프런트엔드와 API의 same-origin 구성을 전제로 합니다.
@@ -1078,10 +1096,10 @@ Node 인증, Compose를 검사하고 judge-full은 채점 이미지를 빌드해
 | 언어와 제출 | `src/main/java/com/drewdrew0414/domain/submission/Language.java`, `LanguageController.java`, `SubmissionController.java`, `SubmissionService.java` |
 | 워커와 격리 | `src/main/java/com/drewdrew0414/domain/submission/JudgeWorker.java`, `DockerJudge.java`, `judge/runner.py`, `judge/function/`, `judge/Dockerfile`, `judge/csharp/` |
 | 프로필과 랭킹 | `src/main/java/com/drewdrew0414/domain/user/controller/ProfileController.java` |
-| 물리 스키마 | `src/main/resources/db/migration/V1__initial_schema.sql`부터 `V21__user_test_runs.sql`까지의 순차 마이그레이션 |
+| 물리 스키마 | `src/main/resources/db/migration/V1__postgresql_schema.sql` 단일 PostgreSQL 초기화 SQL |
 | 그룹/시험 | `src/main/java/com/drewdrew0414/domain/group/`, `domain/submission/ContestSubmissionController.java` |
 | 커뮤니티/공지/보존 | `src/main/java/com/drewdrew0414/domain/community/`, `V12__community_history.sql` |
-| 데모 | `src/main/java/com/drewdrew0414/global/config/DemoData.java`, `src/main/resources/demo/chain-laser.sql` |
+| 데모 | `src/main/java/com/drewdrew0414/global/config/DemoData.java`, 단일 SQL의 `cobweb_seed_chain_laser(integer)` |
 | 설정과 배포 | `src/main/resources/application*.yaml`, `build.gradle.kts`, `compose.dev.yaml`, `compose.prod.yaml`, `Dockerfile`, `deploy/Caddyfile` |
 | 테스트 | `src/test/java/`, `src/test/resources/application-test.yaml` |
 

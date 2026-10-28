@@ -120,7 +120,7 @@ public class GroupService {
         var rows=db.queryForList("""
             SELECT g.id,g.group_name,g.group_description,g.system_key,
                 (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id=g.id) AS member_count
-            FROM study_groups g WHERE g.status='ACCEPTED' AND g.group_name LIKE ?
+            FROM study_groups g WHERE g.status='ACCEPTED' AND g.group_name ILIKE ?
             ORDER BY g.id DESC LIMIT 30 OFFSET ?
             ""","%"+Objects.toString(search,"")+"%",offset(page));
         return rows.stream().map(r -> {
@@ -199,7 +199,7 @@ public class GroupService {
                    p.submission_count,p.accepted_count,
                    EXISTS(SELECT 1 FROM contest_problems used WHERE used.problem_id=p.id) AS used_in_contest
             FROM problems p WHERE p.group_id=? AND p.visibility='GROUP' AND p.status='PUBLISHED'
-              AND p.problem_title LIKE ?
+              AND p.problem_title ILIKE ?
               AND (?=TRUE OR p.author_id=? OR NOT EXISTS
                   (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=p.id))
             ORDER BY p.problem_number LIMIT 30 OFFSET ?
@@ -219,7 +219,7 @@ public class GroupService {
             SELECT p.problem_number,p.problem_title,p.status,p.visibility AS current_visibility,
                    p.author_id,u.username AS author_username,p.updated_at
             FROM problems p JOIN users u ON u.id=p.author_id
-            WHERE p.group_id=? AND p.problem_title LIKE ?
+            WHERE p.group_id=? AND p.problem_title ILIKE ?
             ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET ?
             """,gid,"%"+Objects.toString(search,"")+"%",offset(page));
         return rows.stream().map(r -> Map.<String,Object>of(
@@ -238,13 +238,13 @@ public class GroupService {
             throw new ApiException(HttpStatus.FORBIDDEN,"그룹 생성에는 해결한 문제 50개가 필요합니다.");
         membershipRoom(uid);
         String groupName=name(request.name());
+        long gid;
         try {
-            db.update("INSERT INTO study_groups(group_name,group_description,status) VALUES(?,?,'ACCEPTED')",
-                groupName,request.description().trim());
+            gid=db.queryForObject("INSERT INTO study_groups(group_name,group_description,status) VALUES(?,?,'ACCEPTED') RETURNING id",
+                Long.class,groupName,request.description().trim());
         } catch(DuplicateKeyException e) {
             throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 그룹 이름입니다.");
         }
-        long gid=db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
         insertBuiltinRoles(gid);
         long ownerId=builtinRoleId(gid,"OWNER");
         db.update("""
@@ -269,26 +269,26 @@ public class GroupService {
             INSERT INTO group_roles(group_id,role_name,builtin_key,can_view_problems,can_create_problems,
               can_edit_problems,can_review_problems,can_manage_members,can_manage_roles,can_manage_group,
               can_create_contests,can_manage_contests,can_view_contest_results,can_take_contests)
-            VALUES(?,'소유자','OWNER',1,1,1,1,1,1,1,1,1,1,1)
+            VALUES(?,'소유자','OWNER',TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE)
             """,gid);
         db.update("""
             INSERT INTO group_roles(group_id,role_name,builtin_key,can_view_problems,can_create_problems,
               can_edit_problems,can_review_problems,can_manage_members,can_manage_group,
               can_create_contests,can_manage_contests,can_view_contest_results,can_take_contests)
-            VALUES(?,'관리자','MANAGER',1,1,1,1,1,1,1,1,1,1)
+            VALUES(?,'관리자','MANAGER',TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE)
             """,gid);
         db.update("""
             INSERT INTO group_roles(group_id,role_name,builtin_key,can_view_problems,can_create_problems,
-              can_edit_problems,can_take_contests) VALUES(?,'출제자','AUTHOR',1,1,1,1)
+              can_edit_problems,can_take_contests) VALUES(?,'출제자','AUTHOR',TRUE,TRUE,TRUE,TRUE)
             """,gid);
         db.update("""
             INSERT INTO group_roles(group_id,role_name,builtin_key,can_view_problems,can_create_contests,
               can_manage_contests,can_view_contest_results,can_take_contests)
-            VALUES(?,'코테 관리자','CONTEST_MANAGER',1,1,1,1,1)
+            VALUES(?,'코테 관리자','CONTEST_MANAGER',TRUE,TRUE,TRUE,TRUE,TRUE)
             """,gid);
         db.update("""
             INSERT INTO group_roles(group_id,role_name,builtin_key,can_view_problems,can_take_contests)
-            VALUES(?,'회원','MEMBER',1,1)
+            VALUES(?,'회원','MEMBER',TRUE,TRUE)
             """,gid);
     }
     @Transactional
@@ -377,11 +377,10 @@ public class GroupService {
         String columns=Arrays.stream(GroupPermission.values()).map(GroupPermission::column).reduce((a,b)->a+","+b).orElseThrow();
         String placeholders=String.join(",",Collections.nCopies(GroupPermission.values().length,"?"));
         try {
-            db.update("INSERT INTO group_roles(group_id,role_name,"+columns+") VALUES(?,?,"+placeholders+")",values.toArray());
+            return db.queryForObject("INSERT INTO group_roles(group_id,role_name,"+columns+") VALUES(?,?,"+placeholders+") RETURNING id",Long.class,values.toArray());
         } catch(DuplicateKeyException e) {
             throw new ApiException(HttpStatus.CONFLICT,"이미 사용 중인 역할 이름입니다.");
         }
-        return db.queryForObject("SELECT LAST_INSERT_ID()",Long.class);
     }
     @Transactional
     public void updateRole(long gid,long roleId,GroupRequests.RoleWrite request,CustomUserDetails user) {

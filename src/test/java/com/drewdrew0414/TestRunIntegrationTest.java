@@ -56,7 +56,7 @@ class TestRunIntegrationTest {
 
     @BeforeEach void setup() {
         assertTrue(Set.of("cobweb_test","cobweb_feature_test","cobweb_revalidation_test")
-            .contains(db.queryForObject("SELECT DATABASE()",String.class)),"A dedicated test database is required");
+            .contains(db.queryForObject("SELECT current_database()",String.class)),"A dedicated test database is required");
         author=account(Role.OPERATOR);solver=account(Role.USER);other=account(Role.USER);
     }
     @AfterEach void cleanupOwnFixtures() {
@@ -105,7 +105,7 @@ class TestRunIntegrationTest {
         for(var body:invalid)assertEquals(400,http("POST",endpoint(number),body,solver).statusCode());
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM user_test_runs WHERE user_id=?",Integer.class,solver.getUserId()));
         long id=data(http("POST",endpoint(number),request("PYTHON",source,List.of(valid,valid,valid)),solver)).asLong();
-        assertEquals(3,db.queryForObject("SELECT JSON_LENGTH(input_cases) FROM user_test_runs WHERE id=?",Integer.class,id));
+        assertEquals(3,db.queryForObject("SELECT jsonb_array_length(input_cases) FROM user_test_runs WHERE id=?",Integer.class,id));
         problems.setVisibility(number,new ProblemRequests.Visibility("PRIVATE","custom test access revoked"),author);
         assertEquals(404,http("GET","/api/test-runs/"+id,null,solver).statusCode());
         assertEquals(404,http("POST",endpoint(number),request("PYTHON",source,List.of(valid)),solver).statusCode());
@@ -116,10 +116,10 @@ class TestRunIntegrationTest {
         data(http("POST",endpoint(number),body,solver));data(http("POST",endpoint(number),body,solver));
         assertEquals(429,http("POST",endpoint(number),body,solver).statusCode());
         assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM user_test_runs WHERE user_id=?",Integer.class,solver.getUserId()));
-        db.update("UPDATE user_test_runs SET status='COMPLETED',completed_at=CURRENT_TIMESTAMP(6) WHERE user_id=?",solver.getUserId());
+        db.update("UPDATE user_test_runs SET status='COMPLETED',completed_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE user_id=?",solver.getUserId());
         for(int index=2;index<10;index++){
             long id=data(http("POST",endpoint(number),body,solver)).asLong();
-            db.update("UPDATE user_test_runs SET status='COMPLETED',completed_at=CURRENT_TIMESTAMP(6) WHERE id=? AND user_id=?",id,solver.getUserId());
+            db.update("UPDATE user_test_runs SET status='COMPLETED',completed_at=(clock_timestamp() AT TIME ZONE 'UTC') WHERE id=? AND user_id=?",id,solver.getUserId());
         }
         assertEquals(429,http("POST",endpoint(number),body,solver).statusCode());
         assertEquals(10,db.queryForObject("SELECT COUNT(*) FROM user_test_runs WHERE user_id=?",Integer.class,solver.getUserId()));
@@ -130,7 +130,7 @@ class TestRunIntegrationTest {
         String cases=json.writeValueAsString(List.of(new TestRunService.Case("{\"args\":[1]}","1")));
         for(int index=0;index<60;index++)db.update("""
             INSERT INTO user_test_runs(user_id,problem_id,language,source_code,execution_mode,function_signature,
-                time_limit_ms,memory_limit_mb,input_cases) VALUES(?,?,'PYTHON',?,'FUNCTION',?,2000,256,?)
+                time_limit_ms,memory_limit_mb,input_cases) VALUES(?,?,'PYTHON',?,'FUNCTION',CAST(? AS jsonb),2000,256,CAST(? AS jsonb))
             """,other.getUserId(),problemId,"def sol(value):\n    return value\n",signature().toJson(json),cases);
         var body=request("PYTHON","def sol(value):\n    return value\n",List.of(new TestRunService.Case("{\"args\":[1]}","1")));
         assertEquals(429,http("POST",endpoint(number),body,solver).statusCode());
@@ -155,14 +155,14 @@ class TestRunIntegrationTest {
         assertFalse(tests.current(wrong));tests.finish(wrong,result,false);
         assertEquals("RUNNING",db.queryForObject("SELECT status FROM user_test_runs WHERE id=?",String.class,id));
         assertNull(db.queryForObject("SELECT result_json FROM user_test_runs WHERE id=?",String.class,id));
-        db.update("UPDATE user_test_runs SET lease_until=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 1 SECOND) WHERE id=?",id);
+        db.update("UPDATE user_test_runs SET lease_until=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second') WHERE id=?",id);
         assertFalse(tests.current(claimed));tests.finish(claimed,result,false);
         assertNull(db.queryForObject("SELECT result_json FROM user_test_runs WHERE id=?",String.class,id));
         tests.expire();tests.finish(claimed,result,false);
         assertEquals("SYSTEM_ERROR",db.queryForObject("SELECT status FROM user_test_runs WHERE id=?",String.class,id));
         assertNull(db.queryForObject("SELECT judge_token FROM user_test_runs WHERE id=?",String.class,id));assertNull(tests.claim());
         long queued=data(http("POST",endpoint(number),body,solver)).asLong();
-        db.update("UPDATE user_test_runs SET created_at=DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 16 MINUTE) WHERE id=?",queued);
+        db.update("UPDATE user_test_runs SET created_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '16 minute') WHERE id=?",queued);
         tests.expire();assertEquals("SYSTEM_ERROR",db.queryForObject("SELECT status FROM user_test_runs WHERE id=?",String.class,queued));assertNull(tests.claim());
     }
 

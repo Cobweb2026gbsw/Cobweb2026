@@ -51,9 +51,17 @@ public class AuthService {
     private final AuthRateLimitService authRateLimitService;
 
     @Transactional(dontRollbackOn = {UserNotFoundException.class, BannedUserException.class, PasswordMismatchException.class})
+    // 내부 호출/기존 클라이언트의 서비스 계약은 보존하며, HTTP API는 명시적인 선택값을 사용합니다.
+    public TokenResponse login(String username, String rawPassword, String clientIp, String userAgent,
+                               HttpServletResponse response) {
+        return login(username, rawPassword, clientIp, userAgent, true, response);
+    }
+
+    @Transactional(dontRollbackOn = {UserNotFoundException.class, BannedUserException.class, PasswordMismatchException.class})
     // 정상적인 로그인 거절도 실패 횟수와 감사 로그는 커밋되어야 합니다.
     // 로그인 판정(성공/실패)과 UserLog 저장, User 필드 변경이 하나의 트랜잭션으로 묶여야 함
-    public TokenResponse login(String username, String rawPassword, String clientIp, String userAgent, HttpServletResponse response) {
+    public TokenResponse login(String username, String rawPassword, String clientIp, String userAgent,
+                               boolean rememberMe, HttpServletResponse response) {
         // REQUIRES_NEW: 실패한 비밀번호 때문에 로그인 트랜잭션이 종료되어도 시도 횟수는 유지됩니다.
         authRateLimitService.hit("login-user", username, 20, AUTH_WINDOW);
         // 프록시 뒤에서는 remoteAddr가 공유될 수 있으므로 IP 한도는 넉넉한 2차 상한으로만 사용합니다.
@@ -82,7 +90,7 @@ public class AuthService {
         user.recordLogin();
         userLogRepository.save(UserLog.success(user.getId(), username, null, clientIp, userAgent));
 
-        return issueTokens(user, response);
+        return issueTokens(user, response, rememberMe);
     }
 
     @Transactional(dontRollbackOn = ExpiredTokenException.class)
@@ -92,7 +100,8 @@ public class AuthService {
             // 쿠키 자체가 없는 경우 (로그아웃 후 재호출 등) -> 애초에 검증할 대상이 없으니 바로 예외
             throw new InvalidTokenException();
         }
-        long userId = jwtTokenProvider.validateAndGetUserId(refreshToken);
+        JwtTokenProvider.RefreshIdentity identity = jwtTokenProvider.readRefreshToken(refreshToken);
+        long userId = identity.userId();
         // 서명과 만료를 한 번만 검사하고 subject의 사용자 행부터 잠급니다.
         // 로그인·재설정·로그아웃도 같은 행을 먼저 잠그므로 토큰 회전을 직렬화합니다.
         User user = userRepository.findLockedById(userId).orElseThrow(UserNotFoundException::new);
@@ -110,7 +119,7 @@ public class AuthService {
         // 로그인 이후 정지된 계정은 보유한 refresh token으로도 새 세션을 만들 수 없습니다.
         if (!user.isLoginable()) throw new BannedUserException();
 
-        return issueTokens(user, response);
+        return issueTokens(user, response, identity.rememberMe());
     }
 
     @Transactional
@@ -124,10 +133,14 @@ public class AuthService {
 
     // package-private: OAuthService도 소셜 로그인 성공 시 동일한 토큰 발급 로직을 재사용합니다.
     TokenResponse issueTokens(User user, HttpServletResponse response) {
+        return issueTokens(user, response, true);
+    }
+
+    TokenResponse issueTokens(User user, HttpServletResponse response, boolean rememberMe) {
         if (!user.isLoginable()) throw new BannedUserException();
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername(),
                 user.getRole().name(), user.getAccessTokenVersion());
-        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId());
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId(), rememberMe);
 
         refreshTokenRepository.deleteByUserId(user.getId());
         // 사용자당 하나의 토큰 UNIQUE 제약 때문에 삭제를 먼저 DB에 반영한 뒤 새 토큰을 넣습니다.
@@ -139,7 +152,7 @@ public class AuthService {
                 LocalDateTime.now().plus(Duration.ofMillis(jwtTokenProvider.getRefreshTokenExpiration()))
         ));
 
-        setRefreshTokenCookie(response, refreshToken);
+        setRefreshTokenCookie(response, refreshToken, rememberMe);
 
         return TokenResponse.builder()
                 .accessToken(accessToken)
@@ -148,13 +161,14 @@ public class AuthService {
                 .build();
     }
 
-    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken, boolean rememberMe) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, refreshToken)
                 .httpOnly(true) // JS(document.cookie)로 못 읽게 막음 -> XSS로 토큰이 털리는 걸 방지
                 .secure(true)   // HTTPS(또는 localhost)에서만 전송
                 .sameSite("Lax") // 다른 사이트에서 시작한 POST 요청에는 쿠키를 보내지 않아 재발급 CSRF 위험을 낮춤
                 .path("/")      // 모든 경로의 요청에 이 쿠키가 실려 감
-                .maxAge(Duration.ofMillis(jwtTokenProvider.getRefreshTokenExpiration()))
+                // -1이면 Max-Age/Expires 없이 세션 쿠키로 발급합니다. Secure/HttpOnly는 항상 유지합니다.
+                .maxAge(rememberMe ? Duration.ofMillis(jwtTokenProvider.getRefreshTokenExpiration()) : Duration.ofSeconds(-1))
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }

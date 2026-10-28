@@ -226,6 +226,23 @@
 
 .pl-pager {
   margin-top: 24px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pl-page-numbers { display: flex; gap: 6px; min-width: 0; overflow-x: auto; padding: 3px; scrollbar-width: thin; }
+.dark .pl-page-numbers { color-scheme: dark; }
+.light .pl-page-numbers { color-scheme: light; }
+.pl-pager .cw-btn { flex: 0 0 auto; min-height: 40px; }
+.pl-pager .pl-page-number { min-width: 40px; padding: 9px 12px; }
+.pl-pager .pl-page-number.is-current { color: var(--accent-text); border-color: var(--accent-text); background: color-mix(in srgb, var(--accent-text) 10%, var(--card)); font-weight: 700; }
+.pl-pager .cw-btn:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  .pl-pager { gap: 6px; }
+  .pl-page-numbers { gap: 4px; }
+  .pl-pager > .cw-btn { padding: 0 10px; }
+  .pl-pager .pl-page-number { min-width: 32px; padding: 0 8px; }
 }
 
 @media (max-width: 1100px) {

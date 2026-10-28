@@ -27,16 +27,15 @@ class SubmissionContestTest {
         when(db.queryForObject(contains("problem_languages"),eq(Integer.class),eq(7L),eq("PYTHON"))).thenReturn(1);
         when(db.queryForObject(contains("problem_test_cases"),eq(Long.class),eq(7L))).thenReturn(1L);
         when(db.queryForObject(contains("status IN"),eq(Long.class),eq(12L))).thenReturn(0L);
-        when(db.update(contains("INSERT INTO submissions"),eq(12L),eq(7L),eq("PYTHON"),eq("print(1)"),eq(3L))).thenReturn(0);
+        when(db.queryForList(contains("INSERT INTO submissions"),eq(Long.class),eq(12L),eq(7L),eq("PYTHON"),eq("print(1)"),eq(3L))).thenReturn(List.of());
 
         var service=new SubmissionService(db,problems,contests);
         var error=assertThrows(ResponseStatusException.class,()->service.submitContest(3,1001,"print(1)",Language.PYTHON,details));
         assertEquals(403,error.getStatusCode().value());
         verify(contests).requireSubmission(3,7,details);
-        verify(db).update(argThat(sql->sql.contains("id,UTC_TIMESTAMP(6) FROM group_contests") &&
-                sql.contains("starts_at<=UTC_TIMESTAMP(6)") && sql.contains("ends_at>UTC_TIMESTAMP(6)")),
-            eq(12L),eq(7L),eq("PYTHON"),eq("print(1)"),eq(3L));
+        verify(db).queryForList(argThat(sql->sql.contains("id,(clock_timestamp() AT TIME ZONE 'UTC') FROM group_contests") &&
+                sql.contains("starts_at<=(clock_timestamp() AT TIME ZONE 'UTC')") && sql.contains("ends_at>(clock_timestamp() AT TIME ZONE 'UTC')")),
+            eq(Long.class),eq(12L),eq(7L),eq("PYTHON"),eq("print(1)"),eq(3L));
         verifyNoInteractions(problems);
-        verify(db,never()).queryForObject(eq("SELECT LAST_INSERT_ID()"),eq(Long.class));
     }
 }

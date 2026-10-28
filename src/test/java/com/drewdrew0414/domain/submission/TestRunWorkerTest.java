@@ -35,6 +35,46 @@ class TestRunWorkerTest {
         verify(fixture.tests()).cases(fixture.run());
         assertEquals(2,finished(fixture,false).size());verify(fixture.prepared()).close();
     }
+    @Test void privateSampleUsesTheFormalOutputFreePathAndOnlyCopiesStatusAndTime() {
+        var fixture=privateFixture();
+        var diagnostic=JudgeDiagnostic.runtime(Language.PYTHON,"raise ValueError(input())","ValueError: private-secret",false);
+        when(fixture.prepared().run(eq("private-input-1"),anyString(),anyInt(),anyInt(),isNull())).thenReturn(
+            new SubmissionService.JudgeResult(null,"RUNTIME_ERROR",11,diagnostic));
+        fixture.worker().tick();
+        verify(fixture.tests()).privateCases(fixture.run());verify(fixture.tests(),never()).cases(anyMap());
+        verify(fixture.prepared(),never()).runForTesting(anyString(),anyString(),anyInt(),anyInt());
+        verify(fixture.prepared()).run("private-input-1","private-expected-1",2000,256,null);
+        verify(fixture.prepared()).run("private-input-2","private-expected-2",2000,256,null);
+        var rows=finished(fixture,false);assertEquals(2,rows.size());
+        assertEquals(new TestRunService.Result(null,null,null,"RUNTIME_ERROR",11,null),rows.getFirst());
+        assertEquals(new TestRunService.Result(null,null,null,"ACCEPTED",7,null),rows.getLast());
+        verify(fixture.prepared()).close();
+    }
+    @Test void privateSystemErrorNeverIncludesDiagnosticsOrStartsASecondCase() {
+        var fixture=privateFixture();
+        when(fixture.prepared().run(anyString(),anyString(),anyInt(),anyInt(),isNull()))
+            .thenReturn(new SubmissionService.JudgeResult(null,"SYSTEM_ERROR",0));
+        fixture.worker().tick();
+        var rows=finished(fixture,true);assertEquals(List.of(new TestRunService.Result(null,null,null,"SYSTEM_ERROR",0,null)),rows);
+        verify(fixture.prepared(),times(1)).run(anyString(),anyString(),anyInt(),anyInt(),isNull());
+        verify(fixture.prepared(),never()).runForTesting(anyString(),anyString(),anyInt(),anyInt());
+        verify(fixture.prepared()).close();
+    }
+    @Test void privateLeaseLossBeforeFirstCaseStillClosesWithoutRunningOrFinishing() {
+        var fixture=privateFixture();when(fixture.tests().current(fixture.run())).thenReturn(true,true,true,false);
+        fixture.worker().tick();verify(fixture.prepared()).close();
+        verify(fixture.prepared(),never()).run(anyString(),anyString(),anyInt(),anyInt(),isNull());
+        verify(fixture.prepared(),never()).runForTesting(anyString(),anyString(),anyInt(),anyInt());
+        verify(fixture.tests(),never()).finish(anyMap(),anyList(),anyBoolean());
+    }
+    @Test void incompletePrivateSnapshotsFailSafelyWithoutFallingBackToDummyOrUserInputs() {
+        var fixture=privateFixture();when(fixture.tests().privateCases(fixture.run())).thenThrow(new IllegalStateException("private-snapshot-detail"));
+        fixture.worker().tick();assertTrue(finished(fixture,true).isEmpty());
+        verify(fixture.tests(),never()).cases(anyMap());
+        verify(fixture.prepared(),never()).run(anyString(),anyString(),anyInt(),anyInt(),isNull());
+        verify(fixture.prepared(),never()).runForTesting(anyString(),anyString(),anyInt(),anyInt());
+        verify(fixture.prepared()).close();
+    }
     @Test void noQueuedClaimDoesNotTouchDockerOrFinishAResult() {
         var fixture=fixture();when(fixture.tests().claim()).thenReturn(null);
         fixture.worker().tick();verifyNoInteractions(fixture.runner(),fixture.prepared());
@@ -135,6 +175,13 @@ class TestRunWorkerTest {
         when(prepared.runForTesting(anyString(),anyString(),anyInt(),anyInt())).thenAnswer(call->new DockerJudge.Prepared.TestOutput(
             new SubmissionService.JudgeResult(null,"ACCEPTED",7),call.getArgument(1)));
         return new Fixture(tests,runner,prepared,new TestRunWorker(tests,runner),run);
+    }
+    private Fixture privateFixture() {
+        var fixture=fixture();fixture.run().put("private_sample",true);
+        when(fixture.tests().privateCases(fixture.run())).thenReturn(List.of(
+            new TestRunService.Case("private-input-1","private-expected-1"),new TestRunService.Case("private-input-2","private-expected-2")));
+        when(fixture.prepared().run(anyString(),anyString(),anyInt(),anyInt(),isNull())).thenReturn(new SubmissionService.JudgeResult(null,"ACCEPTED",7));
+        return fixture;
     }
     private record Fixture(TestRunService tests,DockerJudge runner,DockerJudge.Prepared prepared,TestRunWorker worker,Map<String,Object> run) {}
 }

@@ -28,8 +28,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
-    runtimeOnly("org.flywaydb:flyway-mysql")
-    runtimeOnly("com.mysql:mysql-connector-j")
+    runtimeOnly("org.flywaydb:flyway-database-postgresql")
+    runtimeOnly("org.postgresql:postgresql")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
@@ -43,6 +43,10 @@ dependencies {
 }
 tasks.withType<Test> {
     useJUnitPlatform()
+    // 외부 DB 상태와 Docker 조건부 실행은 소스 체크섬만으로 캐시할 수 없습니다.
+    // quick 검증 뒤 full 검증이 UP-TO-DATE로 생략되는 것도 방지합니다.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("Database and Docker state must be verified live") { true }
     // 작은 서버의 공용 풀에서도 채점 stdin/stdout/stderr가 교착되지 않는지 항상 검증합니다.
     systemProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "2")
 }
@@ -59,10 +63,18 @@ val frontendBuild by tasks.registering(Exec::class) {
     workingDir("frontend")
     commandLine("npm", "run", "build")
     inputs.dir("frontend/src")
+    // 자체 제공 글꼴·라이선스 변경만 있어도 정적 자산을 다시 묶습니다.
+    inputs.dir("frontend/public")
     inputs.files("frontend/index.html", "frontend/vite.config.js", "frontend/package-lock.json")
     outputs.dir(layout.buildDirectory.dir("generated-frontend"))
 }
 tasks.processResources {
     dependsOn(frontendBuild)
+    doFirst {
+        // Copy는 삭제된 입력 파일을 출력에서 지우지 않으므로, 예전 MySQL V1~V22가
+        // clean 없이 새 PostgreSQL baseline과 함께 JAR에 남지 않게 생성물만 정리합니다.
+        delete(destinationDir.resolve("db/migration"))
+        delete(fileTree(destinationDir.resolve("demo")) { include("*.sql") })
+    }
     from(layout.buildDirectory.dir("generated-frontend"))
 }

@@ -34,9 +34,12 @@ pass() { PASSED=$((PASSED+1)); printf 'ok %s - %s\n' "$PASSED" "$*"; }
 fixture() {
   local name="$1" initial="$2" existing_network="${3:-false}" tool
   CASE_DIR="$SUITE_ROOT/$name"
-  mkdir -p "$CASE_DIR/bin" "$CASE_DIR/jdk/bin" "$CASE_DIR/state" "$CASE_DIR/.local/run/$PROJECT" "$CASE_DIR/judge"
+  mkdir -p "$CASE_DIR/bin" "$CASE_DIR/jdk/bin" "$CASE_DIR/state" "$CASE_DIR/.local/run/$PROJECT/postgres" "$CASE_DIR/judge"
   cp "$REPO_DIR/run.sh" "$CASE_DIR/run.sh"
   cp "$REPO_DIR/compose.dev.yaml" "$CASE_DIR/compose.dev.yaml"
+  mkdir -p "$CASE_DIR/deploy/postgres"
+  cp "$REPO_DIR/deploy/postgres/init-app.sh" "$CASE_DIR/deploy/postgres/init-app.sh"
+  cp "$REPO_DIR/deploy/postgres/entrypoint.sh" "$CASE_DIR/deploy/postgres/entrypoint.sh"
   cp "$TEST_DIR/fixtures/run-tool.sh" "$CASE_DIR/gradlew"
   for tool in docker curl openssl ps node npm lsof sleep gradle; do cp "$TEST_DIR/fixtures/run-tool.sh" "$CASE_DIR/bin/$tool"; done
   for tool in java javac keytool; do cp "$TEST_DIR/fixtures/run-tool.sh" "$CASE_DIR/jdk/bin/$tool"; done
@@ -48,9 +51,9 @@ fixture() {
     : > "$CASE_DIR/state/volume.exists"
   fi
   [[ "$existing_network" != true ]] || : > "$CASE_DIR/state/network.exists"
-  printf '%s\n' 'DEV_DB_PASSWORD=fake-db-password' 'DEV_ROOT_PASSWORD=fake-root-password' \
+  printf '%s\n' 'DEV_DB_PASSWORD=fake-db-password' 'DEV_ADMIN_PASSWORD=fake-admin-password' \
     'JWT_SECRET=0000000000000000000000000000000000000000000000000000000000000000' \
-    'MAIL_USERNAME=fixture-mail@example.invalid' 'NOT_AN_APP_KEY=must-not-be-imported' > "$CASE_DIR/.local/run/$PROJECT/config.env"
+    'MAIL_USERNAME=fixture-mail@example.invalid' 'NOT_AN_APP_KEY=must-not-be-imported' > "$CASE_DIR/.local/run/$PROJECT/postgres/config.env"
 }
 
 start() {
@@ -82,13 +85,13 @@ await_exit() {
   LAUNCHER=''
   if [[ "$expected" == failure ]]; then [[ "$actual" != 0 ]] || fail '실패 시나리오가 성공했습니다.';
   else assert_equal "$actual" "$expected" '종료 코드'; fi
-  if [[ "${2:-}" == keep-lock ]]; then [[ -d "$CASE_DIR/.local/run/$PROJECT/lock" ]] || fail '불완전 복구에서 잠금이 제거됐습니다.';
-  else assert_no_file "$CASE_DIR/.local/run/$PROJECT/lock"; fi
+  if [[ "${2:-}" == keep-lock ]]; then [[ -d "$CASE_DIR/.local/run/$PROJECT/postgres/lock" ]] || fail '불완전 복구에서 잠금이 제거됐습니다.';
+  else assert_no_file "$CASE_DIR/.local/run/$PROJECT/postgres/lock"; fi
   if [[ "${2:-}" == keep-build-lock ]]; then [[ -d "$CASE_DIR/.local/run/build.lock" ]] || fail '다른 실행의 빌드 잠금이 제거됐습니다.';
   else assert_no_file "$CASE_DIR/.local/run/build.lock"; fi
 }
 assert_preserved_data() {
-  assert_file "$CASE_DIR/.local/run/$PROJECT/config.env"
+  assert_file "$CASE_DIR/.local/run/$PROJECT/postgres/config.env"
   assert_no_event '<volume> <rm>'
   assert_no_event '<down>'
   assert_no_event '<--volumes>'
@@ -142,7 +145,7 @@ for initial in running exited; do
   assert_no_file "$CASE_DIR/state/worker.pid"
   assert_preserved_data
   assert_no_processes
-  state_files=("$CASE_DIR/.local/run/$PROJECT/logs/"*/state.txt)
+  state_files=("$CASE_DIR/.local/run/$PROJECT/postgres/logs/"*/state.txt)
   assert_file "${state_files[0]}"
   grep -Fx 'stage=migrate' "${state_files[0]}" >/dev/null || fail '마이그레이션 실패 단계 기록 누락'
   pass "마이그레이션 실패: 기존 DB $initial 복구, 웹/워커 시작 차단, 데이터 보존"
@@ -221,7 +224,7 @@ fixture cleanup-query-failure absent
 start cleanup_query
 await_exit failure keep-lock
 assert_equal "$(< "$CASE_DIR/state/db.status")" running '조회 실패 시 검증할 수 없는 DB는 임의 중지/제거하지 않음'
-assert_event '<ps> <-a> <-q> <mysql>'
+assert_event '<ps> <-a> <-q> <postgres>'
 grep -F '실행 상태 복구가 완료되지 않았습니다' "$CASE_DIR/output" >/dev/null || fail '불완전한 복구 경고가 없습니다.'
 ! grep -F '실행 전 상태 복구 완료.' "$CASE_DIR/output" >/dev/null || fail '조회에 실패했는데 복구 완료로 안내했습니다.'
 assert_preserved_data
@@ -259,7 +262,7 @@ assert_no_file "$CASE_DIR/state/network.exists"
 assert_file "$CASE_DIR/state/volume.exists"
 assert_preserved_data
 assert_no_processes
-state_files=("$CASE_DIR/.local/run/$PROJECT/logs/"*/state.txt)
+state_files=("$CASE_DIR/.local/run/$PROJECT/postgres/logs/"*/state.txt)
 assert_file "${state_files[0]}"
 grep -F 'startup_complete=false' "${state_files[0]}" >/dev/null || fail '중도 Ctrl+C가 준비 완료로 기록됐습니다.'
 grep -F 'stop_requested=true' "${state_files[0]}" >/dev/null || fail '중도 Ctrl+C 종료 요청 기록 누락'
@@ -276,8 +279,8 @@ assert_file "$CASE_DIR/state/web.credentials-checked"
 assert_file "$CASE_DIR/state/worker.credentials-checked"
 for kind in migrate web worker; do assert_file "$CASE_DIR/state/$kind.jvm-options-checked"; done
 assert_event '<-Xms64m> <-Xmx512m> <-XX:+ExitOnOutOfMemoryError> <-jar>'
-assert_no_event 'fake-root-password'
-case "$web_jar" in "$CASE_DIR/.local/run/$PROJECT/logs/"*/app.jar) ;; *) fail "immutable JAR 경로 아님: $web_jar" ;; esac
+assert_no_event 'fake-admin-password'
+case "$web_jar" in "$CASE_DIR/.local/run/$PROJECT/postgres/logs/"*/app.jar) ;; *) fail "immutable JAR 경로 아님: $web_jar" ;; esac
 assert_file "$web_jar"
 assert_file "$web_jar.sha256"
 original_jar="$(< "$web_jar")"
@@ -288,8 +291,8 @@ await_exit 130
 assert_equal "$(< "$CASE_DIR/state/db.status")" exited '준비 완료 이후 DB 중지'
 assert_file "$CASE_DIR/state/db.id"
 assert_file "$CASE_DIR/state/volume.exists"
-assert_file "$CASE_DIR/.local/run/$PROJECT/tls/localhost.p12"
-assert_file "$CASE_DIR/.local/run/$PROJECT/tls/localhost.crt"
+assert_file "$CASE_DIR/.local/run/$PROJECT/postgres/tls/localhost.p12"
+assert_file "$CASE_DIR/.local/run/$PROJECT/postgres/tls/localhost.crt"
 assert_file "$web_jar"
 assert_no_processes
 assert_preserved_data
@@ -316,7 +319,7 @@ assert_file "$CASE_DIR/state/network.exists"
 assert_file "$CASE_DIR/state/volume.exists"
 assert_no_processes
 assert_preserved_data
-state_files=("$CASE_DIR/.local/run/$PROJECT/logs/"*/state.txt)
+state_files=("$CASE_DIR/.local/run/$PROJECT/postgres/logs/"*/state.txt)
 assert_file "${state_files[0]}"
 grep -F 'startup_complete=true' "${state_files[0]}" >/dev/null || fail 'foreground Ctrl+C의 준비 완료 기록 누락'
 grep -F 'stop_requested=true' "${state_files[0]}" >/dev/null || fail 'foreground Ctrl+C 종료 요청 기록 누락'
@@ -348,20 +351,20 @@ assert_no_processes
 pass 'PID 시작 identity 변경: 해당 PID 무신호 보존, 불완전 정리 경고와 잠금 유지'
 
 fixture external-flyway-environment absent
-SPRING_FLYWAY_URL=jdbc:mysql://external.invalid/forbidden SPRING_FLYWAY_USER=untrusted-root \
+SPRING_FLYWAY_URL=jdbc:postgresql://external.invalid/forbidden SPRING_FLYWAY_USER=untrusted-admin \
   SPRING_FLYWAY_PASSWORD=untrusted-external-secret start ''
 wait_for "$CASE_DIR/output" '준비 완료:'
 assert_file "$CASE_DIR/state/migrate.credentials-checked"
 assert_file "$CASE_DIR/state/web.credentials-checked"
 assert_file "$CASE_DIR/state/worker.credentials-checked"
 assert_no_event 'untrusted-external-secret'
-assert_no_event 'fake-root-password'
+assert_no_event 'fake-admin-password'
 kill -INT "$LAUNCHER"
 await_exit 130
 assert_equal "$(< "$CASE_DIR/state/db.status")" exited '외부 Flyway 오염 차단 뒤 정상 종료'
 assert_preserved_data
 assert_no_processes
-pass '외부 Flyway URL/계정/비밀번호 무시: 전용 DB와 단발 root/웹·워커 제한 계정 분리'
+pass '외부 Flyway URL/계정/비밀번호 무시: 전용 DB와 단발 postgres/웹·워커 제한 계정 분리'
 
 for blocked_option in SPRING_APPLICATION_JSON JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS \
     SPRING_CONFIG_LOCATION SPRING_CONFIG_ADDITIONAL_LOCATION SPRING_CONFIG_NAME \
@@ -378,7 +381,36 @@ for blocked_option in SPRING_APPLICATION_JSON JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS
   [[ ! -s "$CASE_DIR/state/events" ]] || fail '환경 주입 거절 전에 외부 도구를 실행했습니다.'
   grep -F "$blocked_option 환경변수를 해제" "$CASE_DIR/output" >/dev/null || fail '차단 환경변수 이름 안내 누락'
   ! grep -F 'untrusted-injection-secret' "$CASE_DIR/output" >/dev/null || fail '차단한 환경변수 값이 출력됐습니다.'
-  assert_file "$CASE_DIR/.local/run/$PROJECT/config.env"
+  assert_file "$CASE_DIR/.local/run/$PROJECT/postgres/config.env"
   pass "$blocked_option 주입: 비밀값 출력 없이 도구/DB 변경 전 거절"
 done
+
+fixture legacy-mysql-namespace absent
+# 같은 사용자 지정 project를 재사용해도 옛 MySQL 설정·잠금은 손대지 않습니다.
+printf 'legacy-mysql-config-preserved\n' > "$CASE_DIR/.local/run/$PROJECT/config.env"
+mkdir "$CASE_DIR/.local/run/$PROJECT/lock"
+start gradle
+await_exit failure
+assert_equal "$(< "$CASE_DIR/.local/run/$PROJECT/config.env")" legacy-mysql-config-preserved '기존 MySQL 설정 보존'
+[[ -d "$CASE_DIR/.local/run/$PROJECT/lock" ]] || fail '기존 MySQL 실행 잠금을 제거했습니다.'
+assert_no_event '<mysql>'
+assert_no_event 'cobweb_mysql'
+assert_no_processes
+assert_preserved_data
+pass 'PostgreSQL 별도 상태 경로: 같은 project의 기존 MySQL 설정·잠금·DB 서비스 무변경'
+
+fixture postgres-volume-without-config absent
+printf 'legacy-mysql-config-preserved\n' > "$CASE_DIR/.local/run/$PROJECT/config.env"
+: > "$CASE_DIR/state/volume.exists"
+# 이 테스트가 생성한 PG 전용 가짜 비밀 파일만 제거해 복구 필요 상태를 재현합니다.
+/bin/rm "$CASE_DIR/.local/run/$PROJECT/postgres/config.env"
+start ''
+await_exit failure
+assert_no_file "$CASE_DIR/.local/run/$PROJECT/postgres/config.env"
+assert_equal "$(< "$CASE_DIR/.local/run/$PROJECT/config.env")" legacy-mysql-config-preserved '설정 누락 거절 시에도 기존 MySQL 설정 보존'
+assert_no_event '<up>'
+assert_no_event '<stop>'
+assert_file "$CASE_DIR/state/volume.exists"
+grep -F '기존 DB 볼륨은 있지만 config.env가 없습니다' "$CASE_DIR/output" >/dev/null || fail '기존 PG 비밀 파일 복구 안내 누락'
+pass '기존 PostgreSQL 볼륨의 설정 누락: 새 비밀번호를 생성하지 않고 DB 변경 전 거절'
 printf '1..%s\n' "$PASSED"

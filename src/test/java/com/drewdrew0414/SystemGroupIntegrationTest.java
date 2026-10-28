@@ -56,7 +56,7 @@ class SystemGroupIntegrationTest {
             """,Integer.class,gid));
         assertEquals("bigint",db.queryForObject("""
             SELECT DATA_TYPE FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='group_members' AND COLUMN_NAME='member_number'
+            WHERE TABLE_SCHEMA=current_schema() AND TABLE_NAME='group_members' AND COLUMN_NAME='member_number'
             """,String.class));
     }
 
@@ -111,11 +111,11 @@ class SystemGroupIntegrationTest {
         long ownerRole=db.queryForObject("SELECT id FROM group_roles WHERE group_id=? AND builtin_key='OWNER'",Long.class,gid);
         assertEquals(409,assertThrows(ResponseStatusException.class,
             ()->groups.changeMemberRole(gid,member.getUserId(),ownerRole,operator)).getStatusCode().value());
-        assertThrows(DataAccessException.class,()->db.update("UPDATE study_groups SET system_key=NULL WHERE id=?",gid));
-        assertThrows(DataAccessException.class,()->db.update("UPDATE study_groups SET group_name='changed' WHERE id=?",gid));
-        assertThrows(DataAccessException.class,()->db.update("DELETE FROM study_groups WHERE id=?",gid));
-        assertThrows(DataAccessException.class,()->db.update("DELETE FROM group_members WHERE group_id=? AND user_id=?",gid,member.getUserId()));
-        assertThrows(DataAccessException.class,()->db.update("UPDATE group_members SET permission='OWNER',role_id=? WHERE group_id=? AND user_id=?",
+        PostgresTestSupport.rejected(db,()->db.update("UPDATE study_groups SET system_key=NULL WHERE id=?",gid));
+        PostgresTestSupport.rejected(db,()->db.update("UPDATE study_groups SET group_name='changed' WHERE id=?",gid));
+        PostgresTestSupport.rejected(db,()->db.update("DELETE FROM study_groups WHERE id=?",gid));
+        PostgresTestSupport.rejected(db,()->db.update("DELETE FROM group_members WHERE group_id=? AND user_id=?",gid,member.getUserId()));
+        PostgresTestSupport.rejected(db,()->db.update("UPDATE group_members SET permission='OWNER',role_id=? WHERE group_id=? AND user_id=?",
             ownerRole,gid,member.getUserId()));
         assertMember(member.getUserId());
     }
@@ -133,7 +133,7 @@ class SystemGroupIntegrationTest {
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM group_members WHERE user_id=?",Integer.class,rolledBack));
         // users 자체는 음수 BIGINT PK를 허용하지만 회원 번호는 양수 제약이므로 트리거의 가입 단계에서 실패합니다.
         long invalidUid=-1L-Math.abs((long)UUID.randomUUID().hashCode());
-        assertThrows(DataAccessException.class,()->db.update("INSERT INTO users(id,username,password) VALUES(?,?,'test-only')",invalidUid,name()));
+        PostgresTestSupport.rejected(db,()->db.update("INSERT INTO users(id,username,password) VALUES(?,?,'test-only')",invalidUid,name()));
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM users WHERE id=?",Integer.class,invalidUid));
     }
 

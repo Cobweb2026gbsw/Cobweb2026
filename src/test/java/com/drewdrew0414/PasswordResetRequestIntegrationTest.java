@@ -22,7 +22,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-/** 공개 재설정 요청의 응답과 발송 제한을 실제 HTTP·MySQL 경로에서 확인합니다. */
+/** 공개 재설정 요청의 응답과 발송 제한을 실제 HTTP·PostgreSQL 경로에서 확인합니다. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class PasswordResetRequestIntegrationTest {

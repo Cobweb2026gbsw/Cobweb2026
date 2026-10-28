@@ -1,13 +1,14 @@
-.cw-test-run-panel{min-width:0;margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
+.cw-test-run-panel{min-width:0}
 .cw-test-tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:thin}
 .cw-test-tabs [role=tab]{flex:0 0 auto;appearance:none;padding:11px 16px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .cw-test-tabs [role=tab][aria-selected=true]{border-bottom-color:var(--accent-text);color:var(--accent-text)}
 .cw-test-tabs [role=tab]:focus-visible,.cw-test-tabpanel:focus-visible,.cw-test-tabpanel [role=alert]:focus-visible{outline:2px solid var(--accent-text);outline-offset:-2px}
 .cw-test-scroll{height:clamp(240px,42vh,440px);min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;border-bottom:1px solid var(--line)}
 .cw-test-tabpanel{min-width:0;min-height:100%;box-sizing:border-box;padding:14px 10px 14px 0}.cw-test-tabpanel[hidden]{display:none}.cw-test-empty{margin:0;padding:12px 0}
-.cw-test-inputs{display:grid;gap:14px}.cw-test-inputs fieldset{min-width:0;margin:0;padding:14px;border:1px solid var(--line);border-radius:12px}.cw-test-inputs legend{padding:0 6px;font-size:13px;font-weight:600}
-.cw-test-inputs textarea{display:block;width:100%;box-sizing:border-box;margin:8px 0 12px;resize:vertical;font-family:var(--font-mono,monospace);font-size:12px;line-height:1.6}
-.cw-test-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.cw-test-results{min-width:0}.cw-test-result{min-width:0;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:12px}
-.cw-test-result-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.cw-test-result-head h3{margin:0;font-size:14px}.cw-test-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
-.cw-test-comparison>div{min-width:0}.cw-test-comparison h4{margin:0 0 8px;color:var(--muted);font-size:12px;font-weight:500}.cw-test-comparison pre{min-height:42px;max-height:240px;margin:0;padding:12px;border-radius:8px;background:var(--field);white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;font-size:12px;line-height:1.6;font-family:var(--font-mono,monospace)}
-@media(max-width:600px){.cw-test-comparison{grid-template-columns:1fr}}
+.cw-test-private-cases,.cw-test-results{display:grid;gap:12px;min-width:0}
+.cw-test-private-case,.cw-test-result{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px}
+.cw-test-private-case h3,.cw-test-result h3{margin:0 auto 0 0;font-size:14px}.cw-test-private-case .cw-badge{color:var(--muted)}
+/* 실행 버튼은 왼쪽, 정식 제출은 오른쪽에 두고 스크롤 영역 바깥에 유지합니다. */
+.cw-test-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
+.cw-test-actions>.cw-btn{flex:0 1 auto;min-width:0;max-width:calc(50% - 6px);white-space:normal}
+@media(max-width:600px){.cw-test-actions{gap:8px}.cw-test-actions>.cw-btn{max-width:none;flex:1;padding-left:10px;padding-right:10px}}

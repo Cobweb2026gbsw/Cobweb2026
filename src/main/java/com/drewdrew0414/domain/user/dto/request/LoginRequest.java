@@ -18,4 +18,7 @@ public class LoginRequest {
 
     @NotBlank(message = "비밀번호를 입력해주세요.")
     private String password;
+
+    // 기본값은 세션 쿠키입니다. 이용자가 명시적으로 선택한 경우에만 브라우저 종료 후에도 유지합니다.
+    private boolean rememberMe;
 }

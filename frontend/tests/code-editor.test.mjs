@@ -24,6 +24,11 @@ function start(initial='',language='PYTHON',props={}){cleanup();window.localStor
 function press(area,key,extra={}){act(()=>fireEvent.keyDown(area,{key,...extra}));}
 const tick=()=>new Promise(resolve=>setTimeout(resolve,100));
 
+test('editor status keeps cursor position without the removed encoding and keyboard hint',()=>{
+  const view=start('return 1'),status=view.container.querySelector('.pd-editor-status');assert.equal(status.textContent,'Ln 1, Col 1');
+  assert.doesNotMatch(status.textContent,/UTF-8|Spaces|Ctrl\+Space|Esc 다음 Tab/);assert.equal(status.children.length,1);cleanup();
+});
+
 test('clipboard capability and permission failures produce safe feedback without losing source',async()=>{
   const descriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard');
   try{
