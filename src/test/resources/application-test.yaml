@@ -1,0 +1,33 @@
+spring:
+  config:
+    import: ""
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://127.0.0.1:15433/cobweb_test}
+    username: ${TEST_DB_USERNAME:cobweb}
+    password: ${TEST_DB_PASSWORD:cobweb-test-only}
+  flyway:
+    enabled: true
+  jpa:
+    show-sql: false
+  mail:
+    username: test@example.invalid
+    password: unused
+jwt:
+  secret: test-only-secret-0123456789-0123456789-0123456789
+oauth:
+  google:
+    client-id: unused
+    client-secret: unused
+  naver:
+    client-id: unused
+    client-secret: unused
+  github:
+    client-id: unused
+    client-secret: unused
+judge:
+  enabled: false
+demo:
+  seed: true
+curriculum:
+  level0:
+    enabled: false

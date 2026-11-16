@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+.gradle
+src
+*.sql
+PROGRESS.md
+.local
+.claude
+.claude-flow
+.ai
+docs/security/CLAUDE_REVIEW_RAW.md

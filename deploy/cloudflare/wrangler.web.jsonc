@@ -1,0 +1,19 @@
+{
+  "name": "cobweb-web",
+  "main": "web.mjs",
+  "compatibility_date": "2026-11-16",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "cobweb.kr", "custom_domain": true }],
+  "vars": { "PUBLIC_BASE_URL": "https://cobweb.kr" },
+  "secrets": { "required": ["DATABASE_URL", "DATABASE_URL_UNPOOLED", "JWT_SECRET"] },
+  "version_metadata": { "binding": "DEPLOYMENT" },
+  "observability": { "enabled": true },
+  "containers": [{
+    "class_name": "CobwebWeb",
+    "scheduling_policy": "durable_object",
+    "images": { "app": { "dockerfile": "./web.Dockerfile", "build_context": "../.." } }
+  }],
+  "durable_objects": { "bindings": [{ "name": "WEB", "class_name": "CobwebWeb" }] },
+  "exports": { "CobwebWeb": { "type": "durable-object", "storage": "sqlite" } }
+}

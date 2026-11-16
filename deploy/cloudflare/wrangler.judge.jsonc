@@ -1,0 +1,18 @@
+{
+  "name": "cobweb-judge",
+  "main": "judge.mjs",
+  "compatibility_date": "2026-11-16",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": { "crons": ["* * * * *"] },
+  "secrets": { "required": ["DATABASE_URL", "JWT_SECRET"] },
+  "version_metadata": { "binding": "DEPLOYMENT" },
+  "observability": { "enabled": true },
+  "containers": [{
+    "class_name": "CobwebJudge",
+    "scheduling_policy": "durable_object",
+    "images": { "app": { "dockerfile": "./judge/Dockerfile", "build_context": "../.." } }
+  }],
+  "durable_objects": { "bindings": [{ "name": "JUDGE", "class_name": "CobwebJudge" }] },
+  "exports": { "CobwebJudge": { "type": "durable-object", "storage": "sqlite" } }
+}

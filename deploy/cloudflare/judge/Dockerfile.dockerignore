@@ -1,0 +1,13 @@
+**
+!build/
+!build/libs/
+!build/libs/cobweb2026-*-SNAPSHOT.jar
+!build/cloudflare/
+!build/cloudflare/judge/
+!build/cloudflare/judge/cobweb-languages-amd64.tar.gz
+!deploy/
+!deploy/cloudflare/
+!deploy/cloudflare/judge/
+!deploy/cloudflare/judge/Dockerfile
+!deploy/cloudflare/judge/check-sandbox.sh
+!deploy/cloudflare/judge/entrypoint.sh

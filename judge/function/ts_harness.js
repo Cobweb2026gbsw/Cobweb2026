@@ -1,0 +1,10 @@
+const fs = require('node:fs');
+const values = fs.readFileSync(0, 'utf8').trim().split(/\s+/).map(Number);
+if (values.length !== 227) throw new Error('Invalid FUNCTION input');
+const matrix = Array.from({length: 15}, (_, row) => values.slice(row * 15, row * 15 + 15));
+const target = values.slice(225);
+const {sol} = require('/work/main.js');
+if (typeof sol !== 'function') throw new Error('export function sol is missing');
+const result = sol(matrix, target);
+if (typeof result !== 'boolean') throw new Error('sol must return boolean');
+console.log(result);

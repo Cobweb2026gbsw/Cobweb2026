@@ -1,0 +1,19 @@
+.group-browser,.group-detail-grid,.contest-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.group-detail-slot{margin-top:30px;scroll-margin-top:20px}.group-detail-slot>.panel{margin-top:18px}
+.group-card{border:1px solid #d9e6dc;border-radius:12px;padding:16px;margin:12px 0;background:#f9fcf8}
+.group-card h3,.group-card h4{margin:0 0 8px}.group-card p{margin:6px 0 12px;color:#5d7365}
+.group-card button+button{margin-left:8px}.group-member,.group-problem-row,.contest-rank-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #e1eae2;padding:10px 0}
+.group-member strong,.group-problem-row span,.contest-rank-row span{flex:1 1 150px}.group-member select{width:auto;min-width:130px;margin:0}
+.group-role{border-top:1px solid #dfe9e1;padding:10px 0}.group-role summary{cursor:pointer;font-weight:700}
+.role-form,.contest-form,.group-create-form{border-top:1px solid #dfe9e1;margin-top:16px;padding-top:14px}.role-flags{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
+.check-field{display:flex;align-items:center;gap:8px;margin:8px 0}.check-field input{width:auto;margin:0;accent-color:#17674e}
+.contest-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px}.contest-form h4,.contest-form p,.contest-form button{grid-column:1/-1}
+.contest-layout{grid-template-columns:minmax(230px,290px) minmax(0,1fr);margin:18px 0}.contest-problem-list{display:grid;gap:8px}.contest-problem-list button{text-align:left}
+.contest-statement{border-top:1px solid #e1eae2;padding:8px 0}.contest-statement h3{margin:8px 0}.contest-statement pre{margin:0 0 14px}
+.contest-source,.code-preview{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#142b27;color:#e5f4e9;border-radius:8px;padding:14px;line-height:1.5}
+.code-preview{max-height:320px;overflow:auto}.contest-mine,.contest-staff{margin:20px 0}.submission-item{border-top:1px solid #e1eae2;padding:10px 0}.submission-item summary{cursor:pointer}
+.contest-caution{background:#fff4dc;color:#68451c;border:1px solid #eacb8c;border-radius:8px;padding:12px}.contest-event{border-bottom:1px solid #e1eae2;margin:0;padding:8px}
+.contest-warning.active{position:fixed;z-index:20;inset:0;background:#102b28ee;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:1.3rem}
+.contest-warning.active button{margin-top:20px}.contest-wait{font-size:1.1rem}
+@media(max-width:850px){.group-browser,.group-detail-grid,.contest-layout{grid-template-columns:1fr}}
+@media(max-width:560px){.role-flags,.contest-form{grid-template-columns:1fr}.group-member{align-items:stretch}.group-member select,.group-member button{width:100%}}

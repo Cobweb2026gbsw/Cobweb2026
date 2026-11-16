@@ -1,0 +1,115 @@
+.st-wrap { max-width: 980px; }
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  margin: 0;
+  padding: 0;
+
+  list-style: none;
+}
+
+.st-step { padding: 0; overflow: hidden; }
+
+.st-head {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 200px 20px;
+  align-items: center;
+  gap: 18px;
+
+  width: 100%;
+  padding: 20px 24px;
+
+  background: none;
+  color: var(--text);
+  border: none;
+
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.st-head:hover { background-color: var(--hover); }
+
+.st-no {
+  display: grid;
+  place-items: center;
+
+  width: 40px;
+  height: 40px;
+
+  color: var(--accent-text);
+  background-color: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.st-step.done .st-no {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 55%, transparent);
+  background-color: color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+.st-info { display: grid; gap: 4px; }
+.st-info strong { font-size: 16px; font-weight: 600; }
+.st-info small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.st-progress { display: grid; gap: 8px; font-size: 12px; text-align: right; }
+
+.st-bar {
+  display: block;
+  height: 6px;
+
+  background-color: var(--field);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.st-bar span {
+  display: block;
+  height: 100%;
+
+  background-color: var(--accent-text);
+  border-radius: 999px;
+}
+
+.st-chevron { color: var(--muted); transition: transform 0.2s; }
+.st-chevron.open { transform: rotate(90deg); }
+
+.st-problems {
+  margin: 0;
+  padding: 0;
+
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.st-problems li + li { border-top: 1px solid var(--line); }
+
+.st-problems a {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+
+  padding: 14px 24px 14px 86px;
+
+  color: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.st-problems a:hover { background-color: var(--hover); }
+.st-problems .cw-mono { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 700px) {
+  .st-head { grid-template-columns: 40px minmax(0, 1fr) 20px; }
+  .st-progress { display: none; }
+  .st-problems a { padding-left: 24px; }
+}

@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/cobweb2026
+    username: cobweb
+    password: ${DEV_DB_PASSWORD}
+  flyway:
+    enabled: true
+  jpa:
+    show-sql: false

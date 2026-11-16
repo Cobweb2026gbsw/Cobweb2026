@@ -1,0 +1,4 @@
+.cw-render-error{display:grid;place-items:center;min-width:0}
+.cw-render-error>.cw-card{width:min(100%,680px);padding:28px;overflow-wrap:anywhere}
+.cw-render-error p{line-height:1.7;color:var(--muted)}
+.cw-render-error .cw-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}

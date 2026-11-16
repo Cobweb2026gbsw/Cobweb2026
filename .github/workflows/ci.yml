@@ -1,0 +1,212 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: API, browser auth, launcher, and Compose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SPRING_PROFILES_ACTIVE: test
+      TEST_DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      TEST_DB_USERNAME: cobweb
+      TEST_DB_PASSWORD: cobweb-test-only
+      DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      DB_USERNAME: cobweb
+      DB_PASSWORD: cobweb-test-only
+      JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
+      MAIL_USERNAME: test@example.invalid
+      MAIL_PASSWORD: unused
+      GOOGLE_CLIENT_ID: unused
+      GOOGLE_CLIENT_SECRET: unused
+      NAVER_CLIENT_ID: unused
+      NAVER_CLIENT_SECRET: unused
+      GITHUB_CLIENT_ID: unused
+      GITHUB_CLIENT_SECRET: unused
+      DOCKER_JUDGE_TEST: 'false'
+      GENERIC_CATALOG_DOCKER_TEST: 'false'
+      EXPERT_CATALOG_DOCKER_TEST: 'false'
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: cobweb_test
+          POSTGRES_USER: cobweb
+          POSTGRES_PASSWORD: cobweb-test-only
+        ports:
+          - 15433:5432
+        options: >-
+          --health-cmd="pg_isready -h 127.0.0.1 -U cobweb -d cobweb_test"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Verify launcher rollback without live services
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          bash -n run.sh src/test/bash/run-sh.test.sh src/test/bash/fixtures/run-tool.sh deploy/postgres/entrypoint.sh deploy/postgres/init-app.sh
+          bash src/test/bash/run-sh.test.sh 2>&1 | tee ci-logs/launcher.log
+      - name: Check browser auth flow
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          {
+            node --check src/main/resources/static/app.js &&
+            node --check src/main/resources/static/groups.js &&
+            node --check src/main/resources/static/community.js &&
+            node --check src/main/resources/static/code-editor.js &&
+            node --check src/main/resources/static/markdown.js &&
+            node src/test/js/app-auth.test.cjs &&
+            node src/test/js/app-session.test.cjs &&
+            node src/test/js/problem-editor.test.cjs &&
+            node src/test/js/groups.test.cjs &&
+            node src/test/js/community.test.cjs &&
+            node src/test/js/code-editor.test.cjs &&
+            node src/test/js/markdown.test.cjs
+          } 2>&1 | tee ci-logs/browser-auth.log
+      - name: Verify React UI contracts and components
+        run: |
+          npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix frontend test
+      - name: Validate Compose configurations
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/check-compose-config.sh 2>&1 | tee ci-logs/compose.log
+      - name: Verify Python judge adapters and all curriculum catalogs
+        run: |
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_umjunsik*.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_function.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_algorithm_catalog.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_expert_catalog.py'
+          python3 -I -B -m unittest discover -s src/test/python -p 'test_judge_results_guard.py'
+      - name: Run Gradle tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          ./gradlew --no-daemon --console=plain test 2>&1 | tee ci-logs/quick-gradle.log
+      - name: Save quick-test reports and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quick-test-results
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+            ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+  judge-full:
+    name: Full 17-language Docker judge
+    needs: quick
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SPRING_PROFILES_ACTIVE: test
+      TEST_DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      TEST_DB_USERNAME: cobweb
+      TEST_DB_PASSWORD: cobweb-test-only
+      DB_URL: jdbc:postgresql://127.0.0.1:15433/cobweb_test
+      DB_USERNAME: cobweb
+      DB_PASSWORD: cobweb-test-only
+      JWT_SECRET: test-only-secret-0123456789-0123456789-0123456789
+      MAIL_USERNAME: test@example.invalid
+      MAIL_PASSWORD: unused
+      GOOGLE_CLIENT_ID: unused
+      GOOGLE_CLIENT_SECRET: unused
+      NAVER_CLIENT_ID: unused
+      NAVER_CLIENT_SECRET: unused
+      GITHUB_CLIENT_ID: unused
+      GITHUB_CLIENT_SECRET: unused
+      DOCKER_JUDGE_TEST: 'true'
+      GENERIC_CATALOG_DOCKER_TEST: 'true'
+      EXPERT_CATALOG_DOCKER_TEST: 'true'
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: cobweb_test
+          POSTGRES_USER: cobweb
+          POSTGRES_PASSWORD: cobweb-test-only
+        ports:
+          - 15433:5432
+        options: >-
+          --health-cmd="pg_isready -h 127.0.0.1 -U cobweb -d cobweb_test"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Node 24 for the packaged React UI
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build the judge image
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          docker build -t cobweb-languages:local judge 2>&1 | tee ci-logs/judge-image.log
+      - name: Run the full build with Docker tests enabled
+        shell: bash
+        run: |
+          set -o pipefail
+          DOCKER_JUDGE_TEST=true GENERIC_CATALOG_DOCKER_TEST=true EXPERT_CATALOG_DOCKER_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
+      - name: Check nested arrays and million-item inputs in all 15 function languages
+        shell: bash
+        run: |
+          set -o pipefail
+          GENERIC_NESTED_DOCKER_TEST=true GENERIC_RUNTIME_TIMEOUT_SECONDS=10 GENERIC_JUDGE_IMAGE=cobweb-languages:local python3 -I -B -m unittest discover -s src/test/python -p 'test_generic_nested_docker.py' -v 2>&1 | tee ci-logs/nested-scale.log
+      - name: Assert that all Docker judge tests ran
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/check-judge-results.py build/test-results/test 2>&1 | tee ci-logs/judge-results.log
+      - name: Save full-build reports and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: full-judge-results
+          path: |
+            build/test-results/test/
+            build/reports/tests/test/
+            ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
