@@ -22,7 +22,7 @@ export default function Main({dark}) {
       action:user?'내 제출 확인':'난이도별 문제 보기',path:user?'/submissions':'/steps',
       note:user?'작성하고, 제출하고, 결과를 확인하세요.':'내 수준에 맞는 도전부터 시작하세요.'},
     {id:'ranking',label:'랭킹',eyebrow:'RANKING',title:'랭킹',
-      description:'문제 해결 수와 제출 기록을 기준으로 랭킹을 확인합니다.\n다른 사람들의 도전을 살펴보고, 나의 다음 목표를 정해 보세요.',
+      description:'처음 해결한 문제의 점수를 모아 랭크를 올려 보세요.\n다른 사람들의 도전을 살펴보고, 나의 다음 목표를 정해 보세요.',
       action:'랭킹 보기',path:'/ranking',note:'한 문제씩 쌓아가는 도전의 기록.'},
     {id:'community',label:'커뮤니티',eyebrow:'COMMUNITY',title:'커뮤니티',
       description:'문제에 관해 질문하고 풀이 경험을 나눕니다.\n서로 다른 생각에서 새로운 풀이를 발견해 보세요.',

@@ -48,11 +48,16 @@ async function show(id){
   try{
     if(id==='problems')await list();
     if(id==='submissions'){const data=await api('/api/submissions');if(!currentView(id,view,session))return;
-      rows('#submission-list',data,s=>[s.problem_number+' · '+s.problem_title,languageLabel(s.language)+' · '+s.status]);}
+      rows('#submission-list',data,s=>[s.problem_number+' · '+s.problem_title,languageLabel(s.language)+' · '+s.status]);
+      data.forEach((submission,index)=>{
+        const link=document.createElement('a');link.href='/submissions/'+submission.id;
+        link.textContent='제출 코드 보기';$('#submission-list').children[index].append(link);
+      });}
     if(id==='ranking'){const data=await api('/api/ranking');if(!currentView(id,view,session))return;
-      rows('#rank-list',data,(p,i)=>[(i+1)+'. '+p.username,p.rank_type+' '+p.rank_int+' · '+p.solved_count+'문제']);}
+      rows('#rank-list',data,(p,i)=>[(i+1)+'. '+p.username,p.rank_type+' '+p.rank_int+' · '+p.rank_points+'점 · '+p.solved_count+'문제']);}
     if(id==='profile'){const p=await api('/api/me');if(!currentView(id,view,session))return;
-      $('#profile-info').textContent=p.username+' · '+p.rank_type+' '+p.rank_int+'\n해결 '+p.solved_count+' / 제출 '+p.submit_count;
+      $('#profile-info').textContent=p.username+' · '+p.rank_type+' '+p.rank_int+' · '+p.rank_points+'점\n해결 '+p.solved_count+' / 제출 '+p.submit_count;
+      $('#account').textContent=p.username;$('#profile-form [name=username]').value=p.username;
       $('#profile-form [name=bio]').value=p.bio;$('#profile-form [name=githubUrl]').value=p.github_url;}
     if(id==='author'){if(!editorLoaded)resetEditor();await refreshGroupDestinations().catch(()=>{});
       if(!currentView(id,view,session))return;await listMine();}
@@ -71,7 +76,7 @@ async function list(){
   const session=sessionEpoch,view=viewEpoch,request=++problemListRequest;
   const data=await api('/api/problems?page='+page+'&search='+encodeURIComponent($('#search [name=q]').value));
   if(!currentView('problems',view,session)||request!==problemListRequest)return;
-  rows('#problem-list',data,p=>[p.problem_number+' · '+p.problem_title,p.rank_type+' '+p.rank_int]);
+  rows('#problem-list',data,p=>[p.problem_number+' · '+p.problem_title,p.rank_type+' '+p.rank_int+' · '+p.reward_points+'점']);
   [...$('#problem-list').children].forEach((row,i)=>{if(!data[i])return;const b=document.createElement('button');b.textContent='풀기';b.onclick=()=>openProblem(data[i].problem_number);row.append(b);});
   $('#previous').disabled=page===0;$('#next').disabled=data.length<30;
 }
@@ -81,7 +86,7 @@ async function openProblem(number){
     if(!currentSession(session)||originView!==viewEpoch||request!==problemRequest)return;
     const shownView=await show('problem');if(!currentView('problem',shownView,session))return;
     currentProblem=number;
-    $('#problem-title').textContent=number+'. '+p.problem_title;$('#problem-meta').textContent=p.rank_type+' '+p.rank_int+' · '+p.time_limit_ms+' ms · '+p.memory_limit_mb+' MB';
+    $('#problem-title').textContent=number+'. '+p.problem_title;$('#problem-meta').textContent=p.rank_type+' '+p.rank_int+' · 첫 해결 '+p.reward_points+'점 · '+p.time_limit_ms+' ms · '+p.memory_limit_mb+' MB';
     for(const [id,key] of [['description','description'],['input-description','input_description'],['output-description','output_description'],['constraints','constraints_text']])renderMarkdown($('#'+id),p[key]||'');
     $('#examples').replaceChildren();p.examples.forEach((e,i)=>renderExample($('#examples'),e,i));
     executionMode=p.execution_mode;
@@ -116,7 +121,9 @@ form('signup',async d=>{await api('/api/auth/signup','POST',d);notice('가입되
 form('reset-request',async d=>{await api('/api/auth/password-reset/request','POST',d);notice('등록된 이메일이라면 재설정 코드를 발송했습니다.');});
 form('reset-verify',async d=>{const r=await api('/api/auth/password-reset/verify-code','POST',d);resetToken=r.resetToken;notice('새 비밀번호를 입력하세요.');});
 form('reset-confirm',async d=>{if(!resetToken)throw Error('먼저 코드를 확인해 주세요.');await api('/api/auth/password-reset/confirm','POST',{...d,resetToken});resetToken=null;notice('비밀번호를 변경했습니다.');});
-form('profile-form',async d=>{await api('/api/me','PATCH',d);notice('프로필을 저장했습니다.');});
+form('profile-form',async d=>{if(d.username===$('#account').textContent)delete d.username;
+  const session=sessionEpoch,view=viewEpoch;await api('/api/me','PATCH',d);
+  if(currentView('profile',view,session)){await show('profile');if(currentSession(session))notice('프로필을 저장했습니다.');}});
 $('#logout').onclick=async()=>{
   if(loggingOut)return;loggingOut=true;const session=++sessionEpoch;
   let failure=null;

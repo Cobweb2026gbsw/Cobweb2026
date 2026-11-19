@@ -26,6 +26,10 @@ public class SubmissionController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.success(id));
     }
     @GetMapping public Object mine(@AuthenticationPrincipal CustomUserDetails user) { return ApiResponse.success(service.mine(user)); }
+    @GetMapping("/{id}/source")
+    public ResponseEntity<ApiResponse<String>> ownSource(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.success(service.ownSource(id,user)));
+    }
     @GetMapping("/{id}") public Object detail(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user) {
         return ApiResponse.success(service.detail(id,user));
     }

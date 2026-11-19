@@ -186,6 +186,9 @@
   min-width: 0;
 }
 
+.pl-difficulty-cell { display: grid; justify-items: start; gap: 4px; }
+.pl-difficulty-cell small { color: var(--muted); }
+
 .pl-title {
   display: block;
   max-width: 100%;

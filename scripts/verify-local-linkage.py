@@ -56,11 +56,9 @@ def check_targets():
             "앱 대상은 지정된 18083 루프백만 허용합니다")
     require(CONTAINER == "cobweb-feature-verify-postgres" and DATABASE == "cobweb_linkage_test",
             "전용 Docker 컨테이너·DB만 허용합니다")
-    applied = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE success AND version='1'"))
-    total = int(scalar("SELECT COUNT(*) FROM flyway_schema_history"))
-    failures = int(scalar("SELECT COUNT(*) FROM flyway_schema_history WHERE NOT success"))
-    require(applied == 1 and total == 1 and failures == 0,
-            "전용 DB의 단일 PostgreSQL Flyway V1 적용/성공 조건 미충족")
+    versions = scalar("SELECT string_agg(CASE WHEN success THEN version ELSE 'failed' END, ',' "
+                      "ORDER BY installed_rank) FROM flyway_schema_history")
+    require(versions == "1,2,3", "전용 DB에 PostgreSQL Flyway V1~V3 적용이 필요합니다")
     seed = int(scalar("SELECT COUNT(*) FROM problems WHERE problem_number=1000 "
                       "AND status='PUBLISHED' AND visibility='PUBLIC' AND execution_mode='FUNCTION'"))
     require(seed == 1, "전용 DB의 공개 FUNCTION 시드 문제 1000번이 없습니다")

@@ -27,13 +27,13 @@
 <button>제출하고 채점하기</button></form><pre id="judge-result" aria-live="polite"></pre>
 </section>
 <section id="submissions" class="view" hidden><h1>내 제출</h1><div id="submission-list" class="list"></div></section>
-<section id="ranking" class="view" hidden><h1>랭킹</h1><p>해결한 문제 수, 적은 제출 수 순으로 정렬됩니다.</p><div id="rank-list" class="list"></div></section>
+<section id="ranking" class="view" hidden><h1>랭킹</h1><p>누적 점수가 높은 순입니다. 동점이면 해결 수가 많고 제출 수가 적은 사용자가 앞섭니다.</p><div id="rank-list" class="list"></div></section>
 <section id="groups" class="view" hidden><div id="groups-app"></div></section>
 <section id="contest" class="view" hidden><div id="contest-app"></div></section>
 <section id="community" class="view" hidden><div id="community-app"></div></section>
 <section id="notices" class="view" hidden><div id="notices-app"></div></section>
 <section id="profile" class="view" hidden><h1>내 프로필</h1><pre id="profile-info" class="prose"></pre>
-<form id="profile-form"><label>자기소개<textarea name="bio" maxlength="300"></textarea></label>
+<form id="profile-form"><label>아이디 (이름)<input name="username" autocomplete="username" required maxlength="16"></label><label>자기소개<textarea name="bio" maxlength="300"></textarea></label>
 <label>GitHub 주소<input name="githubUrl" type="url" placeholder="https://github.com/username"></label><button>저장</button></form>
 <button id="logout">로그아웃</button></section>
 <section id="auth" class="view" hidden><h1>계정</h1><div class="grid">

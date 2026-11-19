@@ -28,6 +28,9 @@ function DetailPage({dark}){
   const drafts=useProblemDrafts({problem:problem.data,number,user,loading,epoch});
   const trail=problemTrail(location,number),owner=loading?'':draftOwner(user);
   const chapter=trail.listOrigin==null;
+  const chapterReturn=/^(?:[45]-[1-5]|6-[1-4])$/.test(location.state?.chapterReturn) ? location.state.chapterReturn : null;
+  const back=gid?`/groups/${gid}`:chapterReturn?`/steps?chapter=${chapterReturn}`:trail.from;
+  const nextState=chapterReturn?{...trail.state,chapterReturn}:trail.state;
   const questions=new URLSearchParams({problemNumber:number});
   if(!chapter)questions.set('list',trail.listOrigin);
   const neighbor=useApiData(!gid && problem.data?.canLinkInForum && !trail.next
@@ -75,16 +78,16 @@ function DetailPage({dark}){
   const p=problem.data;
   const submissionResult=<>
     {error&&<p className="cw-status-message error" role="alert">{error}</p>}
-    {submission&&<SubmissionFeedback id={submission.id} recovered={submission.recovered} onPendingChange={setBusy} nextAction={!gid&&<Link className="cw-btn primary" to={nextLink||trail.from} state={trail.state}>{nextLink?'다음 문제 풀기':'목록에서 다음 문제 찾기'}</Link>}/>}
+    {submission&&<SubmissionFeedback id={submission.id} recovered={submission.recovered} onPendingChange={setBusy} nextAction={!gid&&<Link className="cw-btn primary" to={nextLink||back} state={nextState}>{nextLink?'다음 문제 풀기':chapterReturn?'챕터 목록':'목록에서 다음 문제 찾기'}</Link>}/>}
     {!submission&&!error&&<p className="cw-hint cw-test-empty" role={busy?'status':undefined}>
       {busy?'코드를 제출하고 있습니다…':'제출한 코드의 채점 결과가 여기에 표시됩니다.'}
     </p>}
   </>;
-  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap"><header className="cw-head"><div><p className="cw-eyebrow">PROBLEM / {number}</p><h1 className="cw-title">{p?`${number}. ${p.problem_title}`:problem.error?'문제를 불러오지 못했어요':'문제 불러오는 중…'}</h1><ProblemAttribution problem={p}/></div><div className="cw-head-actions"><Link className="cw-btn" to={gid?`/groups/${gid}`:trail.from}>{gid?'그룹으로':'문제 목록'}</Link>{!gid&&p?.canLinkInForum&&<Link className="cw-btn" to={'/forum?'+questions} state={trail.state}>이 문제의 질문{p.questionCount!=null?` (${p.questionCount})`:''}</Link>}{p&&!gid&&nextLink&&<Link className="cw-btn" to={nextLink} state={trail.state}>다음 문제</Link>}
+  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap"><header className="cw-head"><div><p className="cw-eyebrow">PROBLEM / {number}</p><h1 className="cw-title">{p?`${number}. ${p.problem_title}`:problem.error?'문제를 불러오지 못했어요':'문제 불러오는 중…'}</h1><ProblemAttribution problem={p} showReward/></div><div className="cw-head-actions"><Link className="cw-btn" to={back}>{gid?'그룹으로':chapterReturn?'챕터 목록':'문제 목록'}</Link>{!gid&&p?.canLinkInForum&&<Link className="cw-btn" to={'/forum?'+questions} state={trail.state}>이 문제의 질문{p.questionCount!=null?` (${p.questionCount})`:''}</Link>}{p&&!gid&&nextLink&&<Link className="cw-btn" to={nextLink} state={nextState}>다음 문제</Link>}
       {neighbor.error&&<button type="button" className="cw-btn" onClick={neighbor.reload}>다음 문제 다시 찾기</button>}</div></header>
     {(problem.error||catalog.error)&&<div className="cw-card"><p className="cw-status-message error" role="alert">{problem.error||catalog.error}</p><button type="button" className="cw-btn" onClick={()=>{if(problem.error)problem.reload();if(catalog.error)catalog.reload();}}>다시 시도</button></div>}
     {/* 언어가 정해지기 전에 편집하면 언어 키가 없는 초안이 생길 수 있어 준비 후에만 엽니다. */}
-    {p&&language&&<ProblemWorkspace statement={<ProblemStatement problem={p}/>}><div className="pd-side">
+    {p&&language&&<ProblemWorkspace statement={<ProblemStatement problem={p} language={language}/>}><div className="pd-side">
       <TestRunPanel problem={p} number={number} language={language} code={code} disabled={busy} submissionResult={submissionResult}
         renderSubmitAction={({testing,showSubmissionResult})=><button className="cw-btn primary" type="button"
           disabled={busy||testing||!language||!code.trim()} onClick={()=>submit(showSubmissionResult)}>

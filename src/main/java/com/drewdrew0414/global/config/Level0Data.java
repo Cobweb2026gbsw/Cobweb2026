@@ -84,7 +84,7 @@ public class Level0Data implements ApplicationRunner {
             db.update("INSERT INTO problem_status_history(problem_id,status,cause,checker_id) VALUES(?,'ARCHIVED',?,?)",
                 chain.get("id"),"Lv.0 과정 등록: 체인 레이저 보관 (이전 번호 1000, 보관 번호 "+archivedNumber+")",author);
         }
-        insertCatalog(catalog,author,fingerprint,PACK_KEY,"Lv.0 과정 최초 등록");
+        insertCatalog(catalog,author,fingerprint,PACK_KEY,"Lv.0 과정 최초 등록",false);
         advanceSequence(next);
     }
     private int nextAvailableAtLeast1100() {
@@ -140,17 +140,17 @@ public class Level0Data implements ApplicationRunner {
         }
     }
 
-    void insertCatalog(Catalog catalog,long author,String fingerprint,String packKey,String historyPrefix) {
+    void insertCatalog(Catalog catalog,long author,String fingerprint,String packKey,String historyPrefix,boolean adjustedTime) {
         var entries=catalog.problems();
         batch("""
             INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,
                 constraints_text,rank_type,rank_int,time_limit_ms,memory_limit_mb,execution_mode,judge_type,
                 status,visibility,requested_visibility,author_id,group_id,function_abi_compatible,function_signature,
-                author_public,published_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,'FUNCTION','SPECIAL','PUBLISHED','PUBLIC','PUBLIC',?,NULL,TRUE,CAST(? AS jsonb),FALSE,(clock_timestamp() AT TIME ZONE 'UTC'))
+                author_public,published_at,language_adjusted_time)
+            VALUES(?,?,?,?,?,?,?,?,?,?,'FUNCTION','SPECIAL','PUBLISHED','PUBLIC','PUBLIC',?,NULL,TRUE,CAST(? AS jsonb),FALSE,(clock_timestamp() AT TIME ZONE 'UTC'),?)
             """,entries.stream().map(p->new Object[]{p.number(),p.title(),p.description(),p.inputDescription(),
                 p.outputDescription(),p.constraints(),p.rankType(),p.rankInt(),p.timeLimitMs(),p.memoryLimitMb(),
-                author,p.functionSignature().toJson(json)}).toList());
+                author,p.functionSignature().toJson(json),adjustedTime}).toList());
 
         // 검증된 팩의 문제 번호는 연속입니다. 같은 트랜잭션에서 생성된 ID를 한 번에 읽습니다.
         Map<Integer,Long> problemIds=new HashMap<>();

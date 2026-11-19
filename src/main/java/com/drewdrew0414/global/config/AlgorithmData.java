@@ -1,5 +1,6 @@
 package com.drewdrew0414.global.config;
 
+import com.drewdrew0414.domain.problem.CurriculumLevel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -17,7 +18,7 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.List;
 
-/** Lv.0 이후의 세 과정과 체인 레이저를 같은 트랜잭션에서 최초 한 번만 등록합니다. */
+/** Lv.0 이후의 과정과 체인 레이저를 같은 트랜잭션에서 최초 한 번만 등록합니다. */
 @Component @RequiredArgsConstructor @Order(20)
 @ConditionalOnProperty(name="curriculum.level0.enabled",havingValue="true",matchIfMissing=true)
 public class AlgorithmData implements ApplicationRunner {
@@ -31,7 +32,9 @@ public class AlgorithmData implements ApplicationRunner {
     private final Level0Data catalogs;
 
     @Override @Transactional public void run(ApplicationArguments arguments) {
-        importCatalogs(readLevel1Catalog(),readLevel2Catalog(),readLevel3Catalog());
+        var packs=java.util.Arrays.stream(CurriculumLevel.values()).filter(level->level.level>0)
+            .map(level->new Pack(catalogs.readCatalog(level.resource(),CATALOG_LIMIT,level.label()),level)).toList();
+        importPacks(packs);
     }
     public Level0Data.Catalog readLevel1Catalog() {
         return catalogs.readCatalog("problems/level1.json",CATALOG_LIMIT,"Lv.1");
@@ -42,7 +45,7 @@ public class AlgorithmData implements ApplicationRunner {
     public Level0Data.Catalog readLevel3Catalog() {
         return catalogs.readCatalog("problems/level3.json",CATALOG_LIMIT,"Lv.3");
     }
-    private record Pack(Level0Data.Catalog catalog,String key,int count,int firstNumber,String rank,String label) {}
+    private record Pack(Level0Data.Catalog catalog,CurriculumLevel level) {}
     private record ImportPlan(Pack pack,String fingerprint,boolean imported) {}
 
     /** 직접 호출할 때도 트랜잭션 프록시 또는 테스트의 롤백 트랜잭션 안에서 실행합니다. */
@@ -50,22 +53,20 @@ public class AlgorithmData implements ApplicationRunner {
         // 이전 두 팩만 가져오는 공개 호출의 의미와 기존 지문을 유지합니다.
         importPacks(List.of(skilled(level1),elite(level2)));
     }
-    /** 실제 기동은 세 카탈로그를 모두 검사한 뒤 동일한 시퀀스 잠금·트랜잭션으로 가져옵니다. */
+    /** 기존 세 과정 호출도 동일한 번호 잠금과 트랜잭션을 사용합니다. */
     @Transactional public void importCatalogs(Level0Data.Catalog level1,Level0Data.Catalog level2,Level0Data.Catalog level3) {
         importPacks(List.of(skilled(level1),elite(level2),
-            new Pack(level3,LEVEL3_PACK_KEY,80,1266,"EXPERT","Lv.3")));
+            new Pack(level3,CurriculumLevel.EXPERT)));
     }
-    private Pack skilled(Level0Data.Catalog catalog) {return new Pack(catalog,LEVEL1_PACK_KEY,75,1101,"SKILLED","Lv.1");}
-    private Pack elite(Level0Data.Catalog catalog) {return new Pack(catalog,LEVEL2_PACK_KEY,90,1176,"ELITE","Lv.2");}
+    private Pack skilled(Level0Data.Catalog catalog) {return new Pack(catalog,CurriculumLevel.SKILLED);}
+    private Pack elite(Level0Data.Catalog catalog) {return new Pack(catalog,CurriculumLevel.ELITE);}
 
     private void importPacks(List<Pack> packs) {
         for(var pack:packs) {
-            catalogs.validate(pack.catalog(),pack.count(),pack.firstNumber(),pack.rank(),pack.label());
-            if(LEVEL3_PACK_KEY.equals(pack.key())) for(int i=0;i<pack.count();i++) {
-                var entry=pack.catalog().problems().get(i);
-                if(!("Lv.3-"+(i/16+1)).equals(entry.chapter()) || entry.rankInt()!=5-i/16)
-                    throw conflict("EXPERT chapter or rank subdivision changed at ordinal "+entry.ordinal());
-            }
+            var level=pack.level();
+            catalogs.validate(pack.catalog(),level.count,level.firstNumber,level.name(),level.label());
+            for(var entry:pack.catalog().problems())
+                level.validateChapter(entry.ordinal(),entry.chapter(),entry.rankInt());
         }
         var titles=new HashSet<String>();
         for(var pack:packs)
@@ -76,7 +77,7 @@ public class AlgorithmData implements ApplicationRunner {
         // 모든 팩의 원장을 검사하기 전에는 문제·태그·시드 계정 어느 것도 쓰지 않습니다.
         var plans=packs.stream().map(pack->{
             String fingerprint=catalogs.fingerprint(pack.catalog());
-            return new ImportPlan(pack,fingerprint,catalogs.imported(pack.key(),pack.count(),1,fingerprint,pack.label()));
+            return new ImportPlan(pack,fingerprint,catalogs.imported(pack.level().packKey(),pack.level().count,1,fingerprint,pack.level().label()));
         }).toList();
         for(var plan:plans) if(!plan.imported()) catalogs.checkAvailability(plan.pack().catalog(),LABEL,true);
         ChainPlan chain=chainPlan();
@@ -85,8 +86,8 @@ public class AlgorithmData implements ApplicationRunner {
             long author=catalogs.seedAuthor(LABEL);
             if(!chain.imported()) restoreChain(chain,author);
             for(var plan:plans) if(!plan.imported())
-                catalogs.insertCatalog(plan.pack().catalog(),author,plan.fingerprint(),plan.pack().key(),
-                    plan.pack().label()+" 과정 최초 등록");
+                catalogs.insertCatalog(plan.pack().catalog(),author,plan.fingerprint(),plan.pack().level().packKey(),
+                    plan.pack().level().label()+" 과정 최초 등록",plan.pack().level().advanced());
         }
         catalogs.advanceSequence(previous);
     }

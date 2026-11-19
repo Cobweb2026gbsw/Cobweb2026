@@ -33,7 +33,9 @@ export default function Profile({ dark, isMe = false }) {
         {isMe && <Link to="/me/edit" className="cw-btn"><Icon name="save" /> 프로필 수정</Link>}
       </header>
       <section className="pf-stats" aria-label="활동 요약">{[
-        ["랭크", rank, "서버 기준"], ["해결 수", profile.solved_count, "문제"], ["제출 수", profile.submit_count, "회"],
+        ["누적 점수", profile.rank_points?.toLocaleString("ko-KR") ?? "—",
+          profile.next_rank_points == null ? (profile.rank_type === "ABSOLUTE" && profile.rank_int === 1 ? "최고 랭크" : "") :
+            `다음 승급까지 ${(profile.next_rank_points - profile.rank_points).toLocaleString("ko-KR")}점`], ["해결 수", profile.solved_count, "문제"], ["제출 수", profile.submit_count, "회"],
         ["해결 / 제출", profile.submit_count ? (100 * profile.solved_count / profile.submit_count).toFixed(1) + "%" : "0%", "일반 문제 통계"],
       ].map(([label, value, unit]) => <div key={label} className="cw-card pf-stat"><span>{label}</span><strong>{value}</strong><small>{unit}</small></div>)}</section>
       <section className="cw-card pf-solved"><div className="pf-solved-head"><h2 className="cw-card-title">공개 해결 문제 <small>최근 최대 100개</small></h2></div>

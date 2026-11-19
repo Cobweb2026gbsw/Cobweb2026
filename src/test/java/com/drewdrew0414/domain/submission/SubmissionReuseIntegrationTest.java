@@ -51,11 +51,49 @@ class SubmissionReuseIntegrationTest {
         assertNull(row(id).get("judge_token"));
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM submission_test_case_results WHERE submission_id=?",Integer.class,id));
         assertEquals(2,db.queryForObject("SELECT submit_count FROM users WHERE id=?",Integer.class,f.user().getUserId()));
+        assertEquals(50L,db.queryForObject("SELECT rank_points FROM users WHERE id=?",Long.class,f.user().getUserId()));
         assertEquals(1,db.queryForObject("SELECT solved_count FROM users WHERE id=?",Integer.class,f.user().getUserId()));
         assertEquals(2,db.queryForObject("SELECT accepted_count FROM problems WHERE id=?",Integer.class,f.problemId()));
         assertEquals(original,((Number)submissions.detail(id,f.user()).get("reusedFromSubmissionId")).longValue());
         assertFalse(submissions.tryReuse(second,IMAGE,ENGINE));
         assertEquals(2,db.queryForObject("SELECT accepted_count FROM problems WHERE id=?",Integer.class,f.problemId()));
+    }
+
+    @Test void onlyFirstAcceptanceAwardsTheCurrentDifficultyAndEarnedPointsSurviveLaterEdits() {
+        var f=fixture();
+        long userId=f.user().getUserId();
+        // SKILLED 1은 100점으로 첫 번째 세부 등급 승급 기준과 정확히 일치합니다.
+        db.update("UPDATE problems SET rank_type='SKILLED',rank_int=1 WHERE id=?",f.problemId());
+        complete(f,"print(1)","WRONG_ANSWER",null);
+        assertEquals(0L,db.queryForObject("SELECT rank_points FROM users WHERE id=?",Long.class,userId));
+
+        complete(f,"print(2)","ACCEPTED",null);
+        assertEquals(Map.of("rank_points",100L,"rank_type","INITIATE","rank_int",4),
+                db.queryForMap("SELECT rank_points,rank_type,rank_int FROM users WHERE id=?",userId));
+
+        db.update("UPDATE problems SET rank_type='ABSOLUTE',rank_int=1 WHERE id=?",f.problemId());
+        complete(f,"print(3)","ACCEPTED",null);
+        assertEquals(350,db.queryForObject("SELECT reward_points FROM problems WHERE id=?",Integer.class,f.problemId()));
+        assertEquals(100,db.queryForObject("SELECT awarded_points FROM user_solved_problems WHERE user_id=? AND problem_id=?",
+                Integer.class,userId,f.problemId()));
+        assertEquals(100L,db.queryForObject("SELECT rank_points FROM users WHERE id=?",Long.class,userId));
+    }
+
+    @Test void reachingEachThresholdAdvancesTheRankAndPointsCanGrowBeyondTheTopRank() {
+        long uid=otherUser().getUserId();
+        var tiers=List.of("INITIATE","SKILLED","ELITE","EXPERT","LEGEND","MYTHIC","ABSOLUTE");
+        long threshold=0;
+        for(int step=0;step<35;step++) {
+            String expected=tiers.get(step/5)+" "+(5-step%5);
+            long next=threshold+100L*(step+1);
+            for(long points:List.of(threshold,next-1)) {
+                db.update("UPDATE users SET rank_points=? WHERE id=?",points,uid);
+                assertEquals(expected,db.queryForObject("SELECT concat(rank_type,' ',rank_int) FROM users WHERE id=?",String.class,uid));
+            }
+            threshold=next;
+        }
+        db.update("UPDATE users SET rank_points=? WHERE id=?",Long.MAX_VALUE,uid);
+        assertEquals("ABSOLUTE 1",db.queryForObject("SELECT concat(rank_type,' ',rank_int) FROM users WHERE id=?",String.class,uid));
     }
 
     @Test void databaseAlsoRejectsEmptyAndOverLimitUtf8SourcesWithoutTruncation() {
@@ -137,6 +175,7 @@ class SubmissionReuseIntegrationTest {
         var second=queued(f,"print(2)",contest);
         assertTrue(submissions.tryReuse(second,IMAGE,ENGINE));
         assertEquals(original,((Number)row(((Number)second.get("id")).longValue()).get("reused_from_submission_id")).longValue());
+        assertEquals(0L,db.queryForObject("SELECT rank_points FROM users WHERE id=?",Long.class,f.user().getUserId()));
         assertEquals(0,db.queryForObject("SELECT solved_count FROM users WHERE id=?",Integer.class,f.user().getUserId()));
         assertEquals(0,db.queryForObject("SELECT submit_count FROM users WHERE id=?",Integer.class,f.user().getUserId()));
         long differentContest=additionalContest(f,contest);

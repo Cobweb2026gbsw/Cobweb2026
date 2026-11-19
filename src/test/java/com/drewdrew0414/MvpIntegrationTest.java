@@ -112,11 +112,12 @@ class MvpIntegrationTest {
 
     @Test void personalHistoryFindsOldestOf51AndScopesSearchPagesAndExport() throws Exception {
         int old=problems.create(draft(),author), later=problems.create(draft(),author);
+        String code="def sol():\n    return '원문 <태그>'\n";
         for (int i=0;i<51;i++) {
             db.update("""
                 INSERT INTO submissions(user_id,problem_id,language,status,source_code)
-                SELECT ?,id,'PYTHON',?,'example' FROM problems WHERE problem_number=?
-                """,author.getUserId(),i==0?"WRONG_ANSWER":"ACCEPTED",i==0?old:later);
+                SELECT ?,id,'PYTHON',?,? FROM problems WHERE problem_number=?
+                """,author.getUserId(),i==0?"WRONG_ANSWER":"ACCEPTED",code,i==0?old:later);
         }
         var first=history.page(author,"","","",0);
         var response=get("/api/submissions/history?q="+old+"&result=WRONG_ANSWER&language=PYTHON",author);
@@ -129,6 +130,16 @@ class MvpIntegrationTest {
         assertEquals(50,result.accepted());assertEquals(List.of("PYTHON"),result.languages());
         var exported=history.exportBatch(author,"","WRONG_ANSWER","PYTHON",null);
         assertEquals(1,exported.size());
+        assertFalse(exported.getFirst().containsKey("source_code"));
+        assertFalse(response.body().contains("원문"));
+        String path="/api/submissions/"+exported.getFirst().get("id")+"/source";
+        var ownCode=get(path,author);
+        assertEquals(200,ownCode.statusCode());
+        assertEquals(code,json.readTree(ownCode.body()).path("data").asString());
+        assertTrue(ownCode.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+        assertEquals(401,get(path,null).statusCode());
+        assertEquals(404,get(path,other).statusCode());
+        assertEquals(404,get(path,admin).statusCode());
         assertTrue(history.exportBatch(author,"","","",((Number)exported.getFirst().get("id")).longValue()).isEmpty());
         assertEquals(0,history.page(other,"","","",0).matches());
         assertTrue(history.exportBatch(other,"","","",null).isEmpty());

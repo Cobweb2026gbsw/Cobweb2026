@@ -15,7 +15,7 @@ class CatalogBuildVerifierTest {
     private List<Level0Data.Catalog> catalogs() {
         var data=new Level0Data(null,new ObjectMapper());
         var result=new ArrayList<Level0Data.Catalog>();
-        for(int level=0;level<4;level++)result.add(data.readCatalog("problems/level"+level+".json",32*1024*1024,"Lv."+level));
+        for(int level=0;level<7;level++)result.add(data.readCatalog("problems/level"+level+".json",32*1024*1024,"Lv."+level));
         return result;
     }
     private List<Level0Data.Catalog> replaced(int index,Level0Data.Entry entry) {
@@ -29,8 +29,8 @@ class CatalogBuildVerifierTest {
     }
 
     @Test void packagedCatalogsValidateWithoutDatabaseOrSpringStartup() {
-        assertEquals(345,CatalogBuildVerifier.verifyResources());
-        assertEquals(345,CatalogBuildVerifier.validateCatalogs(catalogs()));
+        assertEquals(450,CatalogBuildVerifier.verifyResources());
+        assertEquals(450,CatalogBuildVerifier.validateCatalogs(catalogs()));
     }
 
     @Test void reservedParameterThatPreviouslyStoppedWebStartupFailsBuildValidation() {

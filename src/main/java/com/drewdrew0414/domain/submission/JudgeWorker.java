@@ -81,7 +81,7 @@ public class JudgeWorker {
                             stage="case";
                             if(!lease.renew(stage)) return;
                             results.add(prepared.run((String)t.get("input_data"),(String)t.get("expected_output"),
-                                ((Number)p.get("time_limit_ms")).intValue(),((Number)p.get("memory_limit_mb")).intValue(),
+                                language.timeLimitMs(p),((Number)p.get("memory_limit_mb")).intValue(),
                                 ((Number)t.get("id")).longValue()));
                             if(!lease.current()) return;
                         }

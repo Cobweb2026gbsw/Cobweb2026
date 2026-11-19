@@ -9,7 +9,7 @@ const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://loc
 for(const key of ['window','document','HTMLElement','Event','MutationObserver'])globalThis[key]=dom.window[key];
 dom.window.scrollTo=()=>{};
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});globalThis.IS_REACT_ACT_ENVIRONMENT=true;
-const require=createRequire(import.meta.url),React=require('react'),{render,fireEvent,waitFor,cleanup}=require('@testing-library/react'),{MemoryRouter,Routes,Route,useLocation}=require('react-router-dom');
+const require=createRequire(import.meta.url),React=require('react'),{render,fireEvent,waitFor,cleanup,act}=require('@testing-library/react'),{MemoryRouter,Routes,Route,useLocation}=require('react-router-dom');
 const result=await build({stdin:{contents:"export {default as List} from './pages/MySubmissions.jsx';export {default as Result} from './pages/SubmissionResult.jsx';",resolveDir:fileURLToPath(new URL('../src/',import.meta.url)),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'journey-contract',setup(builder){
   builder.onResolve({filter:/(?:^|\/)api(?:\.js)?$/},()=>({path:'api',namespace:'contract'}));
   builder.onResolve({filter:/\/context\/AuthContext(?:\.jsx)?$/},()=>({path:'auth',namespace:'contract'}));
@@ -41,6 +41,43 @@ test('a direct result URL has a server-derived problem return link and retry onl
   const view=render(tree('/submissions/4'));await view.findByRole('alert');assert.equal(view.queryByRole('link',{name:'문제로 돌아가기'}),null);
   fail=false;fireEvent.click(view.getByRole('button',{name:'채점 결과 다시 불러오기'}));
   assert.equal((await view.findByRole('link',{name:'문제로 돌아가기'})).getAttribute('href'),'/groups/7/problems/1007');assert.equal(view.queryByRole('alert'),null);assert.deepEqual(calls,[['/api/submissions/4','GET'],['/api/submissions/4','GET']]);
+});
+test('my submissions can open saved code inline and switching rows discards a late response',async()=>{
+  const source="def sol():\n    return '<script>example</script>'\n";
+  let finishFirst;
+  const requests=[];
+  globalThis.__journeyApi=async path=>{
+    requests.push(path);
+    if(path.startsWith('/api/submissions/history?'))return history(path);
+    if(path==='/api/submissions/1/source')return new Promise(resolve=>{finishFirst=resolve;});
+    assert.equal(path,'/api/submissions/2/source');
+    return source;
+  };
+  const view=render(tree('/submissions'));
+  fireEvent.click(await view.findByRole('button',{name:'제출 #1 코드 보기'}));
+  await waitFor(()=>assert.equal(typeof finishFirst,'function'));
+  fireEvent.click(view.getByRole('button',{name:'제출 #2 코드 보기'}));
+  const region=view.getByRole('region',{name:'제출 #2 코드'});
+  await waitFor(()=>assert.equal(region.querySelector('code')?.textContent,source));
+  await act(async()=>finishFirst('previous row'));
+  assert.equal(region.querySelector('script'),null);
+  assert.equal(view.queryByText('previous row'),null);
+  fireEvent.click(view.getByRole('button',{name:'제출 #2 코드 닫기'}));
+  assert.equal(view.queryByRole('region',{name:'제출 #2 코드'}),null);
+  assert.equal(requests.length,3);
+});
+test('own result can read the submitted code after retrying a failed source request',async()=>{
+  let attempts=0;
+  globalThis.__journeyApi=async path=>{
+    if(path==='/api/submissions/4')return {id:4,problemNumber:1007,status:'WRONG_ANSWER',cases:[],canReadOwnSource:true};
+    assert.equal(path,'/api/submissions/4/source');
+    if(++attempts===1)throw Error('코드 조회 실패');
+    return 'print(42)\n';
+  };
+  const view=render(tree('/submissions/4'));
+  assert.equal((await view.findByRole('alert')).textContent,'코드 조회 실패');
+  fireEvent.click(view.getByRole('button',{name:'코드 다시 불러오기'}));
+  await waitFor(()=>assert.equal(view.getByRole('region',{name:'제출 #4 코드'}).querySelector('code')?.textContent,'print(42)\n'));
 });
 test('no history, no search matches and request failure offer distinct recovery actions',async()=>{
   globalThis.__journeyApi=async path=>history(path,[]);let view=render(tree('/submissions'));await view.findByText('아직 제출한 코드가 없습니다.');assert.ok(view.getByRole('link',{name:'문제 풀러 가기'}));assert.equal(view.queryByRole('navigation',{name:'제출 페이지'}),null);cleanup();

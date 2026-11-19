@@ -26,6 +26,10 @@ public class ProblemController {
     public Object list(int page,String search,List<String> difficulty,String solved,CustomUserDetails user) {
         return ApiResponse.success(service.list(page,search,difficulty,solved,user));
     }
+    @GetMapping("/chapter")
+    public Object chapter(@RequestParam int level,@RequestParam int chapter) {
+        return ApiResponse.success(service.chapter(level,chapter));
+    }
     @GetMapping("/next")
     public Object next(@RequestParam int number,@RequestParam(defaultValue="false") boolean chapter,
                        @RequestParam(defaultValue="") String search,@RequestParam(required=false) List<String> difficulty,

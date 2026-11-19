@@ -29,7 +29,7 @@ class SubmissionReuseTest {
         String baseline=SubmissionService.contextDigest(problem,tests,IMAGE,ENGINE);
         assertNotNull(baseline);
         assertEquals(baseline,SubmissionService.contextDigest(problem,tests,IMAGE,ENGINE));
-        for(var field:Map.of("execution_mode","FUNCTION","time_limit_ms",2000,"memory_limit_mb",512,"function_abi_compatible",true).entrySet()) {
+        for(var field:Map.of("execution_mode","FUNCTION","time_limit_ms",2000,"memory_limit_mb",512,"function_abi_compatible",true,"language_adjusted_time",true).entrySet()) {
             var changed=new HashMap<>(problem);changed.put(field.getKey(),field.getValue());
             assertNotEquals(baseline,SubmissionService.contextDigest(changed,tests,IMAGE,ENGINE));
         }

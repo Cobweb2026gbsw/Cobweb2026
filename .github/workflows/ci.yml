@@ -34,6 +34,7 @@ jobs:
       DOCKER_JUDGE_TEST: 'false'
       GENERIC_CATALOG_DOCKER_TEST: 'false'
       EXPERT_CATALOG_DOCKER_TEST: 'false'
+      ADVANCED_CATALOG_DOCKER_TEST: 'false'
     services:
       postgres:
         image: postgres:18
@@ -105,6 +106,9 @@ jobs:
           python3 -I -B -m unittest discover -s src/test/python -p 'test_level0_catalog.py'
           python3 -I -B -m unittest discover -s src/test/python -p 'test_algorithm_catalog.py'
           python3 -I -B -m unittest discover -s src/test/python -p 'test_expert_catalog.py'
+          python3 -B scripts/build-legend-catalog.py --check
+          python3 -B scripts/build-mythic-catalog.py --check
+          python3 -B scripts/build-absolute-catalog.py --check
           python3 -I -B -m unittest discover -s src/test/python -p 'test_judge_results_guard.py'
       - name: Run Gradle tests
         shell: bash
@@ -149,6 +153,7 @@ jobs:
       DOCKER_JUDGE_TEST: 'true'
       GENERIC_CATALOG_DOCKER_TEST: 'true'
       EXPERT_CATALOG_DOCKER_TEST: 'true'
+      ADVANCED_CATALOG_DOCKER_TEST: 'true'
     services:
       postgres:
         image: postgres:18
@@ -188,7 +193,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          DOCKER_JUDGE_TEST=true GENERIC_CATALOG_DOCKER_TEST=true EXPERT_CATALOG_DOCKER_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
+          DOCKER_JUDGE_TEST=true GENERIC_CATALOG_DOCKER_TEST=true EXPERT_CATALOG_DOCKER_TEST=true ADVANCED_CATALOG_DOCKER_TEST=true ./gradlew --no-daemon --console=plain clean build 2>&1 | tee ci-logs/full-gradle.log
       - name: Check nested arrays and million-item inputs in all 15 function languages
         shell: bash
         run: |

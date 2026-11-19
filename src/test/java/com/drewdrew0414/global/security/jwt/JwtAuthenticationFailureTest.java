@@ -28,7 +28,7 @@ class JwtAuthenticationFailureTest {
     @Test void databaseFailureIsNotDowngradedToAnonymousAndDoesNotExposeSqlOrIdentity() throws Exception {
         var request=request();var response=new MockHttpServletResponse();var chain=mock(FilterChain.class);
         when(provider.getClaims("token")).thenReturn(Jwts.claims().subject("1").add("username","private-username").build());
-        when(users.loadUserByUsername("private-username"))
+        when(users.loadUserById(1L))
             .thenThrow(new TransientDataAccessResourceException("SELECT password secret-SQL-must-not-leak"));
         filter.doFilter(request,response,chain);
         assertEquals(503,response.getStatus());assertTrue(response.getContentType().startsWith("application/json"));
@@ -51,7 +51,7 @@ class JwtAuthenticationFailureTest {
         ReflectionTestUtils.setField(user,"id",1L);ReflectionTestUtils.setField(user,"status",UserStatus.STOPPED);
         when(provider.getClaims("token")).thenReturn(Jwts.claims().subject("1")
             .add("username","stopped-user").add("tokenVersion",0).build());
-        when(users.loadUserByUsername("stopped-user")).thenReturn(new CustomUserDetails(user));
+        when(users.loadUserById(1L)).thenReturn(new CustomUserDetails(user));
         filter.doFilter(request,response,chain);
         assertNull(SecurityContextHolder.getContext().getAuthentication());verify(chain).doFilter(request,response);
     }

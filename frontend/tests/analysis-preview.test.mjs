@@ -17,10 +17,10 @@ test('analysis plugin is opt-in and excluded even from analysis-mode builds',()=
   assert.ok(config.server.fs.deny.includes('**/src/main/resources/problems/**'));
 });
 
-test('all 345 problems contain public fields only, including nested objects',()=>{
+test('all 450 problems contain public fields only, including nested objects',()=>{
   const problems=loadAnalysisProblems();
-  assert.equal(problems.length,345);
-  assert.equal(new Set(problems.map(problem=>problem.problem_number)).size,345);
+  assert.equal(problems.length,450);
+  assert.equal(new Set(problems.map(problem=>problem.problem_number)).size,450);
   const text=JSON.stringify(problems);
   for(const key of ['referenceSolution','referenceSolutions','tests','expected','password','sourceCode']) assert.ok(!text.includes(`"${key}":`),key);
   const mapped=publicProblem({number:1000,title:'sample',functionSignature:{name:'sol',parameters:[{name:'n',type:'int',secret:'hidden'}],returnType:'int',secret:'hidden'},examples:[{input:'1',output:'2',secret:'hidden'}],tags:[],tests:['hidden'],referenceSolution:'hidden'});
@@ -42,8 +42,10 @@ test('local session, discovery, filtering and unsupported actions stay isolated'
   assert.deepEqual(await after(1029),{number:1030,page:1});
   assert.deepEqual(await after(1000,'chapter=true'),{number:1001,page:0});
   assert.equal(await after(1019,'chapter=true'),null);
-  assert.equal(await after(1345),null);
+  assert.equal(await after(1450),null);
   assert.equal(await after(1000,'solved=solved'),null);
+  const chapter=(await request('/api/problems/chapter?level=5&chapter=5')).data;
+  assert.deepEqual(chapter.map(p=>p.problem_number),[1424,1425,1426,1427,1428,1429,1430]);
   const session=await request('/api/auth/reissue',{method:'POST'});
   const headers={Authorization:`Bearer ${session.data.accessToken}`};
   const identity=await request('/api/me',{headers});
@@ -53,9 +55,9 @@ test('local session, discovery, filtering and unsupported actions stay isolated'
   assert.deepEqual((await request('/api/problems/permissions')).data,{canCreate:false,canManage:false});
 
   const first=(await request('/api/problems?pagination=true')).data;
-  assert.equal(first.totalItems,345);assert.equal(first.totalPages,12);assert.equal(first.items.length,30);
+  assert.equal(first.totalItems,450);assert.equal(first.totalPages,15);assert.equal(first.items.length,30);
   const last=(await request('/api/problems?pagination=true&page=1000')).data;
-  assert.equal(last.page,11);assert.equal(last.items.length,15);
+  assert.equal(last.page,14);assert.equal(last.items.length,30);
   const loops=(await request('/api/problems?pagination=true&search='+encodeURIComponent('반복문'))).data;
   assert.equal(loops.totalItems,20);
   assert.ok(loops.items.every(problem=>problem.tags.includes('반복문')));

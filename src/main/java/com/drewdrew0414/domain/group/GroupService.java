@@ -231,7 +231,7 @@ public class GroupService {
             can(gid,user,GroupPermission.MANAGE_CONTESTS) ||
             can(gid,user,GroupPermission.VIEW_CONTEST_RESULTS);
         var rows=db.queryForList("""
-            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.reward_points,
                    p.submission_count,p.accepted_count,
                    EXISTS(SELECT 1 FROM contest_problems used WHERE used.problem_id=p.id) AS used_in_contest
             FROM problems p WHERE p.group_id=? AND p.visibility='GROUP' AND p.status='PUBLISHED'
@@ -242,7 +242,7 @@ public class GroupService {
             """,gid,"%"+Objects.toString(search,"")+"%",staff,user.getUserId(),offset(page));
         return rows.stream().map(r -> Map.<String,Object>of(
             "problemNumber",r.get("problem_number"),"problemTitle",r.get("problem_title"),
-            "rankType",r.get("rank_type"),"rankInt",r.get("rank_int"),
+            "rankType",r.get("rank_type"),"rankInt",r.get("rank_int"),"rewardPoints",r.get("reward_points"),
             "submissionCount",r.get("submission_count"),"acceptedCount",r.get("accepted_count"),
             "usedInContest",enabled(r.get("used_in_contest")))).toList();
     }

@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ExpertDataIntegrationTest {
     @Autowired JdbcTemplate db;
     @Autowired ObjectMapper json;
+    @Autowired com.drewdrew0414.domain.problem.ProblemService problems;
     @Autowired PlatformTransactionManager transactions;
     private AlgorithmData importer;
     private Level0Data.Catalog skilled,elite,expert;
@@ -61,6 +62,40 @@ class ExpertDataIntegrationTest {
         for(int chapter=0;chapter<5;chapter++) assertEquals(16,db.queryForObject("SELECT COUNT(*) FROM problems WHERE problem_number BETWEEN ? AND ? AND rank_type='EXPERT' AND rank_int=?",Integer.class,1266+chapter*16,1281+chapter*16,5-chapter));
         assertTrue(db.queryForObject("SELECT next_number FROM problem_number_sequence WHERE id=1",Integer.class)>=1346);
         assertTrue(db.queryForObject("SELECT next_number FROM problem_number_sequence WHERE id=1",Integer.class)>db.queryForObject("SELECT MAX(problem_number) FROM problems",Integer.class));
+    }
+
+    @Test void advancedChaptersExtendAnExistingCatalogOnceAndListOnlyPublicMembers() {
+        importAll();
+        int temporary=temporary();
+        for(var row:db.queryForList("SELECT id FROM problems WHERE problem_number BETWEEN 1346 AND 1450"))
+            db.update("UPDATE problems SET problem_number=? WHERE id=?",temporary++,row.get("id"));
+        importer.run(null);
+        assertEquals(105, db.queryForObject("SELECT count(*) FROM problems WHERE language_adjusted_time AND problem_number BETWEEN 1346 AND 1450",Integer.class));
+        assertTrue(db.queryForObject("SELECT next_number FROM problem_number_sequence WHERE id=1",Integer.class)>1450);
+        for(var level:com.drewdrew0414.domain.problem.CurriculumLevel.values()) {
+            if(!level.advanced()) continue;
+            for(int section=1;section<=level.count/level.chapterSize;section++) {
+                var chapter=problems.chapter(level.level,section);
+                assertEquals(level.chapterSize,chapter.size());
+                assertEquals(level.firstNumber+(section-1)*level.chapterSize,chapter.getFirst().get("problem_number"));
+                assertEquals(level.firstNumber+section*level.chapterSize-1,chapter.getLast().get("problem_number"));
+                assertEquals(java.util.Set.of("problem_number","problem_title","rank_type","rank_int","reward_points"),chapter.getFirst().keySet());
+            }
+        }
+        var finalProblem=problems.detail(1450,null);
+        assertEquals(350,finalProblem.get("reward_points"));
+        assertEquals(15,((java.util.List<?>)finalProblem.get("languages")).size());
+        var limits=(java.util.Map<?,?>)finalProblem.get("languageTimeLimits");
+        int base=(int)finalProblem.get("time_limit_ms");
+        assertEquals(base,limits.get("CPP"));
+        assertEquals(Math.min(10000,base*2),limits.get("PYTHON"));
+        db.update("DELETE FROM problem_tags WHERE problem_id IN (SELECT id FROM problems WHERE problem_number BETWEEN 1396 AND 1402)");
+        assertEquals(1397,problems.nextPublic(1396,true,"",null,"all","number",null).number());
+        assertNull(problems.nextPublic(1402,true,"",null,"all","number",null));
+        db.update("UPDATE problems SET status='ARCHIVED',visibility='PRIVATE' WHERE problem_number=1396");
+        importer.run(null);
+        assertEquals(6,problems.chapter(5,1).size());
+        assertEquals(1397,problems.chapter(5,1).getFirst().get("problem_number"));
     }
 
     @Test void repeatImportPreservesEditedPrivateProblemAndItsSubmission() {

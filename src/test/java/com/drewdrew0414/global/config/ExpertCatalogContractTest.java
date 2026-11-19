@@ -51,14 +51,14 @@ class ExpertCatalogContractTest {
         verifyNoInteractions(db);
     }
 
-    @Test void startupUsesTheThreePackTransactionAndRetainsTheTwoPackCompatibilityMethod() throws Exception {
-        var watched=spy(importer);
-        var skilled=importer.readLevel1Catalog();var elite=importer.readLevel2Catalog();var expert=importer.readLevel3Catalog();
-        doReturn(skilled).when(watched).readLevel1Catalog();doReturn(elite).when(watched).readLevel2Catalog();doReturn(expert).when(watched).readLevel3Catalog();
-        doNothing().when(watched).importCatalogs(skilled,elite,expert);
-        watched.run(null);
-        verify(watched).importCatalogs(skilled,elite,expert);
-        verify(watched,never()).importCatalogs(any(),any());
+    @Test void startupReadsAllSixPacksBeforeWritingAndKeepsOlderTransactionalEntryPoints() throws Exception {
+        var reader=spy(catalogs);
+        var failure=new IllegalStateException("test: last curriculum catalog missing");
+        doThrow(failure).when(reader).readCatalog(eq("problems/level6.json"),anyInt(),eq("Lv.6"));
+        assertSame(failure,assertThrows(IllegalStateException.class,()->new AlgorithmData(db,reader).run(null)));
+        var calls=inOrder(reader);
+        for(int level=1;level<=6;level++)
+            calls.verify(reader).readCatalog(eq("problems/level"+level+".json"),anyInt(),eq("Lv."+level));
         assertNotNull(AlgorithmData.class.getMethod("run",ApplicationArguments.class).getAnnotation(Transactional.class));
         assertNotNull(AlgorithmData.class.getMethod("importCatalogs",Level0Data.Catalog.class,Level0Data.Catalog.class).getAnnotation(Transactional.class));
         assertNotNull(AlgorithmData.class.getMethod("importCatalogs",Level0Data.Catalog.class,Level0Data.Catalog.class,Level0Data.Catalog.class).getAnnotation(Transactional.class));

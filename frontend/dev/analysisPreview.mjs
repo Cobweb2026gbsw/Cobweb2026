@@ -1,11 +1,12 @@
 import {readFileSync} from 'node:fs';
+import {RANKS} from '../src/lib/problemModel.js';
 
 // This module is a Vite development server plugin, never a browser dependency.
 // Use an ID outside PostgreSQL bigint so preview drafts cannot belong to a real user.
 const PROFILE = {
   id: '9999999999999999999', username: '분석용 계정',
   bio: '로컬 화면 분석용 계정입니다.', rank_type: 'INITIATE', rank_int: 5,
-  solved_count: 0, submit_count: 0, solvedProblems: [],
+  rank_points: 0, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: [],
 };
 const TOKEN = `${Buffer.from('{"alg":"ANALYSIS"}').toString('base64url')}.${Buffer.from(JSON.stringify({sub: PROFILE.id})).toString('base64url')}.local-preview-only`;
 const LANGUAGES = [
@@ -14,6 +15,10 @@ const LANGUAGES = [
   ['GO','Go'], ['RUST','Rust'], ['KOTLIN','Kotlin'], ['RUBY','Ruby'],
   ['LLVM_IR','LLVM IR'], ['PASCAL','Pascal'], ['PHP','PHP'], ['DART','Dart'],
 ].map(([id,label]) => ({id,label,modes:['FUNCTION']}));
+const SLOWER_LANGUAGE_FACTORS = {
+  PYTHON: 2, RUBY: 2, PHP: 2, JAVA: 1.5, KOTLIN: 1.5, CSHARP: 1.5,
+  JAVASCRIPT: 1.5, TYPESCRIPT: 1.5, DART: 1.5,
+};
 const STATIC_FILES = new Set(['/markdown.js','/code-editor.js','/react-bridge.js','/vendor/marked.umd.js']);
 
 // Explicit public fields only: catalogs also contain private tests and solutions.
@@ -23,6 +28,9 @@ export function publicProblem(problem) {
     description: problem.description, input_description: problem.inputDescription,
     output_description: problem.outputDescription, constraints_text: problem.constraints,
     rank_type: problem.rankType, rank_int: problem.rankInt,
+    reward_points: 10*(1+5*RANKS.indexOf(problem.rankType)+5-problem.rankInt),
+    ...(problem.number>=1346 && {languageTimeLimits:Object.fromEntries(LANGUAGES.map(({id})=>[id,
+      Math.min(10000,Math.ceil(problem.timeLimitMs*(SLOWER_LANGUAGE_FACTORS[id]??1)))]))}),
     time_limit_ms: problem.timeLimitMs, memory_limit_mb: problem.memoryLimitMb,
     execution_mode: 'FUNCTION', functionAbi: 'GENERIC_V1',
     functionSignature: {
@@ -37,7 +45,7 @@ export function publicProblem(problem) {
 }
 
 export function loadAnalysisProblems() {
-  return [0,1,2,3].flatMap(level => {
+  return [0,1,2,3,4,5,6].flatMap(level => {
     const catalog = JSON.parse(readFileSync(new URL(`../../src/main/resources/problems/level${level}.json`, import.meta.url), 'utf8'));
     return catalog.problems.map(publicProblem);
   });
@@ -90,6 +98,11 @@ export function createAnalysisMiddleware(problems = loadAnalysisProblems()) {
     if (path === '/api/languages') return send(200,LANGUAGES);
     if (path === '/api/problems/permissions') return send(200,{canCreate:false,canManage:false});
     if (path === '/api/problems') return send(200,problemPage(problems,url.searchParams));
+    if (path === '/api/problems/chapter') {
+      const tag = `Lv.${url.searchParams.get('level')}-${url.searchParams.get('chapter')}`;
+      return send(200,problems.filter(p=>p.tags.includes(tag)).map(({problem_number,problem_title,rank_type,rank_int,reward_points})=>
+        ({problem_number,problem_title,rank_type,rank_int,reward_points})));
+    }
     if (path === '/api/problems/next') {
       const params=url.searchParams,anchor=byNumber.get(params.get('number'));
       if(!anchor)return send(404,null,'문제를 찾을 수 없습니다.');

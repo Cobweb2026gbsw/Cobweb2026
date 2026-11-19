@@ -79,7 +79,7 @@ public class TestRunService {
             INSERT INTO user_test_runs(user_id,problem_id,language,source_code,execution_mode,function_signature,time_limit_ms,memory_limit_mb,input_cases,private_sample)
             VALUES(?,?,?,?,?,CAST(? AS jsonb),?,?,CAST(? AS jsonb),?) RETURNING id
             """,Long.class,uid,problem.get("id"),language.name(),request.sourceCode(),mode,
-            signature==null?null:signature.toJson(json),problem.get("time_limit_ms"),problem.get("memory_limit_mb"),inputCases,request.privateSample());
+            signature==null?null:signature.toJson(json),language.timeLimitMs(problem),problem.get("memory_limit_mb"),inputCases,request.privateSample());
         for(int index=0;index<privateCases.size();index++) {
             var sample=privateCases.get(index);
             db.update("INSERT INTO user_test_run_private_cases(run_id,display_order,input_data,expected_output,compare_type) VALUES(?,?,?,?,?)",

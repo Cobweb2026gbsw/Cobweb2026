@@ -42,6 +42,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
+// 인증 상태 변경 시 JDBC가 별도로 관리하는 프로필·랭킹 열을 다시 쓰지 않습니다.
+@org.hibernate.annotations.DynamicUpdate
 // JPA가 이 클래스를 DB 테이블과 매핑되는 엔티티로 인식하게 한다.
 
 @Table(name = "users")
@@ -100,17 +102,18 @@ public class User {
     @Column(length = 20)
     private UserStatus status = UserStatus.ACTIVE;
 
-    @Column(name = "solved_count")
+    // 채점 트랜잭션이 관리하는 통계를 다른 로그인·프로필 변경이 이전 값으로 덮어쓰지 않게 합니다.
+    @Column(name = "solved_count", updatable = false)
     private int solvedCount = 0;
 
-    @Column(name = "submit_count")
+    @Column(name = "submit_count", updatable = false)
     private int submitCount = 0;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "rank_type", length = 20)
+    @Column(name = "rank_type", length = 20, updatable = false)
     private RankType rankType = RankType.INITIATE;
 
-    @Column(name = "rank_int")
+    @Column(name = "rank_int", updatable = false)
     private int rankInt = 5;
 
     @Column(name = "login_failed_count")

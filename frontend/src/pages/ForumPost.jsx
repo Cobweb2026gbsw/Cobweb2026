@@ -24,6 +24,9 @@ function History({kind,id,onClose}){
     <div className="cw-pager"><button className="cw-btn" disabled={!page||loading} onClick={()=>setPage(page-1)}>이전</button><span>{page+1}</span><button className="cw-btn" disabled={loading||data?.length!==20} onClick={()=>setPage(page+1)}>다음</button></div>
   </section>;
 }
+function AuthorName({item}){
+  return item.authorHasProfile === false ? <span>{item.authorUsername}</span> : <Link to={profileHref(item.authorUsername)}>{item.authorUsername}</Link>;
+}
 function CommentList({postId,parentId=null,admin=false,disabled=false,compose=true,onChange}){
   const {user,permissions}=useAuth(); const scope=useScope();
   const [page,setPage]=useState(0),[items,setItems]=useState([]),[text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -61,7 +64,7 @@ function Comment({item,postId,admin,disabled,onChange,canManage}){
     }catch(failure){if(current()&&!failure.stale)setError(failure.message);}finally{if(current())setBusy(false);}
   };
   return <article className="fm-thread-item" data-depth={item.depth}>
-    <div className="fm-comment-head"><Link to={profileHref(item.authorUsername)}>{item.authorUsername}</Link><span>{displayDate(item.createdAt)}{item.edited?' · 수정됨':''}{item.deleted?' · 삭제됨':''}</span></div>
+    <div className="fm-comment-head"><AuthorName item={item}/><span>{displayDate(item.createdAt)}{item.edited?' · 수정됨':''}{item.deleted?' · 삭제됨':''}</span></div>
     {editing?<form onSubmit={event=>{event.preventDefault();mutate('edit');}}><textarea aria-label="댓글 수정" className="cw-textarea" maxLength={5000} required value={body} onChange={event=>setBody(event.target.value)}/><div className="cw-actions"><button className="cw-btn sm primary" disabled={busy}>저장</button><button type="button" className="cw-btn sm" onClick={()=>setEditing(false)}>취소</button></div></form>:<CommentBody key={item.body??item.deletedMessage} body={item.body??item.deletedMessage??'삭제된 댓글입니다.'}/>}
     <div className="cw-actions">
       {item.canEdit&&<button className="cw-btn sm" disabled={busy} onClick={()=>setEditing(!editing)}>댓글 수정</button>}
@@ -100,7 +103,7 @@ export default function ForumPost({dark,admin=false}){
     {resource.loading?<p role="status">게시글 불러오는 중…</p>:post&&<>
       <article className="cw-card fm-article"><div className="fm-article-top"><span className={`cw-badge ${category?.tone||'gray'}`}>{category?.label||post.category}</span>{post.deleted&&<span className="cw-badge red">삭제됨</span>}
         {post.problemNumber&&<Link className="cw-badge mint" to={'/problems/'+post.problemNumber}>문제 #{post.problemNumber}</Link>}</div>
-        <h1>{post.title}</h1><p className="fm-meta"><Link to={profileHref(post.authorUsername)}>{post.authorUsername}</Link><span>{displayDate(post.createdAt)}</span>{post.edited&&<span>수정됨 · {displayDate(post.updatedAt)}</span>}</p>
+        <h1>{post.title}</h1><p className="fm-meta"><AuthorName item={post}/><span>{displayDate(post.createdAt)}</span>{post.edited&&<span>수정됨 · {displayDate(post.updatedAt)}</span>}</p>
         <div className="fm-body">{post.body}</div><div className="fm-article-actions cw-actions">
           {post.canEdit&&<Link className="cw-btn sm" to={'/forum/'+id+'/edit?'+editParams}>게시글 수정</Link>}
           {post.canDelete&&<button className="cw-btn sm danger" disabled={busy} onClick={()=>mutate(false)}>게시글 삭제</button>}

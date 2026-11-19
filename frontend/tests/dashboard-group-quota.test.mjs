@@ -36,7 +36,7 @@ test('dashboard shows one default membership as ordinary zero of three plus one 
   api([system]); const view = render(tree()); await view.findByText('가입 그룹', {selector: 'p'});
   assert.equal(quota(view).getAttribute('aria-label'), '일반 0 / 3개 · 기본 1개');
   assert.equal(quota(view).childNodes[1].textContent, '0');
-  assert.equal(view.getAllByText('기본 그룹 · 가입 제한 제외').length, 1);
+  assert.equal(view.getAllByText('기본 그룹').length, 1);
   assert.equal(view.getByRole('link', {name: /COBWEB GROUP/}).getAttribute('href'), '/groups/1');
 });
 
@@ -44,14 +44,14 @@ test('three ordinary memberships plus the default display three of three, not fo
   api([system, ordinary(2), ordinary(3), ordinary(4)]); const view = render(tree()); await view.findByText('가입 그룹', {selector: 'p'});
   assert.equal(quota(view).getAttribute('aria-label'), '일반 3 / 3개 · 기본 1개');
   assert.equal(quota(view).childNodes[1].textContent, '3');
-  for (const id of [2, 3, 4]) assert.equal(within(view.getByRole('link', {name: `일반 그룹 ${id} 회원`})).queryByText('기본 그룹 · 가입 제한 제외') === null, true);
+  for (const id of [2, 3, 4]) assert.equal(within(view.getByRole('link', {name: `일반 그룹 ${id} 회원`})).queryByText('기본 그룹') === null, true);
 });
 
 test('missing, false, string, and numeric flags remain ordinary even when the name matches the default', {timeout: 5000}, async () => {
   for (const flag of [undefined, false, 'true', 1]) {
     api([{...system, systemGroup: flag}]); const view = render(tree()); await view.findByText('가입 그룹', {selector: 'p'});
     assert.equal(quota(view).getAttribute('aria-label'), '일반 1 / 3개 · 기본 0개');
-    assert.equal(view.queryByText('기본 그룹 · 가입 제한 제외') === null, true); cleanup();
+    assert.equal(view.queryByText('기본 그룹') === null, true); cleanup();
   }
 });
 
@@ -64,7 +64,7 @@ test('no memberships show a zero quota without inventing a built-in membership',
 test('dashboard uses actual strict-flag membership counts rather than assuming one built-in group', {timeout: 5000}, async () => {
   api([system, {...system, id: 2, groupName: '두 번째 기본 그룹'}, ordinary(3)]); const view = render(tree()); await view.findByText('가입 그룹', {selector: 'p'});
   assert.equal(quota(view).getAttribute('aria-label'), '일반 1 / 3개 · 기본 2개');
-  assert.equal(view.getAllByText('기본 그룹 · 가입 제한 제외').length, 2);
+  assert.equal(view.getAllByText('기본 그룹').length, 2);
 });
 
 test('an account epoch change clears the old quota and ignores the previous account response', {timeout: 5000}, async () => {
@@ -81,7 +81,7 @@ test('an account epoch change clears the old quota and ignores the previous acco
 test('quota values and long built-in labels wrap instead of hiding in narrow dashboard cards', {timeout: 5000}, async () => {
   const style = document.createElement('style'); style.textContent = readFileSync(new URL('../src/pages/Dashboard.css', import.meta.url), 'utf8'); document.head.append(style);
   try {
-    api([{...system, groupName: '긴 그룹 이름 '.repeat(20)}]); const view = render(tree()); const badge = await view.findByText('기본 그룹 · 가입 제한 제외');
+    api([{...system, groupName: '긴 그룹 이름 '.repeat(20)}]); const view = render(tree()); const badge = await view.findByText('기본 그룹');
     assert.equal(window.getComputedStyle(quota(view)).flexWrap, 'wrap');
     assert.equal(window.getComputedStyle(badge).display, 'block');
     assert.equal(window.getComputedStyle(badge.parentElement).whiteSpace, 'normal');

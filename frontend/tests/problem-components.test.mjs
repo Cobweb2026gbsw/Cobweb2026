@@ -84,6 +84,51 @@ test('problem detail uses requested real problem and posts exact submission DTO'
 });
 
 const submittedCode='print("같은 코드")  \n';
+
+test('accepted submissions follow the active chapter through its last problem and back to the same chapter', async () => {
+  reset();
+  const Steps = await component('pages/Steps.jsx');
+  const Detail = await component('pages/ProblemDetail.jsx');
+  const rows = Array.from({length:5}, (_,i) => ({
+    problem_number:1446+i, problem_title:'복합 최적화 연습 '+(i+1), reward_points:300,
+    rank_type:'ABSOLUTE', rank_int:i===4?1:2, execution_mode:'STDIN', languages:['PYTHON'], examples:[],
+    canLinkInForum:true,
+  }));
+  const submitted = [];
+  globalThis.__problemApi = async (path,method,body) => {
+    if (path === '/api/problems/chapter?level=6&chapter=4') return rows;
+    if (path === '/api/languages') return [{id:'PYTHON',label:'Python',modes:['STDIN']}];
+    if (path === '/api/problems/next?number=1449&chapter=true') return {number:1450,page:0};
+    if (path === '/api/problems/next?number=1450&chapter=true') return null;
+    if (path === '/api/submissions' && method === 'POST') { submitted.push(body.problemNumber); return submitted.length; }
+    if (/^\/api\/submissions\/[12]$/.test(path)) return {status:'ACCEPTED',score:100,cases:[]};
+    const problem = rows.find(p => path === '/api/problems/'+p.problem_number);
+    assert.ok(problem, path);
+    return problem;
+  };
+  const view = render(React.createElement(MemoryRouter, {initialEntries:['/steps?chapter=6-4']},
+    React.createElement(Routes, null,
+      React.createElement(Route, {path:'/steps',element:React.createElement(Steps)}),
+      React.createElement(Route, {path:'/problems/:id',element:React.createElement(Detail)}))));
+  fireEvent.click(await view.findByRole('link',{name:/1449 복합 최적화 연습 4/}));
+  assert.equal((await view.findByRole('link',{name:'다음 문제',exact:true})).getAttribute('href'),'/problems/1450');
+  for (const number of [1449,1450]) {
+    await view.findByRole('heading',{name:new RegExp('^'+number+'\\.')});
+    const editor = await view.findByRole('textbox',{name:'풀이 코드'});
+    act(() => setEditorValue(editor, 'print(1)'));
+    fireEvent.click(view.getByRole('button',{name:'제출 및 채점'}));
+    await view.findByText('정답입니다. 해결 완료로 기록되었습니다.');
+    const feedback = view.getByRole('region',{name:'채점 결과'});
+    const action = feedback.querySelector('a');
+    assert.equal(action.getAttribute('href'),number === 1449 ? '/problems/1450' : '/steps?chapter=6-4');
+    assert.equal(action.textContent,number === 1449 ? '다음 문제 풀기' : '챕터 목록');
+    fireEvent.click(action);
+  }
+  await view.findByRole('link',{name:/1450 복합 최적화 연습 5/});
+  assert.equal(view.getByRole('button',{name:/6-4 · 복합 최적화/}).getAttribute('aria-expanded'),'true');
+  assert.deepEqual(submitted,[1449,1450]);
+  cleanup();
+});
 const uncertainPost=()=>new NetworkError({requestMayHaveCompleted:true});
 async function submitFixture(handleSubmission){
   reset();
@@ -188,10 +233,14 @@ test('late problem response is aborted/ignored and cannot enter a new route',asy
   assert.doesNotMatch(document.body.textContent,/늦은 비공개 자료/);cleanup();
 });
 
-test('ordinary submission renders real system-error result without fabricating source or private tests',async()=>{
-  reset();const Page=await component('pages/SubmissionResult.jsx');globalThis.__problemApi=async()=>({id:42,status:'SYSTEM_ERROR',language:'DART',score:0,cases:[{status:'SYSTEM_ERROR',execution_time_ms:0}]});
+test('result without source permission renders the system error without requesting private code',async()=>{
+  reset();const Page=await component('pages/SubmissionResult.jsx'),calls=[];
+  globalThis.__problemApi=async path=>{calls.push(path);return {id:42,status:'SYSTEM_ERROR',language:'DART',score:0,canReadOwnSource:false,cases:[{status:'SYSTEM_ERROR',execution_time_ms:0}]};};
   const view=render(React.createElement(MemoryRouter,{initialEntries:['/submissions/42'],future:{v7_startTransition:true,v7_relativeSplatPath:true}},React.createElement(Routes,null,React.createElement(Route,{path:'/submissions/:id',element:React.createElement(Page,{dark:true})}))));
-  await waitFor(()=>view.getByRole('heading',{name:'시스템 오류'}));assert.match(view.container.textContent,/이 제출의 코드는 다시 볼 수 없습니다/);assert.doesNotMatch(view.container.textContent,/정답입니다|상위 18%|gcc 12/);cleanup();
+  await waitFor(()=>view.getByRole('heading',{name:'시스템 오류'}));
+  assert.equal(view.queryByRole('region',{name:'제출 #42 코드'}),null);
+  assert.deepEqual(calls,['/api/submissions/42']);
+  assert.doesNotMatch(view.container.textContent,/정답입니다|상위 18%|gcc 12/);cleanup();
 });
 
 test('new problem saves a real draft DTO without requiring invented score settings',async()=>{

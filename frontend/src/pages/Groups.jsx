@@ -142,7 +142,7 @@ function GroupBrowser({dark}) {
     </section>
     {preview && <GroupDialog title={preview.groupName} titleId="gp-preview-title" closeLabel="그룹 미리보기 닫기" onClose={() => setPreview(null)}>
       <p className="gp-preview-meta">{preview.memberCount}명 참여</p>
-      {preview.systemGroup === true && <span className="gp-system-badge">기본 그룹 · 가입 제한 제외</span>}
+      {preview.systemGroup === true && <span className="gp-system-badge">기본 그룹</span>}
       <h3 className="gp-preview-label">그룹 소개</h3><p className="gp-preview-description">{preview.description || '아직 등록된 소개가 없어요.'}</p>
       {actionError && <p className="gp-error" role="alert">{actionError}</p>}
       <div className="gp-dialog-actions"><button className="cw-btn" onClick={() => setPreview(null)}>닫기</button>{groupAction(preview, true)}</div>
@@ -156,7 +156,7 @@ function groupRoleLabel(group) {return ROLE_LABELS[group.roleKey] || (group.role
 
 function GroupRow({group, children, onPreview, showRole = false, activityUrl, onActivity}) {
   return <article className="gp-group-row">
-    <div className="gp-group-copy"><div className="gp-group-title"><h3>{onPreview ? <button type="button" className="gp-preview-trigger" aria-haspopup="dialog" aria-label={`${group.groupName} 미리보기`} onClick={onPreview}>{group.groupName}<span aria-hidden="true">↗</span></button> : group.groupName}</h3>{showRole && <span className="gp-role-badge">{groupRoleLabel(group)}</span>}{group.systemGroup === true && <span className="gp-system-badge">기본 그룹 · 가입 제한 제외</span>}</div><p className="gp-group-description" title={group.description || undefined}>{group.description || '아직 등록된 소개가 없어요.'}</p>{showRole && group.activity && <GroupActivity activity={group.activity} url={activityUrl} onNavigate={onActivity}/>}</div>
+    <div className="gp-group-copy"><div className="gp-group-title"><h3>{onPreview ? <button type="button" className="gp-preview-trigger" aria-haspopup="dialog" aria-label={`${group.groupName} 미리보기`} onClick={onPreview}>{group.groupName}<span aria-hidden="true">↗</span></button> : group.groupName}</h3>{showRole && <span className="gp-role-badge">{groupRoleLabel(group)}</span>}{group.systemGroup === true && <span className="gp-system-badge">기본 그룹</span>}</div><p className="gp-group-description" title={group.description || undefined}>{group.description || '아직 등록된 소개가 없어요.'}</p>{showRole && group.activity && <GroupActivity activity={group.activity} url={activityUrl} onNavigate={onActivity}/>}</div>
     <span className="gp-group-members">{group.memberCount}명</span><div className="gp-group-action">{children}</div>
   </article>;
 }

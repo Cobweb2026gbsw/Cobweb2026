@@ -41,6 +41,17 @@ public enum Language {
     public static List<String> forMode(String mode) {
         return Arrays.stream(values()).filter(v->v.supports(mode)).map(Enum::name).toList();
     }
+    /** 고급 과정의 기본 제한은 네이티브 실행 기준입니다. 테스트 DB와 샌드박스 모두 최대 10초입니다. */
+    public int timeLimitMs(Map<String,Object> problem) {
+        int base=((Number)problem.get("time_limit_ms")).intValue();
+        if(!Boolean.TRUE.equals(problem.get("language_adjusted_time"))) return base;
+        int halfUnits=switch(this) {
+            case PYTHON, RUBY, PHP -> 4;
+            case JAVA, KOTLIN, CSHARP, JAVASCRIPT, TYPESCRIPT, DART -> 3;
+            default -> 2;
+        };
+        return (int)Math.min(10000, (base*(long)halfUnits+1)/2);
+    }
     public Map<String,Object> description() {
         return Map.of("id",name(),"label",label,"compiled",compiled,
             "modes",List.of("STDIN","FUNCTION","SQL").stream().filter(this::supports).toList());

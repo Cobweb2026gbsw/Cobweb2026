@@ -40,16 +40,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (token != null) {
                 // 한 번만 파싱하여 검증과 사용 사이 만료되는 경우도 인증 실패로 처리합니다.
                 var claims = jwtTokenProvider.getClaims(token);
-                String username = claims.get("username", String.class);
-                if (username != null) {
-                    var userDetails = customUserDetailsService.loadUserByUsername(username);
+                // access 토큰에만 있는 클레임을 확인한 뒤, 변경 가능한 이름 대신 계정 ID로 인증합니다.
+                if (claims.get("username", String.class) != null) {
+                    var userDetails = customUserDetailsService.loadUserById(Long.parseLong(claims.getSubject()));
                     var authentication = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    // 계정 정지 및 사용자 ID를 확인하여 같은 username의 재가입 계정도 구분합니다.
+                    // 변경 전 이름의 access 토큰은 거절합니다. refresh는 불변 계정 ID로 현재 이름을 발급합니다.
                     Object tokenVersion = claims.get("tokenVersion");
                     if (String.valueOf(userDetails.getUserId()).equals(claims.getSubject()) &&
+                            userDetails.getUsername().equals(claims.get("username",String.class)) &&
                             tokenVersion instanceof Number version &&
                             version.longValue() == userDetails.getUser().getAccessTokenVersion() &&
                             userDetails.isEnabled() && userDetails.isAccountNonLocked()) {

@@ -10,17 +10,17 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http:/
 Object.defineProperty(globalThis, 'navigator', {value: dom.window.navigator, configurable: true});
 for (const name of ['window', 'document', 'HTMLElement', 'Event', 'MutationObserver']) globalThis[name] = dom.window[name];
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const React = require('react'), {render, waitFor, cleanup, act} = require('@testing-library/react');
+const React = require('react'), {render, waitFor, cleanup, act, fireEvent} = require('@testing-library/react');
 const {MemoryRouter, Routes, Route} = require('react-router-dom');
 const bundle = await build({
-  stdin: {contents: "export {default as Profile} from './src/pages/Profile.jsx'; export {default as Ranking} from './src/pages/Ranking.jsx'; export {AuthProvider} from './src/context/AuthContext.jsx'; export {beginSession} from './src/lib/api.js';", resolveDir: process.cwd(), sourcefile: 'profile-test.jsx'},
+  stdin: {contents: "export {default as Profile} from './src/pages/Profile.jsx'; export {default as ProfileEdit} from './src/pages/ProfileEdit.jsx'; export {default as Ranking} from './src/pages/Ranking.jsx'; export {AuthProvider} from './src/context/AuthContext.jsx'; export {beginSession} from './src/lib/api.js';", resolveDir: process.cwd(), sourcefile: 'profile-test.jsx'},
   bundle: true, write: false, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', loader: {'.css': 'empty'},
 });
 const module = {exports: {}};
 new Function('require', 'module', 'exports', bundle.outputFiles[0].text)(require, module, module.exports);
-const {Profile, Ranking, AuthProvider, beginSession} = module.exports;
+const {Profile, ProfileEdit, Ranking, AuthProvider, beginSession} = module.exports;
 const response = (data, status = 200) => new Response(JSON.stringify({success: status < 400, data}), {status});
-const profile = username => ({username, bio: '', github_url: '', rank_type: 'INITIATE', rank_int: 5, solved_count: 0, submit_count: 0, solvedProblems: []});
+const profile = username => ({username, bio: '', github_url: '', rank_type: 'INITIATE', rank_int: 5, rank_points: 30, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: []});
 
 function mount(Page, path, pattern) {
   beginSession(null);
@@ -41,6 +41,7 @@ for (const username of ['..', 'a/b', '기존사용자']) {
     const view = mount(Profile, profileHref(username), '/users');
     await view.findByRole('heading', {name: username, exact: true});
     assert.equal(calls.length, 1);
+    assert.ok(view.getByText('다음 승급까지 70점'));
     cleanup();
   });
 }
@@ -56,6 +57,37 @@ test('legacy single-segment Profile screen uses the safe query API alias', async
   cleanup();
 });
 
+test('profile edit saves the chosen login name and displays it on my profile', async () => {
+  beginSession(null);
+  const payload = Buffer.from(JSON.stringify({sub:'73'})).toString('base64url');
+  let username = '이전이름';
+  const writes = [];
+  globalThis.fetch = async (path, options) => {
+    if (path === '/api/auth/reissue') return response({accessToken:'eyJ.'+payload+'.sig'});
+    if (path === '/api/problems/permissions') return response({});
+    assert.equal(path, '/api/me');
+    if (options.method === 'PATCH') {
+      const edit = JSON.parse(options.body);
+      writes.push(edit);
+      username = edit.username;
+      return response(null);
+    }
+    return response({...profile(username), id:'73'});
+  };
+  const view = render(React.createElement(MemoryRouter, {initialEntries:['/me/edit']},
+    React.createElement(AuthProvider, null, React.createElement(Routes, null,
+      React.createElement(Route, {path:'/me/edit', element:React.createElement(ProfileEdit)}),
+      React.createElement(Route, {path:'/me', element:React.createElement(Profile,{isMe:true})})))));
+  const input = await view.findByDisplayValue('이전이름');
+  fireEvent.change(input, {target:{value:'   '}});
+  assert.equal(view.getByRole('button', {name:'저장',exact:true}).disabled, true);
+  fireEvent.change(input, {target:{value:'새이름'}});
+  fireEvent.click(view.getByRole('button', {name:'저장',exact:true}));
+  await view.findByRole('heading', {name:'새이름',exact:true});
+  assert.deepEqual(writes, [{username:'새이름',bio:'',githubUrl:''}]);
+  cleanup();
+});
+
 test('Ranking top cards and result rows preserve every public profile name in query links', async () => {
   const usernames = ['..', 'a/b', '기존사용자'];
   globalThis.fetch = async path => {
@@ -65,6 +97,7 @@ test('Ranking top cards and result rows preserve every public profile name in qu
   };
   const view = mount(Ranking, '/ranking', '/ranking');
   await waitFor(() => assert.equal(view.getAllByRole('link').length, 6));
+  assert.equal(view.getAllByText('30점').length,3);
   for (const username of usernames)
     assert.equal(view.getAllByRole('link').filter(link => link.getAttribute('href') === profileHref(username)).length, 2);
   cleanup();

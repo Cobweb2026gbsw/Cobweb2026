@@ -79,16 +79,36 @@ ZIP 기반 새 화면 소스는 `frontend/src/`이며 Gradle이 잠금 파일로
 [보안 검토 기록](docs/security/REVIEW.md)을 참고하세요.
 전체 API의 요청·응답·권한, DB와 채점 동작은 [백엔드 구현 명세](docs/BACKEND_SPEC.md)에 정리했습니다.
 
-local 프로필은 5433 포트의 PostgreSQL DB를 사용합니다. Flyway가 `V1__postgresql_schema.sql`과 AI 리포트용 `V2__learning_reports.sql`을 순서대로 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력입니다.
-기본 웹 기동에서는 Lv.0 입문 100문제, Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제와 Lv.3 EXPERT 80문제를 등록합니다.
-기존 체인 레이저 1문제까지 합쳐 기본 과정은 **346문제**입니다. 기존 사용자 문제의 번호·제목과 충돌하면
+local 프로필은 5433 포트의 PostgreSQL DB를 사용합니다. Flyway가 PostgreSQL 스키마, AI 리포트, 랭크 점수 마이그레이션(V1~V3)을 순서대로 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력입니다.
+기본 웹 기동에서는 Lv.0 입문 100문제, Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제, Lv.3 EXPERT 80문제, Lv.4 LEGEND 50문제, Lv.5 MYTHIC 35문제, Lv.6 ABSOLUTE 20문제를 등록합니다.
+기존 체인 레이저 1문제까지 합쳐 기본 과정은 **451문제**입니다. 기존 사용자 문제의 번호·제목과 충돌하면
 트랜잭션 전체를 중단하며 덮어쓰지 않습니다. 기존 체인 레이저는 ID·제출·테스트를 보존한 채
 1100번으로 보존한 뒤 ELITE 과정 등록 시 같은 ID로 공개를 복구합니다. SKILLED는 1101~1175, 새 ELITE는 1176~1265,
-EXPERT는 1266~1345입니다. 기존 과정 JSON과 등록된 문제의 관리자 수정 내용을 덮어쓰지 않습니다.
+EXPERT는 1266~1345, LEGEND는 1346~1395, MYTHIC은 1396~1430, ABSOLUTE는 1431~1450입니다. 기존 과정 JSON과 등록된 문제의 관리자 수정 내용을 덮어쓰지 않습니다.
 전체 기본 과정을 끄려면 `--curriculum.level0.enabled=false`를 명시합니다. 이때만 `demo.seed=true`의
 기존 체인 레이저 데모가 동작하며, 이미 보관한 체인 레이저를 1000번에 다시 만들지는 않습니다.
 작성자는 로그인할 수 없는 `cobweb-system` 계정입니다. 실제 사용자 계정과의 충돌은 거절합니다.
-정답 코드와 테스트 입력은 공개 API로 반환하지 않습니다.
+공개 API는 예제 입력과 출력을 제공합니다. 정답 코드와 비공개 채점 데이터는 서버에서 관리합니다.
+
+`/steps`에서 Lv.4~6 챕터를 선택하면 공개 중인 과정 문제를 번호순으로 볼 수 있습니다.
+각 문제에 해설이 있는 공개 예제 두 개를 제공합니다. 공개 예제와 별도로 LEGEND는 825개,
+MYTHIC은 677개, ABSOLUTE는 353개의 비공개 채점 케이스를 사용합니다.
+세 과정의 기준 풀이와 입력을 재검증하려면 아래 명령을 실행하세요.
+
+```bash
+python3 -B scripts/build-legend-catalog.py --check
+python3 -B scripts/build-mythic-catalog.py --check
+python3 -B scripts/build-absolute-catalog.py --check
+```
+
+각 문제의 가장 큰 저장 입력을 Docker 채점기로 검증하는 Gradle 테스트는
+`ADVANCED_CATALOG_DOCKER_TEST=true ./gradlew test --tests '*AdvancedCatalogJudgeTest'`입니다.
+
+고급 과정의 시간 제한은 네이티브 언어의 기본 시간을 기준으로 Python·Ruby·PHP에 2배,
+Java·Kotlin·C#·JavaScript·TypeScript·Dart에 1.5배를 적용합니다(케이스당 최대 10초).
+풀이 화면은 선택한 언어에 맞춘 시간을 표시하며 테스트와 정식 채점에 같은 시간을 적용합니다.
+15개 함수형 언어의 공통 `int` 인자·결과는 부호 있는 32비트입니다. 더 큰 수가 필요한 문제는
+문제별 명세에서 중간 계산의 정밀도와 결과 형식(10진 문자열, 나머지 등)을 명시합니다.
 
 ### OJ Level 0 — 기초 문법 100문제
 
@@ -104,7 +124,7 @@ SQL·엄랭을 제외한 15개 언어에 공개 서명 기반 시작 코드를 �
 공개 서명만 API로 전달하며 참고 정답·비공개 테스트는 기존 관리 권한 경계 안에 둡니다.
 가져오기 이력으로 재시작 때 중복을 막고 등록 후 관리자가 바꾼 문제 내용·공개 상태를 덮어쓰지 않습니다.
 
-추가 과정의 원본은 `src/main/resources/problems/level1.json`, `level2.json`, `level3.json`입니다. 각 영역의 SKILLED 등급은 5·4·3·2·1,
+추가 과정의 원본은 `src/main/resources/problems/level1.json`부터 `level6.json`까지입니다. 각 영역의 SKILLED 등급은 5·4·3·2·1,
 ELITE의 여섯 영역은 5·4·3·3·2·1, EXPERT의 다섯 영역은 16문제씩 5·4·3·2·1로 배정합니다.
 EXPERT는 문제마다 공개 예제 2개, Python 기준 풀이와 총 1,187개 비공개 채점 케이스를 포함합니다.
 원본 정의 `scripts/expert_catalog/part1.py`~`part3.py`에서 `python3 -I -B scripts/build-expert-catalog.py`로 `level3.json`을 재생성합니다.
@@ -130,7 +150,7 @@ EXPERT 80문제만 별도로 실제 Docker에서 재채점하려면 `EXPERT_CATA
 200을 반환합니다. `run.sh`도 이 응답을 확인하므로 HTTP 포트가 먼저 열렸다는 이유만으로 준비 완료를 선언하지 않습니다.
 분리된 `compose.worker.yaml`의 워커는 입문 과정 가져오기를 끄며 웹만 등록을 담당합니다.
 
-`bootJar`는 `verifyCurriculumCatalogs`로 Lv.0~3 파일·번호·랭크·함수 ABI·전역 제목을 먼저 검사합니다.
+`bootJar`는 `verifyCurriculumCatalogs`로 Lv.0~6 파일·번호·랭크·함수 ABI·전역 제목을 먼저 검사합니다.
 카탈로그 누락이나 언어 예약어 인자 때문에 웹 기동 중 실패하기 전에 빌드를 거절하며, 이 검사는 DB나 참고 풀이를 실행하지 않습니다.
 
 ### AI 학습 리포트
@@ -236,10 +256,11 @@ API·인증 필터·프런트 요청/렌더 경계에서 오류를 분류하며,
 | POST /api/submissions | 언어 선택 및 코드 제출 | 로그인 |
 | GET /api/submissions | 일반 내 제출 50개 (시험 제외) | 로그인 |
 | GET /api/submissions/{id} | 제출 판정·케이스 결과, 시험은 다시보기 검사 | 제출자/운영자, 시험 결과 권한 |
-| GET /api/ranking?page=0 | 해결 수/제출 수 순 랭킹 | 공개 |
+| GET /api/submissions/{id}/source | 일반 제출의 코드 원문 | 제출한 본인 |
+| GET /api/ranking?page=0 | 누적 점수 순 랭킹 | 공개 |
 | GET /api/profiles/{username} | 공개 프로필과 공개 해결 문제 | 공개 |
 | GET /api/me | 내 프로필 | 로그인 |
-| PATCH /api/me | bio, githubUrl 수정 | 로그인 |
+| PATCH /api/me | 아이디, 소개, GitHub URL 수정 | 로그인 |
 
 제출 요청 예: `{"problemNumber":1000,"language":"PYTHON","sourceCode":"def sol(matrix, target): ..."}`.
 `language`를 생략한 이전 클라이언트는 Python으로 처리합니다. 알 수 없는 ID나 문제 형식과 맞지 않는
@@ -380,8 +401,8 @@ Pascal FUNCTION의 `TMatrix = array[0..14,0..14] of LongInt`와 `TTarget = array
   재할당 때 새 토큰을 발급해 이전 워커의 결과와 통계 반영을 막습니다. 정상 오답·실행 오류는
   자동 재시도하지 않습니다. heartbeat가 없는 구 작업은 claimed_at·submitted_at을 기준으로 복구합니다.
 - 정답 제출 횟수는 모든 정답 제출을 세고, 사용자 해결 수는 같은 문제를 한 번만 셉니다.
-- 임시 랭크 정책: 10문제당 한 단계, 50문제당 큰 등급 상승 (최고 ABSOLUTE 1).
-  운영 전 최종 정책을 확정해야 합니다.
+- 일반 문제를 처음 해결하면 배점을 한 번 받습니다. INITIATE 5는 10점이며 한 단계 어려워질 때마다 10점씩 늘어 ABSOLUTE 1은 350점입니다.
+- 승급에 필요한 추가 점수는 현재 세부 등급 문제 배점의 10배입니다. INITIATE 4는 누적 100점, SKILLED 5는 1,500점, ABSOLUTE 1은 59,500점에서 시작합니다. 프로필에서 다음 승급까지 남은 점수를 확인할 수 있습니다.
 
 ## 기존 DB 마이그레이션
 
@@ -389,7 +410,7 @@ PostgreSQL 초기 스키마는 **`src/main/resources/db/migration/V1__postgresql
 기존 MySQL V1–V22의 최종 35개 테이블, 제약·인덱스·시스템 그룹 보호 트리거와 선택적 체인 레이저 시드 함수까지 통합했습니다.
 입문·알고리즘 문제의 JSON 카탈로그는 문제 데이터의 원본이므로 유지합니다. 체인 레이저 SQL은 별도 파일로 복제하지 않습니다.
 
-- 새 PostgreSQL DB에는 Flyway가 V1과 `V2__learning_reports.sql`을 순서대로 적용합니다. 기존 V1 DB에는 V2만 적용합니다.
+- Flyway는 새 PostgreSQL DB에 V1~V3를 순서대로 적용하며, 기존 DB에서는 누락된 다음 버전부터 진행합니다.
   SQL에는 비밀번호·CREATE DATABASE·실사용자 데이터가 없습니다.
 - SQL 적용만으로 문제를 무조건 공개하지 않습니다. Java의 기존 `curriculum.level0.enabled`/`demo.seed` 설정이 시드 함수를 선택적으로 호출합니다.
 - PostgreSQL은 identity PK, JSONB, BOOLEAN, UTC `TIMESTAMP(6)`와 `ON CONFLICT`/`RETURNING`을 사용합니다.
@@ -400,7 +421,7 @@ PostgreSQL 초기 스키마는 **`src/main/resources/db/migration/V1__postgresql
   실제 계정·제출·문제·수정 이력 이관은 원본 백업 → 새 PostgreSQL DB → 타입/ID·시퀀스/UTC/JSON 변환 → 건수·FK·인증·채점 검증 → 승인된 서비스 전환 순서의 별도 작업입니다.
   이번 코드 전환은 기존 MySQL 서비스·데이터·비밀번호 파일을 자동 변환하거나 삭제하지 않습니다.
 - 기존 SQL 23개는 로컬 `.local/verification/postgresql-source-backup/`에 원문 그대로 보존했습니다. Git 이력도 보존됩니다.
-  Gradle은 삭제된 예전 SQL 생성물을 정리해 JAR에 PostgreSQL SQL 하나만 넣습니다.
+  Gradle은 삭제된 예전 SQL 생성물을 정리해 JAR에 현재 PostgreSQL 마이그레이션만 넣습니다.
 
 Flyway 기본값은 기존 DB 자동 변경 방지를 위해 꺼져 있고 local/prod/test에서 켜집니다. `baseline-on-migrate=false`를 유지합니다.
 이미 사용 중인 PostgreSQL V1의 체크섬은 승인 없이 재작성하거나 repair하지 않습니다.
@@ -424,13 +445,17 @@ Spring의 `neon` 프로필은 `DATABASE_URL`을 앱 연결에 사용하고, Flyw
 ./gradlew bootRun --args='--spring.profiles.active=neon --server.address=127.0.0.1 --spring.flyway.enabled=false --curriculum.level0.enabled=false --demo.seed=false'
 ```
 
+### 기존 Neon DB에 랭크 점수 적용
+
+V2까지 적용한 DB는 소유자 계정으로 [랭크 점수 업그레이드 SQL](deploy/postgres/upgrade-v3-rank-points.sql) 전체를 실행하세요. 기존 일반 해결 기록에 현재 문제 난이도의 배점을 부여하고 Flyway V3 이력을 함께 기록합니다. 이후의 적립 점수는 첫 해결 시점의 배점을 보존합니다. Flyway가 V3까지 자동 적용한 DB는 이미 업그레이드된 상태입니다.
+
 ### Neon SQL Editor에서 초기화
 
 새 DB를 한 번에 준비하려면 [neon-bootstrap.sql](deploy/postgres/neon-bootstrap.sql)을 사용합니다.
 Neon SQL Editor에서 운영 브랜치, Cobweb용 DB, DB 소유자 역할을 선택하고 파일 전체를 한 번 실행합니다.
-스키마, 기본 그룹, Flyway 이력 2개, 채점용 권한을 한 트랜잭션으로 설정합니다.
+스키마, 기본 그룹, Flyway 이력 3개, 채점용 권한을 한 트랜잭션으로 설정합니다.
 기존 Cobweb 테이블이나 동명의 채점 역할이 있으면 실행을 중단합니다.
-웹이 첫 기동 시 Flyway 이력을 확인하고 기본 과정 345문제와 체인 레이저를 등록합니다.
+웹이 첫 기동 시 Flyway 이력을 확인하고 기본 과정 450문제와 체인 레이저를 등록합니다.
 
 ### Cloudflare Containers 배포
 

@@ -96,9 +96,28 @@
   overflow: hidden;
 }
 
+.ms-entry {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 5rem;
+  align-items: center;
+  padding-right: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.ms-entry-head {
+  border-top: 0;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ms-entry-head > span { text-align: center; }
+.ms-table .submission-source { margin: 0 12px 12px; }
+
 .ms-row {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr) 110px 170px 110px 100px 170px;
+  grid-template-columns: 64px minmax(0, 1fr) 90px 108px 72px 48px 138px;
   align-items: center;
   gap: 12px;
 
@@ -128,7 +147,6 @@
 .ms-row-item {
   height: 59px;
 
-  border-top: 1px solid var(--line);
   font-size: 14px;
 
   transition: background-color 0.2s;
@@ -187,7 +205,7 @@
     overflow-x: auto;
   }
 
-  .ms-row {
+  .ms-entry {
     min-width: 900px;
   }
 }
@@ -204,7 +222,8 @@
   .ms-stats { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
   .ms-stat { padding: 16px; }
   .ms-table { overflow: hidden; }
-  .ms-row { min-width: 0; grid-template-columns: 50px minmax(0,1fr) 90px; gap: 8px; padding: 12px; }
+  .ms-entry { min-width: 0; grid-template-columns: minmax(0,1fr) 4.5rem; padding-right: 8px; }
+  .ms-row { min-width: 0; grid-template-columns: auto minmax(0,1fr) minmax(48px,70px); gap: 6px; padding: 10px 8px; }
   .ms-row > :nth-child(3),.ms-row > :nth-child(n+5) { display: none; }
   .ms-row-item { height: auto; min-height: 62px; }
   .ms-title { white-space: normal; overflow-wrap: anywhere; }

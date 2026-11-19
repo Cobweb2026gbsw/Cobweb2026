@@ -116,3 +116,8 @@
 
 .st-head { text-decoration: none; }
 .st-help { margin-top: 20px; font-size: 13px; }
+
+.st-chapters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 20px; }
+.st-chapters button[aria-expanded="true"] { border-color: var(--accent-text); color: var(--accent-text); }
+.st-chapter h2, .st-chapter > p { margin: 0; padding: 14px 24px; font-size: 16px; }
+.st-chapter h2 small { margin-inline-start: 8px; color: var(--muted); font-weight: 400; }

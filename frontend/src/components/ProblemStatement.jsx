@@ -10,7 +10,7 @@ function safeSourceUrl(value){
   try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&!url.username&&!url.password?url.href:null;}catch{return null;}
 }
 
-export default function ProblemStatement({problem}){
+export default function ProblemStatement({problem,language}){
   if(!problem)return null;
   const tags=Array.isArray(problem.tags)?problem.tags.filter(tag=>typeof tag==='string'&&tag.trim()):[],sourceUrl=safeSourceUrl(problem.sourceUrl),sourceName=typeof problem.sourceName==='string'?problem.sourceName.trim():'';
   const fields=statementFields(problem);
@@ -18,7 +18,7 @@ export default function ProblemStatement({problem}){
     const input=formatFunctionExampleInput(problem,example.input_text??example.input);
     return input===null?example:{...example,input_text:input,input};
   });
-  return <article className="cw-card pd-statement" tabIndex={0} aria-label="문제 설명 스크롤 영역"><dl className="pd-meta"><div><dt>시간 제한</dt><dd>{problem.time_limit_ms??problem.timeLimitMs} ms</dd></div><div><dt>메모리 제한</dt><dd>{problem.memory_limit_mb??problem.memoryLimitMb} MB</dd></div><div><dt>실행 형식</dt><dd>{problem.execution_mode??problem.executionMode}</dd></div></dl>
+  return <article className="cw-card pd-statement" tabIndex={0} aria-label="문제 설명 스크롤 영역"><dl className="pd-meta"><div><dt>시간 제한</dt><dd>{problem.languageTimeLimits?.[language]??problem.time_limit_ms??problem.timeLimitMs} ms</dd></div><div><dt>메모리 제한</dt><dd>{problem.memory_limit_mb??problem.memoryLimitMb} MB</dd></div><div><dt>실행 형식</dt><dd>{problem.execution_mode??problem.executionMode}</dd></div></dl>
     {fields.filter(([,content])=>content).map(([label,content])=><section key={label}><h2>{label}</h2><Markdown>{content}</Markdown></section>)}
     {problem.functionSignature?.parameters?.length>0 && examples.some((example,index)=>example!==problem.examples[index]) &&
       <p className="cw-hint">예제 입력은 함수에 전달할 인자 값입니다.</p>}

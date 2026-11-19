@@ -75,6 +75,19 @@ public class ProblemService {
                                 CustomUserDetails user,String sort) {
         return listingPage(listingQuery(search,difficulty,solved,user,false,sort),page);
     }
+    /** 원장의 장별 순서를 사용해 다른 제작자의 동명 태그가 과정에 섞이지 않게 합니다. */
+    public List<Map<String,Object>> chapter(int levelNumber,int chapter) {
+        var level=Arrays.stream(CurriculumLevel.values()).filter(l->l.level==levelNumber).findFirst()
+            .orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND));
+        if(chapter<1 || chapter>level.count/level.chapterSize) throw new ApiException(HttpStatus.NOT_FOUND);
+        return db.queryForList("""
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.reward_points
+            FROM curriculum_problem_entries e JOIN problems p ON p.id=e.problem_id
+            WHERE e.pack_key=? AND e.ordinal BETWEEN ? AND ?
+              AND p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
+            ORDER BY e.ordinal
+            """,level.packKey(),(chapter-1)*level.chapterSize+1,chapter*level.chapterSize);
+    }
     public Map<String,Object> permissions(CustomUserDetails user) {
         requireUser(user);
         return Map.of("canCreate",true,"canManage",operator(user));
@@ -107,10 +120,10 @@ public class ProblemService {
         // 전체 정답 수가 아니라 요청한 계정의 최초 해결 원장을 한 번 JOIN합니다.
         // (user_id,problem_id) PK 덕분에 결과 행과 COUNT 모두 중복되지 않습니다.
         String columns=mine?"""
-            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.status,p.visibility,p.execution_mode,
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.reward_points,p.status,p.visibility,p.execution_mode,
                    p.submission_count,p.accepted_count,p.updated_at,(s.problem_id IS NOT NULL) AS solved
             """:"""
-            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.submission_count,p.accepted_count,
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.reward_points,p.submission_count,p.accepted_count,
                    (s.problem_id IS NOT NULL) AS solved
             """;
         var from=new StringBuilder("FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id ");
@@ -168,6 +181,19 @@ public class ProblemService {
         var anchor=load(number,user);
         if (anchor.get("group_id")!=null || !"PUBLISHED".equals(anchor.get("status")) || !"PUBLIC".equals(anchor.get("visibility")))
             throw new ApiException(HttpStatus.NOT_FOUND);
+        // 단계 화면에서 연 과정은 챕터 목록과 같은 등록 원장 순서를 따릅니다.
+        if (chapter) {
+            for (var level:CurriculumLevel.values()) {
+                int index=number-level.firstNumber;
+                if (!level.advanced() || index<0 || index>=level.count) continue;
+                var members=chapter(level.level,index/level.chapterSize+1);
+                for (int i=0;i<members.size();i++) {
+                    if (number!=(int)members.get(i).get("problem_number")) continue;
+                    return i+1<members.size()?new Neighbor((int)members.get(i+1).get("problem_number"),0):null;
+                }
+                break;
+            }
+        }
         var query=listingQuery(chapter?"":search,chapter?null:difficulty,chapter?"all":solved,user,false,chapter?"number":sort);
         var args=new ArrayList<>(query.parameters());
         String scope=query.from();
@@ -244,7 +270,7 @@ public class ProblemService {
         String state=filter(status,Set.of("DRAFT","PENDING_REVIEW","PUBLISHED","REJECTED","ARCHIVED"));
         String access=filter(visibility,Set.of("PUBLIC","PRIVATE","GROUP"));
         return db.queryForList("""
-            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.status,p.visibility,
+            SELECT p.problem_number,p.problem_title,p.rank_type,p.rank_int,p.reward_points,p.status,p.visibility,
                    p.execution_mode,p.submission_count,p.accepted_count,p.updated_at,
                    u.username AS author_username
             FROM problems p JOIN users u ON u.id=p.author_id
@@ -277,7 +303,7 @@ public class ProblemService {
         var p = load(number,user);
         Map<String,Object> result = new LinkedHashMap<>();
         for (String key : List.of("problem_number","problem_title","description","input_description",
-                "output_description","constraints_text","rank_type","rank_int","time_limit_ms",
+                "output_description","constraints_text","rank_type","rank_int","reward_points","time_limit_ms",
                 "memory_limit_mb","execution_mode","status")) result.put(key,p.get(key));
         result.put("canLinkInForum", p.get("group_id") == null && "PUBLISHED".equals(p.get("status"))
                 && "PUBLIC".equals(p.get("visibility")));
@@ -292,6 +318,11 @@ public class ProblemService {
         if ("FUNCTION".equals(p.get("execution_mode")) && !functionAbiCompatible(p))
             languages=languages.stream().filter("PYTHON"::equals).toList();
         result.put("languages",languages);
+        if(Boolean.TRUE.equals(p.get("language_adjusted_time"))) {
+            var limits=new LinkedHashMap<String,Integer>();
+            for(String id:languages) limits.put(id,Language.valueOf(id).timeLimitMs(p));
+            result.put("languageTimeLimits",limits);
+        }
         // 함수 시작 코드 생성용 공개 규격 이름만 전달합니다. 레거시 문제를 체인 레이저로 추정하지 않습니다.
         putFunctionContract(result,p);
         // 시작 코드는 명시적으로 공개 등록된 행만 읽습니다. 정답 테이블은 조회하지 않습니다.

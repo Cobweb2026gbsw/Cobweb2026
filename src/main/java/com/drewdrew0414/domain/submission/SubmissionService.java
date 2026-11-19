@@ -129,6 +129,14 @@ public class SubmissionService {
             WHERE s.user_id=? AND s.contest_id IS NULL ORDER BY s.id DESC LIMIT 50
             """,uid);
     }
+    /** 목록·판정 폴링에서는 소스를 전송하지 않고, 본인의 일반 제출 원문만 개별 조회합니다. */
+    public String ownSource(long id, CustomUserDetails user) {
+        long owner = ProblemService.requireUser(user);
+        return db.queryForList("""
+                SELECT source_code FROM submissions WHERE id=? AND user_id=? AND contest_id IS NULL
+                """, String.class, id, owner).stream().findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND));
+    }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
         var rows=db.queryForList("""
@@ -146,6 +154,7 @@ public class SubmissionService {
             result.put("sourceCode",db.queryForObject("SELECT source_code FROM submissions WHERE id=?",String.class,id));
         } else if(((Number)result.get("user_id")).longValue()!=uid && !ProblemService.operator(user))
                 throw new ApiException(HttpStatus.NOT_FOUND);
+        result.put("canReadOwnSource",result.get("contest_id")==null && ((Number)result.get("user_id")).longValue()==uid);
         result.put("reusedFromSubmissionId",result.remove("reused_from_submission_id"));
         // 권한 검사 뒤에만 안전한 고정 설명을 반환하며 DB의 원문/임의 문자열은 복사하지 않습니다.
         var diagnostic=JudgeDiagnostic.fromJson(result.remove("diagnostic_json"),(String)result.get("status"));
@@ -194,7 +203,7 @@ public class SubmissionService {
             """,submission.get("id"),submission.get("judge_token"))==1;
     }
     public Map<String,Object> problem(Object id) {
-        return db.queryForMap("SELECT execution_mode,time_limit_ms,memory_limit_mb,function_abi_compatible,function_signature::text AS function_signature FROM problems WHERE id=?",id);
+        return db.queryForMap("SELECT execution_mode,time_limit_ms,language_adjusted_time,memory_limit_mb,function_abi_compatible,function_signature::text AS function_signature FROM problems WHERE id=?",id);
     }
     public List<Map<String,Object>> cases(Object pid) {
         return db.queryForList("SELECT id,input_data,expected_output,compare_type,display_order FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE ORDER BY display_order,id",pid);
@@ -224,6 +233,8 @@ public class SubmissionService {
             for(Object value:List.of("COBWEB_JUDGEMENT_V1",imageId,engine,
                     problem.get("execution_mode"),problem.get("time_limit_ms"),problem.get("memory_limit_mb"),
                     ProblemService.functionAbiCompatible(problem))) writeField(data,value);
+            // 재사용 후보는 같은 언어로 제한되며 계수 변경은 Language 바이트코드 지문에 포함됩니다.
+            if(Boolean.TRUE.equals(problem.get("language_adjusted_time"))) writeField(data,"LANGUAGE_ADJUSTED_TIME");
             writeField(data,problem.get("function_signature"));
             data.writeInt(tests.size());
             for(var test:tests) for(String key:List.of("id","input_data","expected_output","compare_type","display_order"))
@@ -360,14 +371,10 @@ public class SubmissionService {
         // DB의 현재 contest_id를 사용합니다. 워커가 넘긴 맵으로 일반 풀이 통계를 오염시키지 않습니다.
         if("ACCEPTED".equals(status) && current.getFirst().get("contest_id")==null) {
             db.update("UPDATE problems SET accepted_count=accepted_count+1 WHERE id=?",s.get("problem_id"));
+            // 최초 해결 원장의 INSERT 트리거가 당시 문제 배점과 사용자 점수·랭크를 같은 트랜잭션에 반영합니다.
             int inserted=db.update("INSERT INTO user_solved_problems(user_id,problem_id) VALUES(?,?) ON CONFLICT (user_id,problem_id) DO NOTHING",s.get("user_id"),s.get("problem_id"));
             if(inserted==1) {
                 db.update("UPDATE users SET solved_count=solved_count+1 WHERE id=?",s.get("user_id"));
-                int count=db.queryForObject("SELECT solved_count FROM users WHERE id=?",Integer.class,s.get("user_id"));
-                // MVP 임시 정책: 10문제마다 세부 등급 상승, 50문제마다 큰 등급 상승합니다.
-                String[] ranks={"INITIATE","SKILLED","ELITE","EXPERT","LEGEND","MYTHIC","ABSOLUTE"};
-                db.update("UPDATE users SET rank_type=?,rank_int=? WHERE id=?",ranks[Math.min(count/50,6)],
-                    count>=350?1:5-(count%50)/10,s.get("user_id"));
             }
         }
     }

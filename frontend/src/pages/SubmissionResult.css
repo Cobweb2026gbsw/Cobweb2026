@@ -224,6 +224,8 @@
   margin-bottom: 16px;
 }
 
+.sr-page .submission-source { margin: 20px 0; }
+
 .sr-code-head .cw-card-title {
   margin: 0;
 }

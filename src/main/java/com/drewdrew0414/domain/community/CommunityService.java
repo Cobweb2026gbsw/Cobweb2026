@@ -45,6 +45,7 @@ public class CommunityService {
         int offset=offset(page);
         String publicLink="p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL";
         String from=" FROM community_posts cp LEFT JOIN problems p ON p.id=cp.problem_id"
+            +" LEFT JOIN users author ON author.id=cp.author_id"
             +" WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)"
             +" AND (cp.title ILIKE ? OR cp.body ILIKE ?";
         var args=new ArrayList<Object>(List.of(includeDeleted,selected,selected,term,term));
@@ -60,7 +61,7 @@ public class CommunityService {
         Long total=db.queryForObject("SELECT COUNT(*)"+from,Long.class,args.toArray());
         args.add(offset);
         var rows=db.queryForList("""
-            SELECT cp.id,cp.title,cp.category,cp.author_username AS "authorUsername",
+            SELECT cp.id,cp.title,cp.category,COALESCE(author.username,cp.author_username) AS "authorUsername",
                    cp.version,cp.is_deleted AS deleted,cp.created_at AS "createdAt",
                    cp.updated_at AS "updatedAt",
                    CASE WHEN p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
@@ -78,9 +79,10 @@ public class CommunityService {
     public Map<String,Object> post(long id,boolean includeDeleted,CustomUserDetails user) {
         if(includeDeleted) ProblemService.requireOperator(user);
         var rows=db.queryForList("""
-            SELECT cp.*,p.problem_number,p.status AS problem_status,
+            SELECT cp.*,author.username AS profile_username,p.problem_number,p.status AS problem_status,
                    p.visibility AS problem_visibility,p.group_id AS problem_group_id
             FROM community_posts cp
+            LEFT JOIN users author ON author.id=cp.author_id
             LEFT JOIN problems p ON p.id=cp.problem_id WHERE cp.id=?
             """,id);
         if(rows.isEmpty() || (!includeDeleted && deleted(rows.getFirst().get("is_deleted"))))
@@ -93,7 +95,8 @@ public class CommunityService {
         result.put("title",p.get("title"));
         result.put("body",p.get("body"));
         result.put("category",p.get("category"));
-        result.put("authorUsername",p.get("author_username"));
+        result.put("authorUsername",Objects.requireNonNullElse(p.get("profile_username"),p.get("author_username")));
+        result.put("authorHasProfile",p.get("profile_username")!=null);
         result.put("version",p.get("version"));
         result.put("createdAt",isoUtc(p.get("created_at")));
         result.put("updatedAt",isoUtc(p.get("updated_at")));
@@ -132,8 +135,9 @@ public class CommunityService {
         }
         int offset=offset(page);
         var rows=db.queryForList("""
-            SELECT cc.*,(SELECT COUNT(*) FROM community_comments child WHERE child.parent_id=cc.id) AS reply_count
+            SELECT cc.*,author.username AS profile_username,(SELECT COUNT(*) FROM community_comments child WHERE child.parent_id=cc.id) AS reply_count
             FROM community_comments cc
+            LEFT JOIN users author ON author.id=cc.author_id
             WHERE cc.post_id=? AND ((CAST(? AS bigint) IS NULL AND cc.parent_id IS NULL) OR cc.parent_id=?)
             ORDER BY cc.id LIMIT 20 OFFSET ?
             """,postId,parentId,parentId,offset);
@@ -155,7 +159,8 @@ public class CommunityService {
         item.put("body",removed && !includeDeleted?null:c.get("body"));
         item.put("deleted",removed);
         if(removed && !includeDeleted) item.put("deletedMessage","삭제된 댓글입니다.");
-        item.put("authorUsername",c.get("author_username"));
+        item.put("authorUsername",Objects.requireNonNullElse(c.get("profile_username"),c.get("author_username")));
+        item.put("authorHasProfile",c.get("profile_username")!=null);
         item.put("version",c.get("version"));
         item.put("edited",((Number)c.get("version")).longValue()>1);
         item.put("createdAt",isoUtc(c.get("created_at")));

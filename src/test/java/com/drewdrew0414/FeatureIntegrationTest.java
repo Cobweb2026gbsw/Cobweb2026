@@ -211,6 +211,7 @@ class FeatureIntegrationTest {
         end(cid);
         status(403,()->submissions.submitContest(cid,n,"print(input())",Language.PYTHON,member));
         status(403,()->submissions.detail(sid,member));
+        assertEquals(404,http("GET","/api/submissions/"+sid+"/source",null,member).statusCode());
         db.update("UPDATE group_contests SET replay_allowed=TRUE WHERE id=?",cid);
         assertEquals(200,http("GET","/api/groups/"+gid+"/contests/"+cid+"/problems/"+n,null,member).statusCode());
         assertEquals(403,http("GET","/api/groups/"+gid+"/contests/"+cid+"/problems/"+n,null,outsider).statusCode());

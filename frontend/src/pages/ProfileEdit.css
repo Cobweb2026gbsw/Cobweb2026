@@ -31,13 +31,6 @@
   overflow-wrap: anywhere;
 }
 
-.pr-identity small {
-  width: 100%;
-
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .pr-avatar {
   display: grid;
   place-items: center;

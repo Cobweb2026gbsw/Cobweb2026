@@ -61,7 +61,7 @@ test.after(() => dom.window.close());
 
 test('built-in membership is displayed separately and consumes zero of three ordinary slots', {timeout: 5000}, async () => {
   browserApi([system]); const view = render(tree()); await view.findByText('일반 그룹 0/3 + 기본 그룹');
-  assert.equal(view.getAllByText('기본 그룹 · 가입 제한 제외').length, 1);
+  assert.equal(view.getAllByText('기본 그룹').length, 1);
   assert.equal(creationButton(view).disabled, false);
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, false);
 });
@@ -108,12 +108,12 @@ test('failed membership lookup does not enable creation or publish an incorrect 
 test('name alone or a nonboolean system flag cannot exclude an ordinary membership from the quota', {timeout: 5000}, async () => {
   const impostor = {...system, systemGroup: 'true'};
   browserApi([impostor, ordinary(1), ordinary(2)], [impostor]); const view = render(tree()); await view.findByText('일반 그룹 3/3');
-  absent(view.queryByText('기본 그룹 · 가입 제한 제외'));
+  absent(view.queryByText('기본 그룹'));
   assert.equal(creationButton(view).disabled, true);
 });
 
 test('public built-in metadata is visible to guests without claiming a personal membership', {timeout: 5000}, async () => {
-  globalThis.__systemGroupAuth.user = null; browserApi([], [system]); const view = render(tree()); await view.findByText('기본 그룹 · 가입 제한 제외');
+  globalThis.__systemGroupAuth.user = null; browserApi([], [system]); const view = render(tree()); await view.findByText('기본 그룹');
   assert.equal(view.getByRole('link', {name: '로그인 후 가입'}).getAttribute('href'), '/login');
   absent(view.queryByText('일반 그룹 0/3 + 기본 그룹')); fireEvent.click(view.getByRole('button', {name: '그룹 만들기'}));
   const dialog = within(view.getByRole('dialog', {name: '그룹 만들기'}));
@@ -123,7 +123,7 @@ test('public built-in metadata is visible to guests without claiming a personal 
 
 test('built-in structural changes stay hidden for platform operators while permitted tools remain', {timeout: 5000}, async () => {
   detailApi(); const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByRole('heading', {name: 'COBWEB GROUP'});
-  await view.findByText('기본 그룹 · 가입 제한 제외');
+  await view.findByText('기본 그룹');
   absent(view.queryByRole('button', {name: '그룹 탈퇴'})); absent(view.queryByRole('button', {name: '내보내기'}));
   absent(view.queryByRole('heading', {name: '그룹 설정'})); absent(view.queryByLabelText('그룹 이름'));
   assert.equal(view.getAllByRole('button', {name: '역할 변경'}).length, 2);
@@ -136,7 +136,7 @@ test('built-in structural changes stay hidden for platform operators while permi
 
 test('ordinary group permissions cannot expose built-in role management without platform privileges', {timeout: 5000}, async () => {
   globalThis.__systemGroupAuth.permissions.canManage = false; detailApi();
-  const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByText('기본 그룹 · 가입 제한 제외');
+  const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByText('기본 그룹');
   absent(view.queryByRole('button', {name: '역할 변경'})); absent(view.queryByRole('button', {name: '역할 저장'}));
   absent(view.queryByRole('button', {name: '역할 삭제'})); absent(view.queryByRole('combobox', {name: 'alice 역할'}));
   assert.equal(Boolean(view.getByRole('link', {name: '그룹 문제 만들기'})), true);
@@ -145,7 +145,7 @@ test('ordinary group permissions cannot expose built-in role management without 
 
 test('default members see the built-in badge without unsupported management tools', {timeout: 5000}, async () => {
   globalThis.__systemGroupAuth.permissions = {canCreate: false, canManage: false}; detailApi({permissions: ['VIEW_PROBLEMS', 'TAKE_CONTESTS']});
-  const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByText('기본 그룹 · 가입 제한 제외');
+  const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByText('기본 그룹');
   absent(view.queryByRole('link', {name: '그룹 문제 만들기'})); absent(view.queryByRole('heading', {name: '그룹 문제 관리'}));
   absent(view.queryByRole('link', {name: '새 코테 만들기'})); absent(view.queryByRole('button', {name: '역할 변경'}));
   absent(view.queryByRole('button', {name: '역할 저장'})); absent(view.queryByRole('button', {name: '그룹 탈퇴'}));
@@ -153,7 +153,7 @@ test('default members see the built-in badge without unsupported management tool
 
 test('ordinary groups preserve authorized leave, kick, name edit, and role controls', {timeout: 5000}, async () => {
   detailApi({systemGroup: false}); const view = render(tree(Detail, '/groups/7', '/groups/:gid')); await view.findByRole('heading', {name: 'COBWEB GROUP'});
-  absent(view.queryByText('기본 그룹 · 가입 제한 제외'));
+  absent(view.queryByText('기본 그룹'));
   assert.equal(Boolean(view.getByRole('button', {name: '그룹 탈퇴'})), true);
   assert.equal(view.getAllByRole('button', {name: '내보내기'}).length, 2);
   assert.equal(view.getByLabelText('그룹 이름').value, 'COBWEB GROUP');
@@ -179,7 +179,7 @@ test('account switches clear the previous membership quota before late responses
 test('built-in badges and quota labels wrap instead of hiding on narrow group rows', {timeout: 5000}, async () => {
   const style = document.createElement('style'); style.textContent = readFileSync(new URL('../src/pages/Groups.css', import.meta.url), 'utf8'); document.head.append(style);
   try {
-    browserApi([system]); const view = render(tree()); const badges = await view.findAllByText('기본 그룹 · 가입 제한 제외');
+    browserApi([system]); const view = render(tree()); const badges = await view.findAllByText('기본 그룹');
     await view.findByText('일반 그룹 0/3 + 기본 그룹');
     for (const badge of badges) {const computed = window.getComputedStyle(badge); assert.equal(computed.display, 'inline-flex'); assert.equal(computed.maxWidth, '100%'); assert.equal(computed.whiteSpace, 'normal');}
     assert.equal(window.getComputedStyle(view.getByText('일반 그룹 0/3 + 기본 그룹')).whiteSpace, 'normal');

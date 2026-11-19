@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {Fragment,useEffect,useRef,useState} from 'react';
 import {Link,useLocation,useSearchParams} from 'react-router-dom';
 import {useAuth} from '../context/AuthContext';
 import {api,isStale} from '../lib/api';
@@ -6,6 +6,7 @@ import useApiData from '../lib/useApiData';
 import {STATUS,labelStatus,formatDate} from '../lib/problemModel';
 import {requestedProblemPage} from '../lib/problemPagination';
 import {submissionResultUrl} from '../lib/submissionNavigation';
+import SubmissionSource from '../components/SubmissionSource';
 import './common.css';
 import './MySubmissions.css';
 export const RESULTS=STATUS;
@@ -18,6 +19,7 @@ function SubmissionListPage({dark}){
   query.set('page',String(requestedPage));
   const {data,error,loading,reload}=useApiData('/api/submissions/history?'+query);
   const [draft,setDraft]=useState(q);
+  const [openSource,setOpenSource]=useState(null);
   const [exporting,setExporting]=useState(false),[exportError,setExportError]=useState('');
   const exportRequest=useRef(null);
   useEffect(()=>setDraft(q),[q]);
@@ -67,8 +69,11 @@ function SubmissionListPage({dark}){
     <form className="cw-card ms-filter" onSubmit={event=>{event.preventDefault();update('q',draft.trim());}}><div className="ms-filter-row"><label>문제 검색<input className="cw-input" value={draft} maxLength={200} placeholder="제목 또는 문제 번호" onChange={event=>setDraft(event.target.value)}/></label><label>결과<select className="cw-select" value={result} onChange={event=>update('result',event.target.value)}><option value="">전체</option>{Object.entries(STATUS).map(([key,s])=><option value={key} key={key}>{s.label}</option>)}</select></label><label>언어<select className="cw-select" value={language} onChange={event=>update('language',event.target.value)}><option value="">전체</option>{[...new Set([...(data?.languages??[]),...(language?[language]:[])])].map(id=><option key={id}>{id}</option>)}</select></label><button className="cw-btn primary" type="submit">검색</button><button className="cw-btn" type="button" onClick={reload} disabled={loading}>새로고침</button></div>{hasFilters&&<div className="ms-quick"><span>검색 조건 적용 중</span><button className="cw-btn sm" type="button" onClick={reset}>검색 조건 초기화</button></div>}</form>
     <section className="cw-card ms-table" aria-label="제출 목록" aria-busy={loading}>
       {error?<div className="ms-empty"><p className="cw-status-message error" role="alert">{error}</p><button type="button" className="cw-btn" onClick={reload}>다시 시도</button></div>:loading?<p className="ms-empty" role="status">제출 기록을 불러오는 중…</p>:!rows.length?<div className="ms-empty"><p>{hasFilters?'조건에 맞는 제출 기록이 없습니다.':'아직 제출한 코드가 없습니다.'}</p>{hasFilters?<button className="cw-btn" type="button" onClick={reset}>조건 지우고 다시 보기</button>:<Link className="cw-btn primary" to="/problems">문제 풀러 가기</Link>}</div>:<>
-      <div className="ms-row ms-row-head"><span>제출</span><span>문제</span><span>언어</span><span>결과</span><span>시간</span><span>점수</span><span>제출시각</span></div>
-      {rows.map(s=><Link to={submissionResultUrl(s.id,from)} state={{problemNumber:s.problem_number}} className="ms-row ms-row-item" key={s.id}><span>#{s.id}</span><span className="ms-title">{s.problem_number}. {s.problem_title}</span><span>{s.language}</span><span className={`cw-badge ${labelStatus(s.status).tone}`}>{labelStatus(s.status).label}</span><span>{s.execution_time_ms??'—'} ms</span><span>{s.score??'—'}</span><span>{formatDate(s.submitted_at)}</span></Link>)}</>}
+      <div className="ms-entry ms-entry-head"><div className="ms-row ms-row-head"><span>제출</span><span>문제</span><span>언어</span><span>결과</span><span>시간</span><span>점수</span><span>제출시각</span></div><span>코드</span></div>
+      {rows.map(s=><Fragment key={s.id}><div className="ms-entry">
+        <Link to={submissionResultUrl(s.id,from)} state={{problemNumber:s.problem_number}} className="ms-row ms-row-item"><span>#{s.id}</span><span className="ms-title">{s.problem_number}. {s.problem_title}</span><span>{s.language}</span><span className={`cw-badge ${labelStatus(s.status).tone}`}>{labelStatus(s.status).label}</span><span>{s.execution_time_ms??'—'} ms</span><span>{s.score??'—'}</span><span>{formatDate(s.submitted_at)}</span></Link>
+        <button type="button" className="cw-btn sm" aria-label={`제출 #${s.id} 코드 ${openSource===s.id?'닫기':'보기'}`} aria-expanded={openSource===s.id} onClick={()=>setOpenSource(openSource===s.id?null:s.id)}>{openSource===s.id?'닫기':'코드 보기'}</button>
+      </div>{openSource===s.id&&<SubmissionSource id={s.id}/>}</Fragment>)}</>}
     </section>
     {!loading&&!error&&totalPages>1&&<nav className="cw-pager ms-foot" aria-label="제출 페이지"><button className="cw-btn" disabled={!page} onClick={()=>changePage(page-1)}>이전</button><span>{page+1} / {totalPages}</span><button className="cw-btn" disabled={page>=totalPages-1} onClick={()=>changePage(page+1)}>다음</button></nav>}
   </div></main>;
