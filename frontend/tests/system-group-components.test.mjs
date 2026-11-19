@@ -7,11 +7,14 @@ import {build} from 'esbuild';
 import {JSDOM} from 'jsdom';
 
 const require = createRequire(import.meta.url), root = fileURLToPath(new URL('../', import.meta.url));
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost:8080/'});
+const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost:8080/', pretendToBeVisual: true});
 Object.defineProperty(globalThis, 'navigator', {value: dom.window.navigator, configurable: true});
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MutationObserver', 'FormData']) globalThis[key] = dom.window[key];
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const React = require('react'), {render, waitFor, cleanup, act, within} = require('@testing-library/react');
+// jsdom does not implement the browser's native modal-dialog lifecycle.
+dom.window.HTMLDialogElement.prototype.showModal = function () {this.setAttribute('open', '');};
+dom.window.HTMLDialogElement.prototype.close = function () {this.removeAttribute('open');};
+const React = require('react'), {render, fireEvent, waitFor, cleanup, act, within} = require('@testing-library/react');
 const {MemoryRouter, Routes, Route} = require('react-router-dom');
 const bundle = await build({stdin: {contents: "export {default as Groups} from './src/pages/Groups.jsx';export {default as Detail} from './src/pages/GroupDetail.jsx';", resolveDir: root, sourcefile: 'system-group-test.jsx'}, bundle: true, write: false, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', loader: {'.css': 'empty'}, plugins: [{name: 'system-group-contracts', setup(builder) {
   builder.onResolve({filter: /(?:^|\/)api(?:\.js)?$/}, () => ({path: 'api', namespace: 'contract'}));
@@ -42,28 +45,37 @@ function detailApi({systemGroup = true, permissions = allFlags} = {}) {
     throw new Error('Unexpected system group API: ' + path);
   };
 }
+function creationButton(view) {
+  fireEvent.click(view.getByRole('button', {name: '그룹 만들기', exact: true}));
+  const dialog = within(view.getByRole('dialog', {name: '그룹 만들기'}));
+  assert.match(dialog.getByText(/기본 그룹은 이 제한에서 제외됩니다/).textContent, /기본 그룹/);
+  fireEvent.change(dialog.getByRole('textbox', {name: /그룹 이름/}), {target: {value: '검증 그룹'}});
+  const disabled = dialog.getByRole('button', {name: '그룹 만들기', exact: true}).disabled;
+  fireEvent.click(dialog.getByRole('button', {name: '취소'}));
+  return {disabled};
+}
+
 test.beforeEach(() => {globalThis.__systemGroupAuth = {epoch: 0, user: {username: 'alice', solved_count: 50}, permissions: {canCreate: true, canManage: true}};});
 test.afterEach(() => cleanup());
 test.after(() => dom.window.close());
 
 test('built-in membership is displayed separately and consumes zero of three ordinary slots', {timeout: 5000}, async () => {
   browserApi([system]); const view = render(tree()); await view.findByText('일반 그룹 0/3 + 기본 그룹');
-  assert.equal(view.getAllByText('기본 그룹 · 가입 제한 제외').length, 2);
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, false);
+  assert.equal(view.getAllByText('기본 그룹 · 가입 제한 제외').length, 1);
+  assert.equal(creationButton(view).disabled, false);
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, false);
-  assert.match(view.container.textContent, /기본 그룹은 이 제한에서 제외됩니다/);
 });
 
 test('a built-in group plus two ordinary memberships still permits the third ordinary membership', {timeout: 5000}, async () => {
   browserApi([system, ordinary(1), ordinary(2)]); const view = render(tree()); await view.findByText('일반 그룹 2/3 + 기본 그룹');
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, false);
+  assert.equal(creationButton(view).disabled, false);
   const target = view.getByRole('heading', {name: '일반 그룹 8'}).closest('article');
   assert.equal(within(target).getByRole('button', {name: '가입'}).disabled, false);
 });
 
 test('three ordinary memberships block a fourth, while built-in membership remains excluded', {timeout: 5000}, async () => {
   browserApi([system, ordinary(1), ordinary(2), ordinary(3)]); const view = render(tree()); await view.findByText('일반 그룹 3/3 + 기본 그룹');
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, true);
+  assert.equal(creationButton(view).disabled, true);
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, true);
 });
 
@@ -71,7 +83,7 @@ test('missing built-in membership can be restored without using an ordinary slot
   browserApi([ordinary(1), ordinary(2), ordinary(3)]); const view = render(tree()); await view.findByText('일반 그룹 3/3');
   const target = view.getByRole('heading', {name: 'COBWEB GROUP'}).closest('article');
   assert.equal(within(target).getByRole('button', {name: '가입'}).disabled, false);
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, true);
+  assert.equal(creationButton(view).disabled, true);
 });
 
 test('quota-sensitive actions wait for membership data instead of assuming zero memberships', {timeout: 5000}, async () => {
@@ -79,7 +91,7 @@ test('quota-sensitive actions wait for membership data instead of assuming zero 
   globalThis.__systemGroupApi = path => path === '/api/groups/mine' ? new Promise(resolve => {release = resolve;}) : Promise.resolve([ordinary(8)]);
   const view = render(tree()); await view.findByText('일반 그룹 8');
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, true);
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, true);
+  assert.equal(creationButton(view).disabled, true);
   absent(view.queryByText('일반 그룹 0/3'));
   await act(async () => {release([system]); await tick();}); await view.findByText('일반 그룹 0/3 + 기본 그룹');
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, false);
@@ -88,7 +100,7 @@ test('quota-sensitive actions wait for membership data instead of assuming zero 
 test('failed membership lookup does not enable creation or publish an incorrect quota', {timeout: 5000}, async () => {
   globalThis.__systemGroupApi = async path => {if (path === '/api/groups/mine') throw new Error('가입 현황 조회 실패'); return [ordinary(8)];};
   const view = render(tree()); await view.findByText('가입 현황 확인 불가');
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, true);
+  assert.equal(creationButton(view).disabled, true);
   assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, true);
   absent(view.queryByText('일반 그룹 0/3')); await view.findByRole('alert');
 });
@@ -97,13 +109,16 @@ test('name alone or a nonboolean system flag cannot exclude an ordinary membersh
   const impostor = {...system, systemGroup: 'true'};
   browserApi([impostor, ordinary(1), ordinary(2)], [impostor]); const view = render(tree()); await view.findByText('일반 그룹 3/3');
   absent(view.queryByText('기본 그룹 · 가입 제한 제외'));
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, true);
+  assert.equal(creationButton(view).disabled, true);
 });
 
 test('public built-in metadata is visible to guests without claiming a personal membership', {timeout: 5000}, async () => {
   globalThis.__systemGroupAuth.user = null; browserApi([], [system]); const view = render(tree()); await view.findByText('기본 그룹 · 가입 제한 제외');
   assert.equal(view.getByRole('link', {name: '로그인 후 가입'}).getAttribute('href'), '/login');
-  absent(view.queryByText('일반 그룹 0/3 + 기본 그룹')); absent(view.queryByRole('button', {name: '그룹 만들기'}));
+  absent(view.queryByText('일반 그룹 0/3 + 기본 그룹')); fireEvent.click(view.getByRole('button', {name: '그룹 만들기'}));
+  const dialog = within(view.getByRole('dialog', {name: '그룹 만들기'}));
+  assert.equal(dialog.getByRole('link', {name: '로그인'}).getAttribute('href'), '/login');
+  absent(dialog.queryByRole('textbox'));
 });
 
 test('built-in structural changes stay hidden for platform operators while permitted tools remain', {timeout: 5000}, async () => {
@@ -158,7 +173,7 @@ test('account switches clear the previous membership quota before late responses
   await act(async () => {releaseNew([system]); await tick();}); await view.findByText('일반 그룹 0/3 + 기본 그룹');
   await act(async () => {releaseOld([system, ordinary(1), ordinary(2), ordinary(3)]); await tick();});
   absent(view.queryByText('일반 그룹 3/3 + 기본 그룹'));
-  assert.equal(view.getByRole('button', {name: '그룹 만들기'}).disabled, false);
+  assert.equal(creationButton(view).disabled, false);
 });
 
 test('built-in badges and quota labels wrap instead of hiding on narrow group rows', {timeout: 5000}, async () => {

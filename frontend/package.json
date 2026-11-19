@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:analysis": "vite --mode analysis",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --max-old-space-size=128 scripts/run-tests.mjs"

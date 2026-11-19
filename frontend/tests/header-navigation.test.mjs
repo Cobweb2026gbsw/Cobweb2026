@@ -28,9 +28,9 @@ test.after(()=>dom.window.close());
 for(const dark of [true,false]){
   test(`anonymous navigation is always present without a menu toggle (${dark?'dark':'light'})`,()=>{
     const view=mount(dark),nav=within(view.getByRole('navigation',{name:'주 메뉴'}));
-    for(const name of ['문제','그룹','코테','커뮤니티','공지'])assert.ok(nav.getByRole('link',{name,exact:true}));
+    for(const name of ['문제','그룹','코딩테스트','커뮤니티','공지'])assert.ok(nav.getByRole('link',{name,exact:true}));
     assert.equal(view.queryByRole('button',{name:'메뉴',exact:true}),null);
-    assert.equal(view.container.querySelector('[aria-expanded],[aria-controls="main-nav"]'),null);
+    assert.equal(view.container.querySelector('[aria-controls="main-nav"]'),null);
     assert.equal(nav.queryByRole('link',{name:'문제 관리'}),null);
     fireEvent.click(nav.getByRole('link',{name:'커뮤니티'}));
     assert.equal(view.getByTestId('location').textContent,'/forum');
@@ -59,4 +59,16 @@ test('search, theme switch and logout keep their previous behavior without menu 
   fireEvent.click(view.getByRole('button',{name:'로그아웃'}));
   await waitFor(()=>assert.equal(view.getByTestId('location').textContent,'/'));
   assert.equal(logoutCount,1);
+});
+
+test('numeric header search uses the same direct problem destination as the list',()=>{
+  const view=mount();fireEvent.change(view.getByRole('textbox',{name:'문제 검색'}),{target:{value:' 001000 '}});
+  fireEvent.submit(view.getByRole('search'));assert.equal(view.getByTestId('location').textContent,'/problems/1000');
+});
+
+test('compact search opens with input focus and Escape returns to its trigger',()=>{
+  const view=mount(),button=view.getByRole('button',{name:'문제 검색 열기'});
+  fireEvent.click(button);assert.equal(button.getAttribute('aria-expanded'),'true');
+  const input=view.getByRole('textbox',{name:'문제 검색'});assert.equal(document.activeElement,input);
+  fireEvent.keyDown(input,{key:'Escape'});assert.equal(button.getAttribute('aria-expanded'),'false');assert.equal(document.activeElement,button);
 });

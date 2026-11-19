@@ -40,9 +40,11 @@
 
 .fm-filter-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
 }
+
+.fm-filter-row:has(label) { grid-template-columns: minmax(0, 1fr) auto auto; }
 
 .fm-table {
   padding: 0;
@@ -74,7 +76,8 @@
 }
 
 .fm-row-item {
-  height: 58px;
+  min-height: 58px;
+  padding-block: 10px;
 
   border-top: 1px solid var(--line);
   font-size: 14px;
@@ -333,7 +336,6 @@
   .fm-row > :nth-child(3),
   .fm-row > :nth-child(4),
   .fm-row > :nth-child(5) { display: none; }
-  .fm-filter-row,
-  .fm-write-top { grid-template-columns: 1fr; }
+  .fm-filter-row:has(label), .fm-write-top { grid-template-columns: 1fr; }
   .fm-article, .fm-comments, .fm-write { padding: 20px 18px; }
 }

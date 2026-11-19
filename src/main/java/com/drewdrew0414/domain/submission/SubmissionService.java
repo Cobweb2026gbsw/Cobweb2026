@@ -131,7 +131,13 @@ public class SubmissionService {
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
-        var rows=db.queryForList("SELECT id,user_id,contest_id,language,status,score,execution_time_ms,submitted_at,judged_at,reused_from_submission_id,diagnostic_json::text AS diagnostic_json FROM submissions WHERE id=?",id);
+        var rows=db.queryForList("""
+            SELECT s.id,s.user_id,s.contest_id,s.language,s.status,s.score,s.execution_time_ms,
+                   s.submitted_at,s.judged_at,s.reused_from_submission_id,s.diagnostic_json::text AS diagnostic_json,
+                   p.problem_number AS "problemNumber",p.group_id AS "groupId",gc.group_id AS "contestGroupId"
+            FROM submissions s JOIN problems p ON p.id=s.problem_id
+            LEFT JOIN group_contests gc ON gc.id=s.contest_id WHERE s.id=?
+            """,id);
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
         if(result.get("contest_id")!=null) {

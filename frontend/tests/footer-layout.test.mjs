@@ -30,11 +30,12 @@ test.beforeEach(()=>{globalThis.__footerAuth=anonymous();});
 test.afterEach(()=>cleanup());
 test.after(()=>dom.window.close());
 
-test('all public and authentication route families share exactly one footer',()=>{
-  for(const [url,page] of [['/','Main'],['/login','Login'],['/signup','Signup'],['/password-reset','PasswordReset'],['/oauth/callback','OAuthCallBack'],['/problems/1000','ProblemDetail'],['/not-a-page','ComingSoon']]){
-    const view=render(tree(url));assert.equal(view.getByRole('heading').textContent,page,url);
-    assert.equal(view.getAllByRole('contentinfo').length,1,url);
-    assert.equal(view.getAllByRole('navigation',{name:'푸터 메뉴'}).length,1,url);
+test('only the home page omits the footer while other route families keep exactly one',async()=>{
+  for(const [url,page] of [['/','Main'],['/?preview=1','Main'],['/app.html','Main'],['/login','Login'],['/signup','Signup'],['/password-reset','PasswordReset'],['/oauth/callback','OAuthCallBack'],['/problems/1000','ProblemDetail'],['/not-a-page','ComingSoon']]){
+    const view=render(tree(url));assert.equal((await view.findByRole('heading')).textContent,page,url);
+    const expected=page==='Main'?0:1;
+    assert.equal(view.queryAllByRole('contentinfo').length,expected,url);
+    assert.equal(view.queryAllByRole('navigation',{name:'푸터 메뉴'}).length,expected,url);
     cleanup();
   }
 });
@@ -59,10 +60,10 @@ test('authentication loading, anonymous redirect and denied admin pages keep one
   assert.equal(view.getByRole('alert').textContent,'운영자 권한이 필요합니다.');assert.equal(view.getAllByRole('contentinfo').length,1);
 });
 
-test('authenticated and administrator pages keep the same footer without changing authorization',()=>{
+test('authenticated and administrator pages keep the same footer without changing authorization',async()=>{
   globalThis.__footerAuth={...anonymous(),user:{username:'operator'},permissions:{canManage:true,canCreate:true}};
   for(const [url,page] of [['/dashboard','Dashboard'],['/groups/7','GroupDetail'],['/admin','ProblemReview'],['/admin/review','ProblemReview'],['/admin/community','ForumList'],['/admin/community/1','ForumPost']]){
-    const view=render(tree(url));assert.equal(view.getByRole('heading').textContent,page,url);
+    const view=render(tree(url));assert.equal((await view.findByRole('heading')).textContent,page,url);
     assert.equal(view.getAllByRole('contentinfo').length,1,url);cleanup();
   }
 });

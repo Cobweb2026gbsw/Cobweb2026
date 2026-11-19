@@ -70,9 +70,9 @@ test('a full final page of thirty items does not enable a nonexistent next page'
   globalThis.__pageApi=async url=>response(requested(url),60);const view=render(tree('/problems?page=1'));await view.findByText('문제 1030');
   assert.equal(view.getByRole('button',{name:'다음'}).disabled,true);assert.equal(view.queryByRole('button',{name:'3페이지'}),null);assert.equal(view.getByRole('button',{name:'2페이지'}).getAttribute('aria-current'),'page');
 });
-test('empty results leave both navigation directions and the sole page placeholder disabled',async()=>{
+test('empty results hide the pager instead of offering a nonexistent page',async()=>{
   globalThis.__pageApi=async()=>response(0,0);const view=render(tree());await view.findByText('등록된 문제가 없습니다.');
-  assert.equal(view.getByRole('button',{name:'이전'}).disabled,true);assert.equal(view.getByRole('button',{name:'다음'}).disabled,true);assert.equal(view.getByRole('button',{name:'1페이지'}).disabled,true);
+  assert.equal(view.queryByRole('navigation',{name:'문제 페이지'}),null);
 });
 test('a stale URL is replaced with the actual final page without dropping filters',async()=>{
   const view=render(tree('/problems?page=999&q=graph&difficulty=ELITE%3A1'));await view.findByText('문제 1240');
@@ -93,4 +93,43 @@ test('invalid metadata shows a safe error and disables navigation instead of gue
 test('my-authored list requests pagination metadata from the same authenticated route',async()=>{
   let path;globalThis.__pageApi=async url=>{path=url;return response(requested(url),1);};const view=render(tree('/problems/mine?solved=solved',true));await view.findByText('문제 1000');
   const url=new URL(path,'http://localhost');assert.equal(url.pathname,'/api/problems/mine');assert.equal(url.searchParams.get('pagination'),'true');assert.equal(url.searchParams.get('solved'),'solved');
+});
+
+test('request failure never claims an empty list and retry preserves filters',async()=>{
+  const calls=[];let fail=true;
+  globalThis.__pageApi=async url=>{calls.push(url);if(fail)throw new Error('연결 실패');return response(requested(url),1);};
+  const view=render(tree('/problems?q=tree&difficulty=ELITE%3A1'));
+  await view.findByRole('alert');
+  assert.equal(view.queryByText('등록된 문제가 없습니다.'),null);
+  assert.equal(view.queryByRole('heading',{name:'현재 페이지 0개'}),null);
+  fail=false;fireEvent.click(view.getByRole('button',{name:'다시 시도'}));
+  await view.findByText('문제 1000');assert.equal(calls[0],calls[1]);
+  assert.equal(view.queryByRole('alert'),null);
+});
+
+test('an empty filtered result explains how to reset the search',async()=>{
+  globalThis.__pageApi=async url=>new URL(url,'http://localhost').searchParams.get('search')?response(0,0):response(0,1);
+  const view=render(tree('/problems?q=missing'));
+  await view.findByText('조건에 맞는 문제가 없습니다.');
+  fireEvent.click(view.getByRole('button',{name:'검색 조건 초기화'}));
+  await view.findByText('문제 1000');assert.equal(view.getByTestId('location').textContent,'/problems');
+});
+
+test('problem links keep the search page in their URL for a reload or new tab',async()=>{
+  const from='/problems?page=2&q=tree&sort=submits&difficulty=ELITE%3A1';
+  const view=render(tree(from));await view.findByText('문제 1060');
+  const link=view.getByText('문제 1060').closest('a');
+  const target=new URL(link.getAttribute('href'),'http://localhost');
+  assert.equal(target.pathname,'/problems/1060');assert.equal(target.searchParams.get('from'),from);
+});
+
+test('entry shortcuts select real introductory filters and retain authentication for personal results',async()=>{
+  const calls=[];globalThis.__pageApi=async url=>{calls.push(url);return response(requested(url));};
+  const view=render(tree());await view.findByText('문제 1000');
+  assert.equal(view.getByRole('link',{name:'아직 안 푼 문제'}).getAttribute('href'),'/problems?solved=unsolved');
+  fireEvent.click(view.getByRole('link',{name:'입문 문제부터'}));
+  await waitFor(()=>assert.deepEqual(new URL(calls.at(-1),'http://localhost').searchParams.getAll('difficulty'),['INITIATE:5','INITIATE:4','INITIATE:3','INITIATE:2','INITIATE:1']));
+  globalThis.__pageAuth={user:null,epoch:1};view.rerender(tree());
+  assert.equal(view.queryByRole('link',{name:'아직 안 푼 문제'}),null);
+  assert.equal(view.getByRole('link',{name:'로그인하고 미해결 문제 보기'}).getAttribute('href'),'/login');
 });

@@ -13,9 +13,9 @@ public class CommunityController {
 
     @GetMapping("/posts")
     public Object posts(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String search,
-                        @RequestParam(defaultValue="") String category,
+                        @RequestParam(defaultValue="") String category,@RequestParam(required=false) Integer problemNumber,
                         @AuthenticationPrincipal CustomUserDetails user) {
-        return ApiResponse.success(service.posts(page,search,category,false,user));
+        return ApiResponse.success(service.posts(page,search,category,false,user,problemNumber));
     }
     @GetMapping("/notices")
     public Object notices(@RequestParam(defaultValue="0") int page,

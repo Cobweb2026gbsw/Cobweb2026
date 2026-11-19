@@ -17,13 +17,21 @@ public class ProblemController {
                        @RequestParam(required=false) List<String> difficulty,
                        @RequestParam(defaultValue="all") String solved,
                        @RequestParam(defaultValue="false") boolean pagination,
+                       @RequestParam(required=false) String sort,
                        @AuthenticationPrincipal CustomUserDetails user) {
-        return pagination?ApiResponse.success(service.listPage(page,search,difficulty,solved,user)):
+        return pagination?ApiResponse.success(service.listPage(page,search,difficulty,solved,user,sort)):
             list(page,search,difficulty,solved,user);
     }
     /** 기존 Java 호출과 pagination 생략 시의 배열 응답을 보존합니다. */
     public Object list(int page,String search,List<String> difficulty,String solved,CustomUserDetails user) {
         return ApiResponse.success(service.list(page,search,difficulty,solved,user));
+    }
+    @GetMapping("/next")
+    public Object next(@RequestParam int number,@RequestParam(defaultValue="false") boolean chapter,
+                       @RequestParam(defaultValue="") String search,@RequestParam(required=false) List<String> difficulty,
+                       @RequestParam(defaultValue="all") String solved,@RequestParam(defaultValue="number") String sort,
+                       @AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(service.nextPublic(number,chapter,search,difficulty,solved,sort,user));
     }
     @GetMapping("/permissions")
     public Object permissions(@AuthenticationPrincipal CustomUserDetails user) {
@@ -34,8 +42,9 @@ public class ProblemController {
                        @RequestParam(required=false) List<String> difficulty,
                        @RequestParam(defaultValue="all") String solved,
                        @RequestParam(defaultValue="false") boolean pagination,
+                       @RequestParam(required=false) String sort,
                        @AuthenticationPrincipal CustomUserDetails user) {
-        return pagination?ApiResponse.success(service.minePage(page,search,difficulty,solved,user)):
+        return pagination?ApiResponse.success(service.minePage(page,search,difficulty,solved,user,sort)):
             mine(page,search,difficulty,solved,user);
     }
     public Object mine(int page,String search,List<String> difficulty,String solved,CustomUserDetails user) {

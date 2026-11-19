@@ -10,6 +10,7 @@ import {installEditorDom,editorValue,setEditorValue,selectEditor} from './editor
 import {NetworkError} from '../src/lib/errors.js';
 const require=createRequire(import.meta.url),root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost:8080/'});
+dom.window.scrollTo=()=>{};
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 for(const key of ['window','document','HTMLElement','Event','InputEvent','KeyboardEvent','MutationObserver'])globalThis[key]=dom.window[key];
 installEditorDom(dom.window);
@@ -190,7 +191,7 @@ test('late problem response is aborted/ignored and cannot enter a new route',asy
 test('ordinary submission renders real system-error result without fabricating source or private tests',async()=>{
   reset();const Page=await component('pages/SubmissionResult.jsx');globalThis.__problemApi=async()=>({id:42,status:'SYSTEM_ERROR',language:'DART',score:0,cases:[{status:'SYSTEM_ERROR',execution_time_ms:0}]});
   const view=render(React.createElement(MemoryRouter,{initialEntries:['/submissions/42'],future:{v7_startTransition:true,v7_relativeSplatPath:true}},React.createElement(Routes,null,React.createElement(Route,{path:'/submissions/:id',element:React.createElement(Page,{dark:true})}))));
-  await waitFor(()=>view.getByRole('heading',{name:'시스템 오류'}));assert.match(view.container.textContent,/일반 제출 소스 코드는 현재 서버 API에서 반환하지 않습니다/);assert.doesNotMatch(view.container.textContent,/정답입니다|상위 18%|gcc 12/);cleanup();
+  await waitFor(()=>view.getByRole('heading',{name:'시스템 오류'}));assert.match(view.container.textContent,/이 제출의 코드는 다시 볼 수 없습니다/);assert.doesNotMatch(view.container.textContent,/정답입니다|상위 18%|gcc 12/);cleanup();
 });
 
 test('new problem saves a real draft DTO without requiring invented score settings',async()=>{

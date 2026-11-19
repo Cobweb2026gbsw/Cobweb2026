@@ -27,6 +27,18 @@ npm --prefix frontend run build
 
 빌드 결과는 `dist/`가 아니라 `build/generated-frontend/static/ui/`에 생성됩니다. Gradle `processResources`가 잠금 파일 기반 설치·프론트 빌드를 수행해 JAR의 `static/ui/`에 포함합니다. 서비스 화면 주소는 `/`, `/problems` 등이며 Spring의 알려진 화면 경로가 `/ui/index.html`로 내부 전달됩니다. `/ui/`는 배포 자산 위치이지 서비스의 화면 경로 접두사가 아닙니다. 이전 정적 화면은 `/legacy`에 보존합니다.
 
+## 백엔드 없이 로그인 화면 분석하기
+
+```sh
+npm --prefix frontend run dev:analysis
+```
+
+`http://127.0.0.1:5174/`에서 분석 계정으로 자동 진입합니다. 저장소의 Lv.0–3 공개 문제 345개를 검색하고, 언어별 시작 코드·편집기·브라우저 초안 저장을 사용할 수 있습니다. 로그아웃 후 새로고침하면 분석 계정으로 다시 자동 진입합니다.
+
+이 모드는 화면 분석용입니다. 실행·채점·서버 저장은 수행하지 않으며 제출 시 안내를 표시합니다. 결과나 해결 기록을 만들어내지 않습니다. 비공개 테스트·정답 코드는 API에 포함하지 않습니다. 모든 API 요청은 로컬 모드에서 처리하고 실제 백엔드로 전달하지 않습니다. 계정 ID는 실제 PostgreSQL 계정 범위 밖의 값을 사용하여 저장 초안을 구분합니다.
+
+분석 모드는 명시적인 `dev:analysis` 명령과 루프백 주소에서만 켜집니다. 일반 `dev`·`build`·배포의 인증 동작은 그대로이며, 실제 연동은 분석 서버를 종료하고 백엔드와 일반 `dev`를 실행해 확인하세요.
+
 ## UI 글꼴
 
 사이트 본문·입력란·로고에는 [공식 Wanted Sans v1.0.3](https://github.com/wanteddev/wanted-sans/releases/tag/v1.0.3)의 가변 글꼴(400–1000)을 사용합니다. `src/index.css`의 `--font`로 통일하며 코드 편집기·코드 블록·숫자용 `--mono`는 기존 고정폭 글꼴을 유지합니다.

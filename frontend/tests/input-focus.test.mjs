@@ -27,7 +27,7 @@ function inspect(source, markup, verify) {
   }
 }
 
-function assertFrameless(style, label) {
+function assertFrameless(style, label, outline='none') {
   for (const side of ['top', 'right', 'bottom', 'left']) {
     // jsdom serializes a removed border as an empty side style/width, while
     // browsers can expose "none"/"0px". Neither may draw a line.
@@ -35,7 +35,7 @@ function assertFrameless(style, label) {
     const width = style.getPropertyValue('border-' + side + '-width');
     assert.ok(line === '' || line === 'none' || parseFloat(width) === 0, label + ': visible ' + side + ' border');
   }
-  assert.equal(style.outline, 'none', label + ': focus outline');
+  assert.equal(style.outline, outline, label + ': focus outline');
   assert.equal(style.boxShadow, 'none', label + ': inset or outer shadow');
 }
 
@@ -58,7 +58,7 @@ for (const state of ['normal', 'focus', 'disabled']) {
       inspect(globalCss, '<main class="' + theme + '">' + textFields + '</main>', ({dom, document}) => {
         for (const field of document.querySelectorAll('input,select,textarea,[contenteditable]')) {
           configure(field, state);
-          assertFrameless(dom.window.getComputedStyle(field), theme + ' ' + field.tagName + ' ' + state);
+          assertFrameless(dom.window.getComputedStyle(field), theme + ' ' + field.tagName + ' ' + state, state==='focus'?'2px solid var(--input-focus)':'none');
         }
       });
     }
@@ -68,22 +68,30 @@ for (const state of ['normal', 'focus', 'disabled']) {
 for (const name of ['Login', 'Signup', 'PasswordReset']) {
   const authCss = css('pages/' + name + '.css');
   for (const theme of ['dark', 'light']) {
-    test(name + ' text inputs preserve one unchanged underline without outer frame or focus ring in ' + theme, () => {
+    test(name + ' text inputs preserve their field shape and expose keyboard focus in ' + theme, () => {
       for (const state of ['normal', 'focus', 'disabled']) {
         inspect(globalCss + '\n' + authCss, '<main class="' + name + 'Page ' + theme + '"><section class="' + name + 'Box"><input type="email"><input type="password"><input inputmode="numeric"><button>계속</button></section></main>', ({dom, document}) => {
           for (const input of document.querySelectorAll('input')) {
             configure(input, state);
             const style = dom.window.getComputedStyle(input);
             const label = name + ' ' + theme + ' ' + state;
-            for (const side of ['top', 'right', 'left']) {
-              const line = style.getPropertyValue('border-' + side + '-style');
-              const width = style.getPropertyValue('border-' + side + '-width');
-              assert.ok(line === '' || line === 'none' || parseFloat(width) === 0, label + ': no outer ' + side + ' border');
+            if (name === 'PasswordReset') {
+              for (const side of ['top', 'right', 'left']) {
+                const line = style.getPropertyValue('border-' + side + '-style');
+                const width = style.getPropertyValue('border-' + side + '-width');
+                assert.ok(line === '' || line === 'none' || parseFloat(width) === 0, label + ': no outer ' + side + ' border');
+              }
+              assert.equal(style.borderBottomStyle, 'solid', label + ': underline remains visible');
+            } else {
+              for (const side of ['top', 'right', 'bottom', 'left']) {
+                assert.equal(style.getPropertyValue('border-' + side + '-style'), 'solid', label + ': field boundary remains visible');
+                assert.equal(style.getPropertyValue('border-' + side + '-width'), '1px', label + ': thin field boundary');
+              }
+              assert.ok(parseFloat(style.borderRadius) > 0 && parseFloat(style.borderRadius) <= 8, label + ': slight rounding');
+              assert.ok(parseFloat(style.height) >= 44, label + ': touch target');
             }
-            assert.equal(style.borderBottomStyle, 'solid', label + ': underline remains visible');
-            assert.equal(style.borderBottomWidth, '1px', label + ': underline width stays unchanged');
-            assert.equal(style.borderBottomColor, theme === 'light' ? 'rgb(160, 160, 160)' : 'rgb(119, 119, 119)', label + ': underline color stays unchanged');
-            assert.equal(style.outline, 'none', label + ': no focus outline');
+            if (state === 'focus') assert.match(style.outline, /^2px solid /, label + ': keyboard focus outline');
+            else assert.equal(style.outline, 'none', label + ': no unfocused ring');
             assert.equal(style.boxShadow, 'none', label + ': no focus shadow');
           }
           const button = document.querySelector('button');
@@ -105,7 +113,7 @@ for (const theme of ['dark', 'light']) {
         for (const field of document.querySelectorAll('input,select,textarea,[contenteditable]')) {
           configure(field, state);
           const style = dom.window.getComputedStyle(field);
-          assertFrameless(style, theme + ' shared ' + field.tagName + ' ' + state);
+          assertFrameless(style, theme + ' shared ' + field.tagName + ' ' + state, state==='focus'?'2px solid var(--accent-text)':'none');
           if (field.tagName !== 'DIV') {
             assert.ok(Math.max(parseFloat(style.height) || 0, parseFloat(style.minHeight) || 0) >= 42, 'control hit area remains usable');
           }
@@ -182,12 +190,12 @@ test('CodeMirror outer/inner focus boundaries are removed without changing code 
   });
 });
 
-test('editor font-size select has no resting, focused or disabled input boundary', () => {
+test('editor font-size select exposes focus without a resting or disabled frame', () => {
   for (const state of ['normal', 'focus', 'disabled']) {
     inspect(globalCss + '\n' + commonCss + '\n' + editorCss, '<main class="cw-page dark"><label class="cw-editor-font-size"><select><option>13</option></select></label></main>', ({dom, document}) => {
       const select = document.querySelector('select');
       configure(select, state);
-      assertFrameless(dom.window.getComputedStyle(select), 'editor font-size ' + state);
+      assertFrameless(dom.window.getComputedStyle(select), 'editor font-size ' + state, state==='focus'?'2px solid var(--accent-text)':'none');
     });
   }
 });

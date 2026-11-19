@@ -1,3 +1,4 @@
+import {lazy, Suspense} from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Header from './components/Header';
@@ -9,8 +10,6 @@ import Signup from './pages/Signup';
 import PasswordReset from './pages/PasswordReset';
 import OAuthCallBack from './pages/OAuthCallBack';
 import ProblemList from './pages/ProblemList';
-import ProblemDetail from './pages/ProblemDetail';
-import ProblemEditor from './pages/ProblemEditor';
 import ProblemReview from './pages/ProblemReview';
 import MySubmissions from './pages/MySubmissions';
 import SubmissionResult from './pages/SubmissionResult';
@@ -27,24 +26,31 @@ import ForumWrite from './pages/ForumWrite';
 import Groups from './pages/Groups';
 import GroupDetail from './pages/GroupDetail';
 import GroupContestCreate from './pages/GroupContestCreate';
-import GroupContest from './pages/GroupContest';
 import Contests from './pages/Contests';
 import ContestDetail from './pages/ContestDetail';
 import './pages/common.css';
 
-// 인증 화면까지 같은 세로 레이아웃에 넣어 푸터는 항상 한 번만 렌더링합니다.
+const ProblemDetail=lazy(()=>import('./pages/ProblemDetail'));
+const ProblemEditor=lazy(()=>import('./pages/ProblemEditor'));
+const GroupContest=lazy(()=>import('./pages/GroupContest'));
+
+// 메인을 제외한 화면은 인증 페이지까지 공통 푸터를 한 번만 렌더링합니다.
 // 푸터를 fixed로 띄우지 않으므로 긴 문제·편집기·모달의 본문을 덮지 않습니다.
 function AppShell({dark}) {
   const {epoch}=useAuth(),location=useLocation();
-  return <div className={`cw-app-shell ${dark?'dark':'light'}`}>
-    <div className="cw-app-content"><RenderErrorBoundary key={`${epoch}:${location.key}:${location.pathname}${location.search}`} dark={dark}><Outlet/></RenderErrorBoundary></div>
-    <Footer dark={dark}/>
+  const isHome=location.pathname==='/';
+  // 목록 내 필터·탭 이동은 포커스와 이미 읽은 자료를 유지합니다.
+  const keepListMounted = ['/problems', '/problems/mine', '/contests'].includes(location.pathname);
+  const routeKey = keepListMounted ? location.pathname : location.key + ':' + location.pathname + location.search;
+  return <div className={`cw-app-shell ${dark?'dark':'light'}${isHome?' cw-home-shell':''}`}>
+    <div className="cw-app-content"><RenderErrorBoundary key={`${epoch}:${routeKey}`} dark={dark}><Outlet/></RenderErrorBoundary></div>
+    {!isHome&&<Footer dark={dark}/>}
   </div>;
 }
 function WithHeader({dark,setDark}) {
   const {epoch}=useAuth(), location=useLocation();
   // 계정 또는 경로가 바뀌면 개인 폼·비공개 자료·타이머를 함께 폐기합니다.
-  return <><Header dark={dark} setDark={setDark}/><div className="cw-route-content" key={epoch+':'+location.pathname}><Outlet/></div></>;
+  return <><Header dark={dark} setDark={setDark}/><div className="cw-route-content" key={epoch+':'+location.pathname}><Suspense fallback={<p className="cw-loading" role="status">화면을 불러오는 중…</p>}><Outlet/></Suspense></div></>;
 }
 function RequireAuth({manage=false}) {
   const {user,loading,permissions}=useAuth(), location=useLocation();

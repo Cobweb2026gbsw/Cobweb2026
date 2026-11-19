@@ -1,6 +1,8 @@
 package com.drewdrew0414;
 
 import com.drewdrew0414.domain.problem.*;
+import com.drewdrew0414.domain.community.CommunityService;
+import com.drewdrew0414.domain.community.CommunityRequests;
 import com.drewdrew0414.domain.submission.*;
 import com.drewdrew0414.domain.user.entity.User;
 import com.drewdrew0414.global.security.CustomUserDetails;
@@ -50,6 +52,86 @@ class MvpIntegrationTest {
         ReflectionTestUtils.setField(u,"id",id);
         ReflectionTestUtils.setField(u,"role",com.drewdrew0414.domain.user.entity.Role.valueOf(role));
         return new CustomUserDetails(u);
+    }
+    @Test void nextQuestionHonorsChapterOrderPageBoundariesAndFilters() throws Exception {
+        String topic="unit-"+UUID.randomUUID();
+        db.update("INSERT INTO tags(name) VALUES(?)",topic);
+        db.update("INSERT INTO tags(name) VALUES('Lv.99-123') ON CONFLICT DO NOTHING");
+        var numbers=new ArrayList<Integer>();
+        for(int i=0;i<32;i++) {
+            int number=problems.create(draft(),author);
+            numbers.add(number);
+            db.update("UPDATE problems SET status='PUBLISHED',visibility='PUBLIC',submission_count=? WHERE problem_number=?",i==31?3:0,number);
+            db.update("""
+                INSERT INTO problem_tags(problem_id,tag_id)
+                SELECT p.id,t.id FROM problems p,tags t WHERE p.problem_number=? AND t.name=?
+                """,number,topic);
+            if(i==0 || i==2)db.update("""
+                INSERT INTO problem_tags(problem_id,tag_id)
+                SELECT p.id,t.id FROM problems p,tags t WHERE p.problem_number=? AND t.name='Lv.99-123'
+                """,number);
+        }
+        assertEquals(0,problems.listPage(0,topic.replaceFirst("-", "_"),null,"all",null).totalItems());
+        assertEquals(0,problems.listPage(0,topic.replaceFirst("-", "%"),null,"all",null).totalItems());
+        assertTrue(problems.listPage(0,numbers.getFirst().toString(),null,"all",null).items().stream()
+            .anyMatch(row -> numbers.getFirst().equals(row.get("problem_number"))));
+        var listed=get("/api/problems?pagination=true&search="+topic,null);
+        assertEquals(32,json.readTree(listed.body()).path("data").path("totalItems").asInt());
+        var response=get("/api/problems/next?number="+numbers.get(29)+"&search="+topic,null);
+        assertEquals(200,response.statusCode());assertEquals(numbers.get(30).intValue(),json.readTree(response.body()).path("data").path("number").asInt());
+        assertEquals(new ProblemService.Neighbor(numbers.get(30),1),
+            problems.nextPublic(numbers.get(29),false,topic,null,"all","number",null));
+        assertEquals(new ProblemService.Neighbor(numbers.get(0),0),
+            problems.nextPublic(numbers.get(31),false,topic,null,"all","submits",null));
+        assertEquals(numbers.get(2).intValue(),problems.nextPublic(numbers.get(0),true,"",null,"all","number",null).number());
+        assertNull(problems.nextPublic(numbers.get(31),false,topic,null,"all","number",null));
+    }
+    @Autowired CommunityService community;
+
+    @Test void questionListAndCountFollowPublicLinkWithoutSearchingTitle() throws Exception {
+        int number=problems.create(draft(),author);
+        problems.requestReview(number,author);
+        problems.review(number,new ProblemRequests.Review("PUBLISHED","검증"),admin);
+        var question=new CommunityRequests.PostWrite("어떤 경우가 있을까요","조건 문의","PROBLEM_QNA",number);
+        long id=community.createPost(question,author);
+        community.createPost(new CommunityRequests.PostWrite("일반 글","본문","GENERAL",number),author);
+        assertEquals(1L,problems.detail(number,null).get("questionCount"));
+        var response=get("/api/community/posts?category=PROBLEM_QNA&problemNumber="+number,null);
+        assertEquals(200,response.statusCode());assertEquals(1,json.readTree(response.body()).path("data").path("total").asInt());
+        var listing=community.posts(0,"","PROBLEM_QNA",false,null,number);
+        assertEquals(1L,listing.get("total"));
+        assertEquals(1L,community.posts(0,"#"+number,"PROBLEM_QNA",false,null).get("total"));
+        db.update("UPDATE problems SET visibility='PRIVATE' WHERE problem_number=?",number);
+        assertEquals(0L,community.posts(0,"","PROBLEM_QNA",false,null,number).get("total"));
+        db.update("UPDATE problems SET visibility='PUBLIC' WHERE problem_number=?",number);
+        community.deletePost(id,1,author);
+        assertEquals(0L,problems.detail(number,null).get("questionCount"));
+        assertEquals(0L,community.posts(0,"","PROBLEM_QNA",false,null,number).get("total"));
+    }
+    @Autowired SubmissionHistory history;
+
+    @Test void personalHistoryFindsOldestOf51AndScopesSearchPagesAndExport() throws Exception {
+        int old=problems.create(draft(),author), later=problems.create(draft(),author);
+        for (int i=0;i<51;i++) {
+            db.update("""
+                INSERT INTO submissions(user_id,problem_id,language,status,source_code)
+                SELECT ?,id,'PYTHON',?,'example' FROM problems WHERE problem_number=?
+                """,author.getUserId(),i==0?"WRONG_ANSWER":"ACCEPTED",i==0?old:later);
+        }
+        var first=history.page(author,"","","",0);
+        var response=get("/api/submissions/history?q="+old+"&result=WRONG_ANSWER&language=PYTHON",author);
+        assertEquals(200,response.statusCode());assertEquals(1,json.readTree(response.body()).path("data").path("matches").asInt());
+        assertEquals(51,first.total());assertEquals(15,first.items().size());assertEquals(4,first.totalPages());
+        var last=history.page(author,"","","",99);
+        assertEquals(3,last.page());assertEquals(6,last.items().size());
+        var result=history.page(author,Integer.toString(old),"WRONG_ANSWER","PYTHON",0);
+        assertEquals(1,result.matches());assertEquals(old,result.items().getFirst().get("problem_number"));
+        assertEquals(50,result.accepted());assertEquals(List.of("PYTHON"),result.languages());
+        var exported=history.exportBatch(author,"","WRONG_ANSWER","PYTHON",null);
+        assertEquals(1,exported.size());
+        assertTrue(history.exportBatch(author,"","","",((Number)exported.getFirst().get("id")).longValue()).isEmpty());
+        assertEquals(0,history.page(other,"","","",0).matches());
+        assertTrue(history.exportBatch(other,"","","",null).isEmpty());
     }
     ProblemRequests.Write draft(){
         return new ProblemRequests.Write("테스트 문제 "+UUID.randomUUID(),"본문","입력","출력","제한","ELITE",5,1000,128,"FUNCTION",

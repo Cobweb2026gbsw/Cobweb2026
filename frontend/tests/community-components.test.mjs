@@ -87,3 +87,42 @@ test('comments, replies and second-level replies expand independently without ch
   cleanup();
 });
 test.after(async()=>{cleanup();await act(async()=>{await new Promise(resolve=>setTimeout(resolve,0));});dom.window.close();});
+
+test('notice detail returns to the same notice results and search failures permit retry', async () => {
+  cleanup();
+  let fail = true;
+  const list = '/notices?q=일정&page=1';
+  const module = await load('ForumList');
+  mock(() => fail ? {__error:'조회 실패'} : {items:[{...post,category:'NOTICE'}], total:21});
+  const view = await mount(module,list,'/notices',{notices:true});
+  await view.findByRole('alert');
+  assert.equal(view.queryByText('조건에 맞는 게시글이 없습니다.'),null);
+  assert.equal(view.queryByRole('navigation',{name:'페이지 이동'}),null);
+  fail = false;
+  fireEvent.click(view.getByRole('button',{name:'다시 시도'}));
+  const link = (await view.findByText(post.title)).closest('a');
+  const url = new URL(link.href);
+  assert.equal(decodeURI(url.searchParams.get('from')), list);
+  cleanup();
+  const detail = await load('ForumPost');
+  mock(path => path.includes('/comments?') ? {items:[],total:0} : post);
+  const article = await mount(detail,url.pathname + url.search,'/forum/:id');
+  const back = article.getByRole('link',{name:/목록으로/});
+  assert.equal(decodeURI(back.getAttribute('href')),list);
+  cleanup();
+});
+
+test('a question opened from a problem preselects Q&A and returns to its filtered problem', async () => {
+  cleanup();
+  const module = await load('ForumWrite');
+  mock(() => {throw Error('unexpected write');});
+  const list='/problems?q=hello';
+  const url='/forum/new?'+new URLSearchParams({problemNumber:'1000',list});
+  const view=await mount(module,url,'/forum/new');
+  assert.equal(view.getByRole('combobox',{name:'분류'}).value,'PROBLEM_QNA');
+  assert.equal(view.getByRole('spinbutton').value,'1000');
+  const back=new URL(view.getByRole('link',{name:'문제로 돌아가기'}).href);
+  assert.equal(back.pathname,'/problems/1000');
+  assert.equal(back.searchParams.get('from'),list);
+  cleanup();
+});

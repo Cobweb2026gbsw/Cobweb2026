@@ -191,3 +191,6 @@ a.ct-row-item:hover { background-color: var(--hover); }
   .ct-top { grid-template-columns: 1fr; }
   .ct-list { grid-template-columns: 1fr; }
 }
+
+.ct-retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-block: 16px; }
+.ct-retry p { margin: 0; }

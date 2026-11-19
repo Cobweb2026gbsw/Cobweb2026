@@ -25,6 +25,14 @@ class ProblemPaginationTest {
         assertEquals(10001,page.page());assertEquals(10002,page.totalPages());assertEquals(300060,page.totalItems());
         verify(db).queryForList(anyString(),(Object)isNull(),eq("%%"),eq(300030L));
     }
+    @Test void mostSubmittedRanksFullFilteredResultBeforePaging() {
+        var db=mock(JdbcTemplate.class);
+        var service=new ProblemService(db,new ObjectMapper(),mock(GroupService.class),mock(ContestService.class));
+        when(db.queryForObject(anyString(),eq(Long.class),(Object)isNull(),eq("%graph%"),eq("%graph%"))).thenReturn(61L);
+        service.listPage(1,"graph",null,"all",null,"submits");
+        verify(db).queryForList(contains("ORDER BY p.submission_count DESC,p.problem_number LIMIT 30 OFFSET ?"),
+            (Object)isNull(),eq("%graph%"),eq("%graph%"),eq(30L));
+    }
     @Test void maximumRequestDoesNotOverflowTheOffsetMultiplication() {
         var db=mock(JdbcTemplate.class);
         var service=new ProblemService(db,new ObjectMapper(),mock(GroupService.class),mock(ContestService.class));

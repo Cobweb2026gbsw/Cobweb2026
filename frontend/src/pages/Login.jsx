@@ -5,7 +5,9 @@ import { api, isStale, waitForSessionCookies } from "../lib/api";
 import {httpsLoginUrl, requiresHttpsLogin} from '../lib/loginTransport.js';
 import {navigateOAuth} from '../lib/oauthTransport.js';
 import ThemeToggle from "../components/ThemeToggle";
+import { advanceOnEnter, useProgressiveFields } from '../lib/useProgressiveFields.js';
 import "./Login.css";
+import '../components/AuthProgressive.css';
 
 export default function Login({ dark, setDark }) {
   const navigate = useNavigate(), location = useLocation();
@@ -13,6 +15,7 @@ export default function Login({ dark, setDark }) {
   const [username, setUsername] = useState(""), [password, setPassword] = useState("");
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [rememberMe, setRememberMe] = useState(false), [secureLoginUrl, setSecureLoginUrl] = useState(null);
+  const { step, inputs, reveal } = useProgressiveFields(['username', 'password']);
   const insecureLogin = requiresHttpsLogin(window.location);
   const oauthErrors = new URLSearchParams(location.search).getAll("oauthError");
   const oauthNotice = oauthErrors.length === 1 && oauthErrors[0] === "account-conflict"
@@ -32,9 +35,16 @@ export default function Login({ dark, setDark }) {
   const destination = typeof location.state?.from === "string" && location.state.from.startsWith("/") && !location.state.from.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(location.state.from)
     ? location.state.from : "/dashboard";
   useEffect(() => { if (user && !authLoading) navigate(destination, { replace: true }); }, [user, authLoading, destination, navigate]);
-  const submit = async (event) => {
-    event.preventDefault();
+  const next = () => {
     if (authLoading || busy) return;
+    if (!username.trim()) { setError('아이디를 입력해 주세요.'); inputs.current.username?.focus(); return; }
+    setError('');
+    reveal('password');
+  };
+  const submit = async (event) => {
+    event?.preventDefault();
+    if (authLoading || busy) return;
+    if (step === 0) { next(); return; }
     if (insecureLogin) { setError('IP 주소에서는 HTTPS로 접속해야 로그인 상태를 유지할 수 있습니다. HTTPS 주소로 이동해 주세요.'); return; }
     if (!username.trim() || !password) { setError("아이디와 비밀번호를 입력해 주세요."); return; }
     setBusy(true); setError("");
@@ -59,20 +69,25 @@ export default function Login({ dark, setDark }) {
   return <div className={"LoginPage " + (dark ? "dark" : "light")}>
     <ThemeToggle dark={dark} setDark={setDark} />
     <form className="LoginBox" onSubmit={submit}>
-      <h1>LogIn</h1>
-      <label htmlFor="login-username">아이디</label>
-      <input id="login-username" autoComplete="username" maxLength={16} required value={username} onChange={e => setUsername(e.target.value)} />
-      <label htmlFor="login-password">비밀번호</label>
-      <input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} />
-      <label className="login-remember" htmlFor="login-remember"><input id="login-remember" type="checkbox" aria-describedby="login-remember-help" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} disabled={busy || authLoading} />로그인 유지</label>
-      <small id="login-remember-help" className="login-remember-help">일반 로그인에 적용됩니다.</small>
+      <h1>로그인</h1>
+      <p className="auth-progress" id="login-step-help" role="status">{step === 0 ? '아이디를 입력하고 Enter 또는 다음을 눌러주세요.' : '비밀번호를 입력하고 Enter를 누르면 로그인합니다.'}</p>
+      <div className="auth-field">
+        <label htmlFor="login-username">아이디</label>
+        <input ref={node => { inputs.current.username = node; }} id="login-username" autoFocus autoComplete="username" enterKeyHint="next" aria-describedby="login-step-help" maxLength={16} required value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => advanceOnEnter(e, next)} />
+      </div>
+      {step >= 1 && <div className="auth-field auth-field--revealed">
+        <label htmlFor="login-password">비밀번호</label>
+        <input ref={node => { inputs.current.password = node; }} id="login-password" type="password" autoComplete="current-password" enterKeyHint="go" required value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => advanceOnEnter(e, () => { if (e.currentTarget.form.reportValidity()) submit(); })} />
+        <label className="login-remember" htmlFor="login-remember"><input id="login-remember" type="checkbox" aria-describedby="login-remember-help" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} disabled={busy || authLoading} />로그인 유지</label>
+        <small id="login-remember-help" className="login-remember-help">일반 로그인에 적용됩니다.</small>
+      </div>}
       {insecureLogin && <p className="login-transport" role="status">IP 주소에서는 HTTPS 접속이 필요합니다. {secureLoginUrl ? <a href={secureLoginUrl}>HTTPS로 로그인하기</a> : '서버의 HTTPS 주소로 다시 접속해 주세요.'}</p>}
       <p className="login-links"><Link to="/signup">회원가입</Link><Link to="/password-reset">비밀번호 찾기</Link></p>
       {loginNotice && <p className="login-error" role="alert">{loginNotice}</p>}
-      <button type="submit" disabled={busy || authLoading}>{busy ? "로그인 중…" : authLoading ? "로그인 상태 확인 중…" : "로그인"}</button>
+      <button type="submit" disabled={busy || authLoading}>{busy ? "로그인 중…" : authLoading ? "로그인 상태 확인 중…" : step === 0 ? "다음" : "로그인"}</button>
       <div className="login-social" aria-label="소셜 로그인">{[["google", "Google"], ["github", "GitHub"], ["naver", "네이버"]].map(([id, label]) =>
         <button type="button" key={id} disabled={busy || authLoading} onClick={() => oauth(id)}>{label} 로그인</button>)}</div>
-      <p className="login-help">네이버는 기존 연결 계정 로그인만 가능합니다. 외부 제공자 설정이 없는 로컬 환경에서는 소셜 로그인이 제한됩니다.</p>
+      <p className="login-help">가입할 때 사용한 방식으로 로그인해 주세요. 네이버는 기존에 연결한 계정만 사용할 수 있어요.</p>
       <p className="login-logo"><Link to="/">CobWeb</Link></p>
     </form>
   </div>;

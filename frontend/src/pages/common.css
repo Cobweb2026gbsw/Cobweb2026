@@ -44,19 +44,19 @@
 }
 
 .cw-page.light {
-  --bg: #dbfffd;
-  --card: #f4fffe;
-  --field: #ffffff;
-  --hover: #e6fbf9;
-  --line: #9dbab8;
-  --line-strong: #7f9a98;
-  --text: #121414;
-  --muted: #536260;
-  --accent: #13fff3;
-  --accent-text: #0a7f76;
-  --accent-ink: #04201d;
-  --btn-bg: #f4fffe;
-  --green: #0a7d5c;
+  --bg: var(--light-bg);
+  --card: var(--light-surface);
+  --field: var(--light-field);
+  --hover: var(--light-hover);
+  --line: var(--light-line);
+  --line-strong: var(--light-line-strong);
+  --text: var(--light-text);
+  --muted: var(--light-muted);
+  --accent: var(--light-accent);
+  --accent-text: var(--light-accent);
+  --accent-ink: var(--light-on-accent);
+  --btn-bg: var(--light-surface);
+  --green: var(--light-accent);
   --yellow: #8a6200;
   --red: #c4263c;
   --blue: #3a4fd1;
@@ -226,9 +226,9 @@
   outline-offset: 2px;
 }
 
-/* 입력란에는 클릭·키보드 포커스에서도 별도 외곽선을 그리지 않습니다. */
+/* 키보드 사용자가 입력 위치를 알 수 있도록 초점을 표시합니다. */
 .cw-page :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable]:not([contenteditable="false"])):focus-visible {
-  outline: none;
+  outline: 2px solid var(--accent-text);
   box-shadow: none;
 }
 
@@ -448,3 +448,7 @@ button.cw-badge[aria-pressed="true"] {
     transition: none !important;
   }
 }
+
+.cw-page .cw-input:focus-visible,
+.cw-page .cw-select:focus-visible,
+.cw-page .cw-textarea:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }

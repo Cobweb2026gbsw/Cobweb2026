@@ -25,3 +25,6 @@
 .cw-test-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
 .cw-test-actions>.cw-btn{flex:0 1 auto;min-width:0;max-width:calc(50% - 6px);white-space:normal}
 @media(max-width:600px){.cw-test-actions{gap:8px}.cw-test-actions>.cw-btn{max-width:none;flex:1;padding-left:10px;padding-right:10px}}
+.cw-test-summary { padding: 12px 0; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.cw-test-summary strong { font-size: 14px; }
+.cw-test-summary p { margin: 6px 0 0; line-height: 1.6; }

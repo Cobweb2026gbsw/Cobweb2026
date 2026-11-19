@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { useResource, useScope } from '../lib/useResource';
-import { CATEGORIES, displayDate } from '../lib/community';
+import { CATEGORIES, displayDate, forumListDestination } from '../lib/community';
 import { profileHref } from '../lib/profileRoutes';
 import CommentBody from '../components/CommentBody';
 import './common.css';
@@ -38,9 +38,10 @@ function CommentList({postId,parentId=null,admin=false,disabled=false,compose=tr
   };
   return <div className="fm-thread">
     {(resource.error||error)&&<p role="alert" className="cw-error">{resource.error||error}</p>}
+    {resource.error&&<button className="cw-btn sm" onClick={resource.reload}>댓글 다시 불러오기</button>}
     {items.map(item=><Comment key={item.id} item={item} postId={postId} admin={admin} disabled={disabled} onChange={onChange} canManage={permissions.canManage}/>)}
     {resource.loading&&<p role="status">댓글 불러오는 중…</p>}
-    {!items.length&&!resource.loading&&<p className="cw-hint">아직 댓글이 없습니다.</p>}
+    {!items.length&&!resource.loading&&!resource.error&&<p className="cw-hint">아직 댓글이 없습니다.</p>}
     {items.length<(resource.data?.total||0)&&<button className="cw-btn sm" disabled={resource.loading} onClick={()=>setPage(page+1)}>댓글 더 보기</button>}
     {user&&!disabled&&compose&&<form className="fm-comment-form" onSubmit={submit}><label className="cw-label">{parentId==null?'댓글 작성':'답글 작성'}<textarea className="cw-textarea" maxLength={5000} value={text} onChange={event=>setText(event.target.value)} required/></label>
       <div className="fm-comment-foot"><span>{text.length} / 5,000자</span><button className="cw-btn primary sm" disabled={busy||!text.trim()}>등록</button></div></form>}
@@ -76,6 +77,10 @@ function Comment({item,postId,admin,disabled,onChange,canManage}){
 }
 export default function ForumPost({dark,admin=false}){
   const {id}=useParams(),{user,permissions}=useAuth(),scope=useScope(),navigate=useNavigate();
+  const location=useLocation();
+  const list=forumListDestination(new URLSearchParams(location.search).get('from'),admin);
+  const editParams=new URLSearchParams({from:list});
+  if(admin) editParams.set('admin','1');
   const resource=useResource(`${admin?'/api/admin/community':'/api/community'}/posts/${id}`);
   const post=resource.data;const[history,setHistory]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const mutate=async restore=>{
@@ -84,19 +89,20 @@ export default function ForumPost({dark,admin=false}){
     try{
       if(restore)await api('/api/admin/community/posts/'+id+'/restore','POST',{version:post.version,reason:'관리 화면에서 복원'});
       else await api('/api/community/posts/'+id+'?version='+post.version,'DELETE');
-      if(current()){if(!restore&&!admin)navigate('/forum',{replace:true});else resource.reload();}
+      if(current()){if(!restore&&!admin)navigate(list,{replace:true});else resource.reload();}
     }catch(failure){if(current()&&!failure.stale)setError(failure.message);}finally{if(current())setBusy(false);}
   };
   const category=CATEGORIES[post?.category];
   return <main className={`cw-page fm-page ${dark?'dark':'light'}`}><div className="cw-wrap fm-narrow">
-    <Link className="fm-back" to={admin?'/admin/community':'/forum'}>← 목록으로</Link>
+    <Link className="fm-back" to={list}>← 목록으로</Link>
     {(resource.error||error)&&<p className="cw-error" role="alert">{resource.error||error}</p>}
+    {resource.error&&<button className="cw-btn" onClick={resource.reload}>다시 시도</button>}
     {resource.loading?<p role="status">게시글 불러오는 중…</p>:post&&<>
       <article className="cw-card fm-article"><div className="fm-article-top"><span className={`cw-badge ${category?.tone||'gray'}`}>{category?.label||post.category}</span>{post.deleted&&<span className="cw-badge red">삭제됨</span>}
         {post.problemNumber&&<Link className="cw-badge mint" to={'/problems/'+post.problemNumber}>문제 #{post.problemNumber}</Link>}</div>
         <h1>{post.title}</h1><p className="fm-meta"><Link to={profileHref(post.authorUsername)}>{post.authorUsername}</Link><span>{displayDate(post.createdAt)}</span>{post.edited&&<span>수정됨 · {displayDate(post.updatedAt)}</span>}</p>
         <div className="fm-body">{post.body}</div><div className="fm-article-actions cw-actions">
-          {post.canEdit&&<Link className="cw-btn sm" to={'/forum/'+id+'/edit'+(admin?'?admin=1':'')}>게시글 수정</Link>}
+          {post.canEdit&&<Link className="cw-btn sm" to={'/forum/'+id+'/edit?'+editParams}>게시글 수정</Link>}
           {post.canDelete&&<button className="cw-btn sm danger" disabled={busy} onClick={()=>mutate(false)}>게시글 삭제</button>}
           {admin&&post.deleted&&<button className="cw-btn sm primary" disabled={busy} onClick={()=>mutate(true)}>게시글 복원</button>}
           {permissions.canManage&&<button className="cw-btn sm" onClick={()=>setHistory(!history)}>게시글 이력</button>}
@@ -104,7 +110,7 @@ export default function ForumPost({dark,admin=false}){
       {history&&<History kind="posts" id={id} onClose={()=>setHistory(false)}/>}
       <section className="cw-card fm-comments"><h2 className="cw-card-title">댓글 <small>최대 대대댓글까지 · 수정 이력 보존</small></h2>
         <CommentList key={resource.revision+':'+post.version} postId={id} admin={admin} disabled={post.deleted} onChange={resource.reload}/>
-        {!user&&<p className="fm-login-note"><Link to="/login" state={{from:'/forum/'+id}}>로그인</Link> 후 댓글을 작성할 수 있습니다.</p>}
+        {!user&&<p className="fm-login-note"><Link to="/login" state={{from:location.pathname+location.search}}>로그인</Link> 후 댓글을 작성할 수 있습니다.</p>}
       </section>
     </>}
   </div></main>;

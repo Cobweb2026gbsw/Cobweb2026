@@ -12,7 +12,7 @@ const require=createRequire(import.meta.url),root=fileURLToPath(new URL('../',im
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost:8080/'});
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 for(const key of ['window','document','HTMLElement','Event','InputEvent','KeyboardEvent','MutationObserver','FormData'])globalThis[key]=dom.window[key];
-installEditorDom(dom.window);globalThis.IS_REACT_ACT_ENVIRONMENT=true;globalThis.confirm=()=>true;
+installEditorDom(dom.window);globalThis.IS_REACT_ACT_ENVIRONMENT=true;
 window.CobwebCodeEditor=require('../../src/main/resources/static/code-editor.js');
 const React=require('react'),{render,fireEvent,waitFor,cleanup,act}=require('@testing-library/react'),{MemoryRouter,Routes,Route}=require('react-router-dom');
 const bundle=await build({entryPoints:[path.join(root,'src/pages/ProblemDetail.jsx')],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'draft-contracts',setup(builder){
@@ -62,18 +62,17 @@ test('latest edits flush on pagehide and on navigation before the 300ms debounce
   assert.equal(loadProblemDrafts(scope(),['PYTHON']).codes.PYTHON,'navigation-latest');
 });
 
-test('languages preserve independent drafts including an empty string and reset deletes only the selected language',async()=>{
+test('languages preserve independent drafts including an empty string after reopening and switching languages',async()=>{
   const first=render(route());await waitFor(()=>area(first));
   act(()=>setEditorValue(area(first),'python-preserved'));
   fireEvent.change(first.getByRole('combobox',{name:'언어'}),{target:{value:'JAVASCRIPT'}});
   act(()=>setEditorValue(area(first),''));first.unmount();
   assert.deepEqual(loadProblemDrafts(scope(),['PYTHON','JAVASCRIPT']).codes,{PYTHON:'python-preserved',JAVASCRIPT:''});
   const second=render(route());await waitFor(()=>assert.equal(editorValue(area(second)),''));
-  fireEvent.click(second.getByRole('button',{name:'초기화'}));
-  assert.match(editorValue(area(second)),/function sol\(value\)/);
-  assert.deepEqual(loadProblemDrafts(scope(),['PYTHON','JAVASCRIPT']).codes,{PYTHON:'python-preserved'});
   fireEvent.change(second.getByRole('combobox',{name:'언어'}),{target:{value:'PYTHON'}});
   assert.equal(editorValue(area(second)),'python-preserved');
+  fireEvent.change(second.getByRole('combobox',{name:'언어'}),{target:{value:'JAVASCRIPT'}});
+  assert.equal(editorValue(area(second)),'');
 });
 
 test('account and problem scopes restore their own drafts without inheriting another identity',async()=>{

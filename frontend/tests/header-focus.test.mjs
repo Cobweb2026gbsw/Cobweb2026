@@ -11,7 +11,7 @@ function header(theme){
 }
 
 for(const theme of ['dark','light']){
-  test(`search input and its rounded parent remain borderless before and during focus (${theme})`,()=>{
+  test(`search input has visible keyboard focus while its rounded parent remains borderless (${theme})`,()=>{
     const dom=header(theme);
     try{
       const {document}=dom.window,input=document.querySelector('input'),form=document.querySelector('form');
@@ -22,15 +22,18 @@ for(const theme of ['dark','light']){
         assert.equal(declaration.getPropertyValue('outline'),'none');
         assert.equal(declaration.getPropertyValue('box-shadow'),'none');
       }
-      for(const focused of [false,true,false]){
-        if(focused)input.focus();else input.blur();
-        assert.equal(input.matches(':focus-visible'),focused);
-        const style=dom.window.getComputedStyle(input),parent=dom.window.getComputedStyle(form);
-        assert.equal(style.outline,'none');
+      for(const focused of [false,true]){
+        // jsdom caches computed style across focus changes; use independent fixtures.
+        const fixture=header(theme),field=fixture.window.document.querySelector('input');
+        if(focused)field.focus();
+        assert.equal(field.matches(':focus-visible'),focused);
+        const style=fixture.window.getComputedStyle(field),parent=fixture.window.getComputedStyle(fixture.window.document.querySelector('form'));
+        assert.equal(style.outline,focused?'2px solid var(--h-accent)':'none');
         assert.equal(style.boxShadow,'none');
         assert.equal(parent.borderRadius,'999px');
         assert.equal(parent.outline,'none');
         assert.equal(parent.boxShadow,'none');
+        fixture.window.close();
       }
     }finally{dom.window.close();}
   });

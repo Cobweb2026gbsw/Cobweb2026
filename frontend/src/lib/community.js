@@ -4,3 +4,11 @@ export const CATEGORIES = {
   MAJOR_QNA: { label: '전공 질문', tone: 'green' }, GENERAL: { label: '자유', tone: 'gray' }, NOTICE: { label: '공지', tone: 'mint' },
 };
 export const displayDate = value => value ? new Date(value).toLocaleString('ko-KR') : '—';
+
+export function forumListDestination(value, admin = false) {
+  const fallback = admin ? '/admin/community' : '/forum';
+  if (typeof value !== 'string' || value.length > 4096 || /[\\#\u0000-\u001f]/.test(value)) return fallback;
+  const path = value.split('?')[0];
+  const allowed = admin ? ['/admin/community'] : ['/forum', '/community', '/notices'];
+  return allowed.includes(path) ? value : fallback;
+}

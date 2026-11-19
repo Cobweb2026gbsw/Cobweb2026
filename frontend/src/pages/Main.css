@@ -1,225 +1,40 @@
-.main-top {
-  min-height: calc(100vh - 88px);
-
-  padding: 120px 140px;
-
-  box-sizing: border-box;
-
-  transition: 0.2s;
-}
-
-.hero {
-  max-width: 950px;
-}
-
-/* ONLINE JUDGE */
-.hero > p:first-child {
-  margin: 0 0 16px;
-
-  color: #13fff3;
-
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 2px;
-}
-
-/* CobWeb */
-.hero h1 {
-  margin: 0;
-
-  font-size: 70px;
-  line-height: 1;
-
-  color: #ffffff;
-}
-
-/* 설명 */
-.hero > p:nth-of-type(2) {
-  max-width: 470px;
-
-  margin-top: 28px;
-
-  color: #b7b7b7;
-
-  font-size: 18px;
-  line-height: 1.8;
-
-  word-break: keep-all;
-}
-
-/* 메인 버튼 */
-.main-button {
-  display: flex;
-  gap: 14px;
-
-  margin-top: 35px;
-}
-
-.main-button button {
-  height: 48px;
-
-  padding: 0 24px;
-
-  border-radius: 999px;
-  border: 1px solid #505050;
-
-  background-color: #000000;
-  color: #ffffff;
-
-  font-size: 15px;
-  font-weight: 700;
-
-  cursor: pointer;
-
-  transition: 0.2s;
-}
-
-/* 문제 풀기 버튼 */
-.main-button button:first-child {
-  background-color: #13fff3;
-  color: #000000;
-
-  border-color: #13fff3;
-}
-
-.main-button button:hover {
-  border-color: #13fff3;
-
-  transform: translateY(-2px);
-}
-
-/* 카드 영역 */
-.info-cards {
-  display: flex;
-  gap: 28px;
-
-  margin-top: 70px;
-}
-
-.info-card {
-  width: 420px;
-  min-height: 145px;
-
-  padding: 28px 30px;
-
-  border: 1px solid #505050;
-  border-radius: 18px;
-
-  box-sizing: border-box;
-
-  cursor: pointer;
-
-  transition: 0.2s;
-}
-
-.info-card h3 {
-  margin: 0 0 14px;
-
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.info-card p {
-  margin: 0;
-
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 1.6;
-}
-
-.info-card:hover {
-  border-color: #13fff3;
-
-  transform: translateY(-2px);
-}
-
-/* =========================
-   DARK MODE
-========================= */
-
-.main-top.dark {
-  background-color: #121414;
-  color: white;
-}
-
-.main-top.dark .hero h1 {
-  color: #ffffff;
-}
-
-.main-top.dark .hero > p:nth-of-type(2) {
-  color: #b7b7b7;
-}
-
-.main-top.dark .info-card {
-  background-color: #151515;
-
-  border-color: #505050;
-}
-
-.main-top.dark .info-card h3 {
-  color: #dbfffd;
-}
-
-.main-top.dark .info-card p {
-  color: #9a9a9a;
-}
-
-/* =========================
-   LIGHT MODE
-========================= */
-
-.main-top.light {
-  background-color: #dbfffd;
-  color: #121414;
-}
-
-.main-top.light .hero h1 {
-  color: #121414;
-}
-
-.main-top.light .hero > p:nth-of-type(2) {
-  color: #4f5f5e;
-}
-
-.main-top.light .main-button button:not(:first-child) {
-  background-color: #f4fffe;
-  color: #121414;
-
-  border-color: #8ea5a3;
-}
-
-.main-top.light .info-card {
-  background-color: #f4fffe;
-
-  border-color: #9dbab8;
-}
-
-.main-top.light .info-card h3 {
-  color: #121414;
-}
-
-.main-top.light .info-card p {
-  color: #536260;
-}
-
-/* 카드를 Link로 감쌌을 때 기본 링크 스타일 제거 */
-.info-cards a {
-  color: inherit;
-  text-decoration: none;
-  min-width: 0;
-  flex: 1;
-}
-
-/* ZIP의 카드 비율은 유지하되 작은 창에서는 가로 넘침 없이 재배치합니다. */
-.info-card { width: 100%; height: 100%; }
-.main-button { flex-wrap: wrap; }
-@media (max-width: 1100px) {
-  .main-top { padding: 80px 40px; }
-  .info-cards { gap: 16px; }
-}
-@media (max-width: 640px) {
-  .main-top { padding: 54px 20px; }
-  .hero h1 { font-size: 52px; }
-  .info-cards { flex-direction: column; margin-top: 40px; }
-  .info-card { min-height: 120px; }
-}
+/* CobWeb's original charcoal/mint palette and pill actions, split into slides. */
+/* Let the header take its actual height. */
+#root:has(> .cw-home-shell){display:flex;flex-direction:column;height:100dvh;}
+.cw-app-shell.cw-home-shell{flex:1;min-height:0;}
+.cw-home-shell .cw-app-content,.cw-home-shell .cw-route-content,.cw-home-shell .home-deck{flex:1;min-height:0;}
+.home-deck,.home-carousel,.home-viewport{display:flex;flex-direction:column;}
+.home-carousel,.home-viewport,.home-track{flex:1;min-height:0;}
+.home-deck{--home-bg:#121414;--home-text:#fff;--home-muted:#a4afad;--home-line:#35403d;--home-accent:#13fff3;--home-action-ink:#001a18;--home-panel:#151a18;--home-gutter:clamp(24px,7vw,140px);background:var(--home-bg);color:var(--home-text);min-width:0;}
+.home-deck.light{--home-bg:var(--light-bg);--home-text:var(--light-text);--home-muted:var(--light-muted);--home-line:var(--light-line);--home-accent:var(--light-accent);--home-action-ink:#fff;--home-panel:var(--light-surface);}
+.home-carousel{width:100%;overflow:hidden;}
+.home-viewport{overflow:hidden;touch-action:pan-y;}
+.home-track{display:flex;align-items:stretch;transition:transform 600ms cubic-bezier(.22,1,.36,1);}
+.home-slide{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:center;gap:40px;flex:0 0 100%;min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;box-sizing:border-box;padding:clamp(24px,6dvh,64px) var(--home-gutter);background:var(--home-bg);color:var(--home-text);}
+.home-slide-copy{position:relative;z-index:1;min-width:0;}
+.home-eyebrow{margin:0 0 20px;color:var(--home-accent);font-size:12px;font-weight:700;letter-spacing:2px;}
+.home-slide h1,.home-slide h2{margin:0;font-size:clamp(46px,5.4vw,78px);font-weight:750;line-height:1.15;letter-spacing:-.04em;word-break:keep-all;overflow-wrap:anywhere;}
+.home-description{max-width:570px;margin:28px 0 0;font-size:clamp(15px,1.3vw,18px);line-height:1.85;color:var(--home-muted);white-space:pre-line;word-break:keep-all;}
+.home-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:34px;}
+.home-actions a,.home-actions a:visited{display:inline-flex;align-items:center;justify-content:center;gap:22px;min-height:48px;padding:12px 22px;box-sizing:border-box;border:1px solid var(--home-line);border-radius:999px;background:var(--home-panel);color:var(--home-text);font-size:14px;font-weight:700;text-decoration:none;transition:border-color 150ms,background-color 150ms;}
+.home-actions a:hover{border-color:var(--home-accent);}
+.home-actions a.home-primary{background:var(--home-accent);color:var(--home-action-ink);border-color:var(--home-accent);}
+.home-actions a.home-primary:hover{filter:brightness(1.08);}
+.home-note{margin:16px 0 0;color:var(--home-muted);font-size:12px;line-height:1.7;word-break:keep-all;}
+.home-visual{min-width:0;width:100%;max-width:440px;justify-self:end;color:var(--home-accent);}
+.home-visual svg{display:block;width:100%;height:auto;}
+.home-visual-caption{display:block;text-align:center;font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--home-muted);margin-top:14px;}
+.home-visual-grid{opacity:.075;}
+.home-web{opacity:.35;stroke-width:1;}
+.home-visual-core,.home-visual-panels{fill:var(--home-panel);stroke:currentColor;stroke-width:1;}
+.home-visual-symbol{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;}
+.home-visual-nodes{fill:currentColor;}
+.home-visual-connector{fill:none;stroke:currentColor;stroke-width:1.5;stroke-dasharray:5 6;opacity:.4;}
+.home-visual-bars{fill:var(--home-panel);stroke:currentColor;stroke-width:1;opacity:.55;}
+.home-deck :focus-visible{outline:2px solid var(--home-accent);outline-offset:5px;}
+.home-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;}
+@media(min-width:1700px){.home-deck{--home-gutter:max(140px,calc((100vw - 1440px)/2));}}
+@media(max-width:1100px){.home-slide{gap:16px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);}.home-actions{gap:10px;}.home-actions a{font-size:13px;padding-inline:18px;}}
+@media(max-width:700px){.home-slide{grid-template-columns:1fr;grid-template-rows:minmax(min-content,1fr) auto;gap:16px;padding-block:24px;}.home-slide h1,.home-slide h2{font-size:48px;}.home-eyebrow{font-size:11px;margin-bottom:16px;}.home-description{font-size:14px;line-height:1.75;margin-top:22px;}.home-actions{margin-top:26px;gap:10px;}.home-actions .home-primary{flex-basis:100%;}.home-actions a{flex:1;padding-inline:16px;}.home-note{font-size:11px;margin-top:14px;}.home-visual{max-width:160px;width:45%;}.home-visual-caption{font-size:8px;margin-top:4px;}}
+@media(max-width:700px) and (max-height:700px){.home-slide{grid-template-rows:1fr;}.home-visual{display:none;}}
+@media(prefers-reduced-motion:reduce){.home-track,.home-actions a{transition:none;}}

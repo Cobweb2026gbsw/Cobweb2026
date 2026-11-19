@@ -62,13 +62,18 @@ public class ProblemService {
     }
     public List<Map<String,Object>> list(int page,String search,List<String> difficulty,String solved,
                                          CustomUserDetails user) {
-        return listingRows(listingQuery(search,difficulty,solved,user,false),page);
+        return listingRows(listingQuery(search,difficulty,solved,user,false,null),page);
     }
     /** 개수와 행은 같은 읽기 스냅샷에서 조회하며, 기본 배열 API는 변경하지 않습니다. */
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public ListingPage listPage(int page,String search,List<String> difficulty,String solved,
                                 CustomUserDetails user) {
-        return listingPage(listingQuery(search,difficulty,solved,user,false),page);
+        return listPage(page,search,difficulty,solved,user,null);
+    }
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public ListingPage listPage(int page,String search,List<String> difficulty,String solved,
+                                CustomUserDetails user,String sort) {
+        return listingPage(listingQuery(search,difficulty,solved,user,false,sort),page);
     }
     public Map<String,Object> permissions(CustomUserDetails user) {
         requireUser(user);
@@ -79,18 +84,23 @@ public class ProblemService {
     }
     public List<Map<String,Object>> mine(int page,String search,List<String> difficulty,String solved,
                                          CustomUserDetails user) {
-        return listingRows(listingQuery(search,difficulty,solved,user,true),page);
+        return listingRows(listingQuery(search,difficulty,solved,user,true,null),page);
     }
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public ListingPage minePage(int page,String search,List<String> difficulty,String solved,
                                 CustomUserDetails user) {
-        return listingPage(listingQuery(search,difficulty,solved,user,true),page);
+        return minePage(page,search,difficulty,solved,user,null);
+    }
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public ListingPage minePage(int page,String search,List<String> difficulty,String solved,
+                                CustomUserDetails user,String sort) {
+        return listingPage(listingQuery(search,difficulty,solved,user,true,sort),page);
     }
     /** COUNT도 동일한 권한/필터 WHERE를 사용하므로 비공개 문제 수가 공개 목록에 섞이지 않습니다. */
     private record ListingQuery(String columns,String from,List<Object> parameters,String order,boolean authenticated) {}
     public record ListingPage(List<Map<String,Object>> items,int page,int pageSize,long totalItems,long totalPages) {}
     private ListingQuery listingQuery(String search,List<String> difficulty,String solved,
-                                      CustomUserDetails user,boolean mine) {
+                                      CustomUserDetails user,boolean mine,String sort) {
         Long uid=user!=null && user.isEnabled()?user.getUserId():null;
         if(mine)uid=requireUser(user);
         var filters=listingFilters(difficulty,solved,uid!=null);
@@ -106,14 +116,31 @@ public class ProblemService {
         var from=new StringBuilder("FROM problems p LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id ");
         List<Object> parameters=new ArrayList<>();parameters.add(uid);
         if(mine) {
-            from.append("WHERE p.author_id=? AND p.problem_title ILIKE ?");parameters.add(uid);
+            from.append("WHERE p.author_id=?");parameters.add(uid);
         } else {
-            from.append("WHERE p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL AND p.problem_title ILIKE ?");
+            from.append("WHERE p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL");
         }
-        parameters.add("%"+Objects.toString(search,"")+"%");
+        String term=Objects.toString(search,"").trim();
+        String pattern="%"+term.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
+        from.append(" AND (p.problem_title ILIKE ? ESCAPE '!'");
+        parameters.add(pattern);
+        if (!term.isEmpty()) {
+            from.append(" OR EXISTS (SELECT 1 FROM problem_tags pt JOIN tags t ON t.id=pt.tag_id WHERE pt.problem_id=p.id AND t.name ILIKE ? ESCAPE '!')");
+            parameters.add(pattern);
+        }
+        if (term.matches("[1-9][0-9]{0,9}")) {
+            from.append(" OR p.problem_number=?");
+            parameters.add(Long.parseLong(term));
+        }
+        from.append(")");
         appendListingFilters(from,parameters,filters);
-        return new ListingQuery(columns,from.toString(),parameters,
-            mine?" ORDER BY p.updated_at DESC,p.id DESC":" ORDER BY p.problem_number",uid!=null);
+        String order = switch (Objects.toString(sort,"")) {
+            case "submits" -> " ORDER BY p.submission_count DESC,p.problem_number";
+            case "number" -> " ORDER BY p.problem_number";
+            case "" -> mine ? " ORDER BY p.updated_at DESC,p.id DESC" : " ORDER BY p.problem_number";
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST,"정렬 방식을 확인해 주세요.");
+        };
+        return new ListingQuery(columns,from.toString(),parameters,order,uid!=null);
     }
     private List<Map<String,Object>> listingRows(ListingQuery query,int page) {
         return listingRowsAtOffset(query,offset(page));
@@ -132,6 +159,42 @@ public class ProblemService {
         // 새 메타데이터 모드는 실제 전체 페이지를 지원하고 OFFSET은 long으로 계산합니다.
         // 기존 배열 모드만 offset(page)의 10000페이지 상한을 그대로 유지합니다.
         return new ListingPage(listingRowsAtOffset(query,30L*page),page,30,total,totalPages);
+    }
+    public record Neighbor(int number,long page) {}
+
+    @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    public Neighbor nextPublic(int number,boolean chapter,String search,List<String> difficulty,String solved,
+                               String sort,CustomUserDetails user) {
+        var anchor=load(number,user);
+        if (anchor.get("group_id")!=null || !"PUBLISHED".equals(anchor.get("status")) || !"PUBLIC".equals(anchor.get("visibility")))
+            throw new ApiException(HttpStatus.NOT_FOUND);
+        var query=listingQuery(chapter?"":search,chapter?null:difficulty,chapter?"all":solved,user,false,chapter?"number":sort);
+        var args=new ArrayList<>(query.parameters());
+        String scope=query.from();
+        if (chapter) {
+            var tags=db.queryForList("""
+                SELECT t.id FROM problem_tags pt JOIN tags t ON t.id=pt.tag_id
+                WHERE pt.problem_id=? AND t.name ~ '^Lv[.][0-9]+-[0-9]+$' ORDER BY t.name LIMIT 1
+                """,Long.class,anchor.get("id"));
+            if (tags.isEmpty()) {
+                scope+=" AND p.rank_type=?";
+                args.add(anchor.get("rank_type"));
+            } else {
+                scope+=" AND EXISTS (SELECT 1 FROM problem_tags pt WHERE pt.problem_id=p.id AND pt.tag_id=?)";
+                args.add(tags.getFirst());
+            }
+        }
+        String after="problem_number>?";
+        if (!chapter && "submits".equals(sort)) {
+            after="(submission_count<? OR (submission_count=? AND problem_number>?))";
+            args.add(anchor.get("submission_count"));
+            args.add(anchor.get("submission_count"));
+        }
+        args.add(number);
+        String sql="SELECT problem_number,(position-1)/30 AS page FROM (SELECT p.problem_number,p.submission_count,"
+            +"row_number() OVER ("+query.order()+") AS position "+scope+") ordered WHERE "+after+" ORDER BY position LIMIT 1";
+        return db.query(sql,(row,index)->new Neighbor(row.getInt("problem_number"),row.getLong("page")),args.toArray())
+            .stream().findFirst().orElse(null);
     }
     private record ListingFilters(List<String> difficulties,String solved) {}
     private static ListingFilters listingFilters(List<String> difficulty,String solved,boolean authenticated) {
@@ -216,6 +279,12 @@ public class ProblemService {
         for (String key : List.of("problem_number","problem_title","description","input_description",
                 "output_description","constraints_text","rank_type","rank_int","time_limit_ms",
                 "memory_limit_mb","execution_mode","status")) result.put(key,p.get(key));
+        result.put("canLinkInForum", p.get("group_id") == null && "PUBLISHED".equals(p.get("status"))
+                && "PUBLIC".equals(p.get("visibility")));
+        if (Boolean.TRUE.equals(result.get("canLinkInForum"))) {
+            result.put("questionCount",db.queryForObject(
+                "SELECT COUNT(*) FROM community_posts WHERE problem_id=? AND category='PROBLEM_QNA' AND is_deleted=FALSE",Long.class,p.get("id")));
+        }
         result.put("examples", db.queryForList(
             "SELECT input_text, output_text, explanation FROM problem_examples WHERE problem_id=? ORDER BY display_order",p.get("id")));
         var languages=db.queryForList("SELECT language FROM problem_languages WHERE problem_id=? ORDER BY language",

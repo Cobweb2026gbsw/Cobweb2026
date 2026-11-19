@@ -8,6 +8,7 @@ import {JSDOM} from 'jsdom';
 
 const require=createRequire(import.meta.url),root=fileURLToPath(new URL('../',import.meta.url));
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost:8080/'});
+dom.window.scrollTo=()=>{};
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 for(const key of ['window','document','HTMLElement','Event','MutationObserver'])globalThis[key]=dom.window[key];
 globalThis.IS_REACT_ACT_ENVIRONMENT=true;
@@ -128,9 +129,9 @@ test('changing filters resets the page, combines with text search, and reset cle
   fireEvent.change(view.getByRole('textbox',{name:'문제 검색'}),{target:{value:'tree'}});fireEvent.click(view.getByRole('button',{name:'검색',exact:true}));
   await waitFor(()=>assert.equal(new URL(calls.at(-1),'http://localhost').searchParams.get('search'),'tree'));
   assert.deepEqual(new URL(calls.at(-1),'http://localhost').searchParams.getAll('difficulty'),['ELITE:1','EXPERT:5']);
-  fireEvent.change(view.getByRole('combobox',{name:'현재 페이지 정렬'}),{target:{value:'submits'}});fireEvent.click(view.getByRole('button',{name:'초기화'}));
+  fireEvent.change(view.getByRole('combobox',{name:'정렬 기준'}),{target:{value:'submits'}});fireEvent.click(view.getByRole('button',{name:'초기화'}));
   await waitFor(()=>assert.equal(view.getByTestId('location').textContent,'/problems'));
-  const cleared=new URL(calls.at(-1),'http://localhost');assert.equal(cleared.searchParams.get('search'),'');assert.equal(cleared.searchParams.get('solved'),'all');assert.deepEqual(cleared.searchParams.getAll('difficulty'),[]);assert.equal(view.getByRole('combobox',{name:'현재 페이지 정렬'}).value,'number');
+  const cleared=new URL(calls.at(-1),'http://localhost');assert.equal(cleared.searchParams.get('search'),'');assert.equal(cleared.searchParams.get('solved'),'all');assert.deepEqual(cleared.searchParams.getAll('difficulty'),[]);assert.equal(view.getByRole('combobox',{name:'정렬 기준'}).value,'number');
 });
 
 test('anonymous completion filters explain login and mine uses the same server filter contract',async()=>{

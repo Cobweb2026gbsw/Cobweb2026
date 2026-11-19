@@ -8,6 +8,7 @@ import {installEditorDom} from './editor-dom.mjs';
 
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost:8080/'});
 for(const key of ['window','document','HTMLElement','Event','KeyboardEvent','MutationObserver'])globalThis[key]=dom.window[key];
+dom.window.scrollTo=()=>{};
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 installEditorDom(dom.window);globalThis.IS_REACT_ACT_ENVIRONMENT=true;
 const require=createRequire(import.meta.url),React=require('react'),{render,fireEvent,waitFor,cleanup,act}=require('@testing-library/react');
@@ -98,4 +99,22 @@ test('contest submission shows the authorized runtime cause without persisting i
   fireEvent.click(await view.findByRole('button',{name:'1. 시험 문제'}));await view.findByRole('textbox',{name:'풀이 코드'});
   fireEvent.click(view.getByRole('button',{name:'시험 답안 제출'}));await view.findByRole('region',{name:'실행 오류 원인'});
   for(const key of Object.keys(window.localStorage))assert.doesNotMatch(window.localStorage.getItem(key),/SyntaxError|제출 코드의 문법/);
+});
+
+test('each failed verdict offers relevant next steps without treating pending or unknown statuses as failure',async()=>{
+  const cases=[['WRONG_ANSWER','출력과 경계값'],['TIME_LIMIT_EXCEEDED','반복 횟수'],['MEMORY_LIMIT_EXCEEDED','데이터 크기'],['COMPILATION_ERROR','실행되기 전'],['RUNTIME_ERROR','실행 도중'],['SYSTEM_ERROR','채점을 완료하지']];
+  for(const [status,heading] of cases){
+    globalThis.__diagnosticApi=async()=>submission(status);
+    const view=render(React.createElement(Feedback,{id:42}));
+    const guidance=await view.findByRole('region',{name:'판정 안내'});
+    assert.match(guidance.textContent,new RegExp(heading));
+    if(status==='SYSTEM_ERROR')assert.match(guidance.textContent,/코드의 오답으로 단정할 수 없습니다/);
+    cleanup();
+  }
+  for(const status of ['QUEUED','RUNNING','ACCEPTED','FUTURE_STATUS']){
+    globalThis.__diagnosticApi=async()=>submission(status);
+    const view=render(React.createElement(Feedback,{id:42}));
+    await waitFor(()=>assert.match(view.container.textContent,new RegExp(status)));
+    assert.equal(view.queryByRole('region',{name:'판정 안내'}),null);cleanup();
+  }
 });

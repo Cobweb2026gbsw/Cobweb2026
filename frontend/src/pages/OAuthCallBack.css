@@ -26,10 +26,12 @@
 }
 
 .OAuthPage.light {
-  background-color: #dbfffd;
-  color: #121414;
+  background-color: var(--light-bg);
+  color: var(--light-text);
 }
 
 .OAuthPage.light p {
-  color: #536260;
+  color: var(--light-muted);
 }
+
+.OAuthPage.light h1 { color: var(--light-accent); }

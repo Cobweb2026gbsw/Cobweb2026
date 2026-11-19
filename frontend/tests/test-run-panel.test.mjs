@@ -21,7 +21,7 @@ const props=(problem=basic)=>({problem,number:1000,language:'PYTHON',code:'print
 const completed=(results=[{status:'ACCEPTED',timeMs:7},{status:'WRONG_ANSWER',timeMs:3}])=>({id:70,problemNumber:1000,language:'PYTHON',status:'COMPLETED',privateSample:true,testCount:2,results});
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const runButton=view=>view.getByRole('button',{name:'테스트 및 실행'});
-const selectPrivate=view=>fireEvent.click(view.getByRole('button',{name:'비공개 채점'}));
+const selectPrivate=view=>fireEvent.click(view.getByRole('button',{name:'비공개 테스트'}));
 function renderPrivate(panelProps=props()){
   const view=render(React.createElement(Panel,panelProps));
   selectPrivate(view);
@@ -259,4 +259,13 @@ test('unmount cancels the active request and ignores its later completion',async
   let release,signal;globalThis.__testRunApi=async(path,method,body,options)=>{signal=options.signal;return new Promise(resolve=>{release=resolve;});};
   const view=render(React.createElement(Panel,props()));fireEvent.click(runButton(view));assert.equal(signal.aborted,false);view.unmount();assert.equal(signal.aborted,true);
   await act(async()=>{release(70);await tick();});assert.equal(document.body.textContent,'');
+});
+
+test('successful sample execution states its scope and never claims final acceptance',async()=>{
+  globalThis.__testRunApi=async(path,method)=>method==='POST'?70:{...completed(),results:[{status:'ACCEPTED',timeMs:1},{status:'ACCEPTED',timeMs:2}]};
+  const view=renderPrivate();fireEvent.click(runButton(view));
+  await view.findByRole('region',{name:'테스트 실행 결과'});
+  assert.ok(view.getByText('2개 중 2개 통과'));
+  assert.ok(view.getByText('선택한 테스트를 통과했습니다. 해결 완료로 기록하려면 제출 및 채점을 진행하세요.'));
+  assert.doesNotMatch(view.container.textContent,/정답입니다|해결 완료로 기록되었습니다/);
 });

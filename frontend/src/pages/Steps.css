@@ -113,3 +113,6 @@
   .st-progress { display: none; }
   .st-problems a { padding-left: 24px; }
 }
+
+.st-head { text-decoration: none; }
+.st-help { margin-top: 20px; font-size: 13px; }

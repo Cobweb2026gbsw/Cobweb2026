@@ -7,7 +7,7 @@
   background: #121414;
 }
 
-.cw-app-shell.light { background: #dbfffd; }
+.cw-app-shell.light { background: var(--light-bg); }
 
 .cw-app-content,
 .cw-route-content {
@@ -44,11 +44,11 @@
 }
 
 .cw-footer.light {
-  --footer-bg: #e9faf8;
-  --footer-text: #121414;
-  --footer-muted: #536260;
-  --footer-link: #0a7f76;
-  --footer-line: #9dbab8;
+  --footer-bg: var(--light-surface);
+  --footer-text: var(--light-text);
+  --footer-muted: var(--light-muted);
+  --footer-link: var(--light-accent);
+  --footer-line: var(--light-line);
 }
 
 .cw-footer-inner {

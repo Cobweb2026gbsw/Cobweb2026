@@ -28,17 +28,18 @@ class ProblemListStatusTest {
 
     @Test void publicListUsesOneAccountBoundJoinAndReturnsBooleanInsteadOfAggregateCounts() {
         var original=List.of(row(1000,1),row(1001,0),row(1002,Boolean.TRUE));
-        when(db.queryForList(anyString(),eq(5L),eq("%레이저%"),eq(60))).thenReturn(original);
+        when(db.queryForList(anyString(),eq(5L),eq("%레이저%"),eq("%레이저%"),eq(60))).thenReturn(original);
 
         var result=service.list(2,"레이저",user(5));
 
         assertEquals(List.of(true,false,true),result.stream().map(row->row.get("solved")).toList());
         assertEquals(1,original.getFirst().get("solved"),"DB 반환 맵 자체를 변경하지 않습니다.");
         var sql=ArgumentCaptor.forClass(String.class);
-        verify(db).queryForList(sql.capture(),eq(5L),eq("%레이저%"),eq(60));
+        verify(db).queryForList(sql.capture(),eq(5L),eq("%레이저%"),eq("%레이저%"),eq(60));
         assertTrue(sql.getValue().contains("LEFT JOIN user_solved_problems s ON s.user_id=? AND s.problem_id=p.id"));
         assertTrue(sql.getValue().contains("p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL"));
         assertTrue(sql.getValue().contains("ORDER BY p.problem_number LIMIT 30 OFFSET ?"));
+        assertTrue(sql.getValue().contains("pt.problem_id=p.id AND t.name ILIKE ?"));
         assertFalse(sql.getValue().contains("FROM submissions"),"코테 결과나 전체 제출 수로 해결을 추론하지 않습니다.");
         verifyNoMoreInteractions(db);
     }
@@ -66,7 +67,7 @@ class ProblemListStatusTest {
     @Test void exactDifficultyPairsAndSolvedFilterRunBeforePaginationAndDuplicatesDoNotExpandThePairs() {
         service.list(2,"filtered",List.of("ELITE:1","EXPERT:5","ELITE:1"),"solved",user(5));
         var sql=ArgumentCaptor.forClass(String.class);
-        verify(db).queryForList(sql.capture(),eq(5L),eq("%filtered%"),eq("ELITE"),eq(1),eq("EXPERT"),eq(5),eq(60));
+        verify(db).queryForList(sql.capture(),eq(5L),eq("%filtered%"),eq("%filtered%"),eq("ELITE"),eq(1),eq("EXPERT"),eq(5),eq(60));
         String query=sql.getValue();
         assertTrue(query.contains("AND ((p.rank_type=? AND p.rank_int=?) OR (p.rank_type=? AND p.rank_int=?))"));
         assertTrue(query.contains("AND s.problem_id IS NOT NULL ORDER BY"));
@@ -75,12 +76,12 @@ class ProblemListStatusTest {
     }
 
     @Test void mineKeepsItsOwnerGuardAndUsesTheSameSolveAndDifficultyFilters() {
-        when(db.queryForList(anyString(),eq(5L),eq(5L),eq("%draft%"),eq("ABSOLUTE"),eq(5),eq(30)))
+        when(db.queryForList(anyString(),eq(5L),eq(5L),eq("%draft%"),eq("%draft%"),eq("ABSOLUTE"),eq(5),eq(30)))
             .thenReturn(List.of(row(1000,0)));
         assertEquals(false,service.mine(1,"draft",List.of("ABSOLUTE:5"),"unsolved",user(5)).getFirst().get("solved"));
         var sql=ArgumentCaptor.forClass(String.class);
-        verify(db).queryForList(sql.capture(),eq(5L),eq(5L),eq("%draft%"),eq("ABSOLUTE"),eq(5),eq(30));
-        assertTrue(sql.getValue().contains("WHERE p.author_id=? AND p.problem_title ILIKE ?"));
+        verify(db).queryForList(sql.capture(),eq(5L),eq(5L),eq("%draft%"),eq("%draft%"),eq("ABSOLUTE"),eq(5),eq(30));
+        assertTrue(sql.getValue().contains("WHERE p.author_id=? AND (p.problem_title ILIKE ?"));
         assertTrue(sql.getValue().contains("AND s.problem_id IS NULL ORDER BY p.updated_at DESC,p.id DESC"));
         assertEquals(401,assertThrows(ResponseStatusException.class,()->service.mine(0,"",null)).getStatusCode().value());
         verifyNoMoreInteractions(db);

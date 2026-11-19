@@ -31,6 +31,10 @@ public class CommunityService {
 
     public Map<String,Object> posts(int page,String search,String category,boolean includeDeleted,
                                     CustomUserDetails user) {
+        return posts(page,search,category,includeDeleted,user,null);
+    }
+    public Map<String,Object> posts(int page,String search,String category,boolean includeDeleted,
+                                    CustomUserDetails user,Integer problemNumber) {
         if(includeDeleted) ProblemService.requireOperator(user);
         String selected=category==null?"":category;
         if(!selected.isEmpty() && !CATEGORIES.contains(selected))
@@ -39,6 +43,22 @@ public class CommunityService {
         if(query.length()>200) throw new ApiException(HttpStatus.BAD_REQUEST,"검색어가 너무 깁니다.");
         String term="%"+query+"%";
         int offset=offset(page);
+        String publicLink="p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL";
+        String from=" FROM community_posts cp LEFT JOIN problems p ON p.id=cp.problem_id"
+            +" WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)"
+            +" AND (cp.title ILIKE ? OR cp.body ILIKE ?";
+        var args=new ArrayList<Object>(List.of(includeDeleted,selected,selected,term,term));
+        if(query.matches("#?[0-9]{1,10}")) {
+            from+=" OR ("+publicLink+" AND p.problem_number=?)";
+            args.add(Long.parseLong(query.replace("#","")));
+        }
+        from+=")";
+        if(problemNumber!=null) {
+            from+=" AND "+publicLink+" AND p.problem_number=?";
+            args.add(problemNumber);
+        }
+        Long total=db.queryForObject("SELECT COUNT(*)"+from,Long.class,args.toArray());
+        args.add(offset);
         var rows=db.queryForList("""
             SELECT cp.id,cp.title,cp.category,cp.author_username AS "authorUsername",
                    cp.version,cp.is_deleted AS deleted,cp.created_at AS "createdAt",
@@ -46,18 +66,8 @@ public class CommunityService {
                    CASE WHEN p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
                         THEN p.problem_number ELSE NULL END AS "problemNumber",
                    (SELECT COUNT(*) FROM community_comments cc WHERE cc.post_id=cp.id) AS "commentCount"
-            FROM community_posts cp LEFT JOIN problems p ON p.id=cp.problem_id
-            WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)
-              AND (cp.title ILIKE ? OR cp.body ILIKE ?)
-            ORDER BY (cp.category='NOTICE') DESC,cp.created_at DESC,cp.id DESC
-            LIMIT 20 OFFSET ?
-            """,includeDeleted,selected,selected,term,term,offset);
+            """+from+" ORDER BY (cp.category='NOTICE') DESC,cp.created_at DESC,cp.id DESC LIMIT 20 OFFSET ?",args.toArray());
         var items=rows.stream().map(CommunityService::withUtcListTimes).toList();
-        Long total=db.queryForObject("""
-            SELECT COUNT(*) FROM community_posts cp
-            WHERE (?=TRUE OR cp.is_deleted=FALSE) AND (?='' OR cp.category=?)
-              AND (cp.title ILIKE ? OR cp.body ILIKE ?)
-            """,Long.class,includeDeleted,selected,selected,term,term);
         return Map.of("items",items,"total",total,"page",Math.max(page,0));
     }
     public Map<String,Object> adminPosts(int page,String search,String category,boolean includeDeleted,

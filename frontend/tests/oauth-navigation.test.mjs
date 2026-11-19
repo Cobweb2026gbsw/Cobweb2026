@@ -139,7 +139,7 @@ test('React shows fixed recovery guidance after an OAuth account conflict redire
   beginSession(null);
   const view = render(React.createElement(MemoryRouter, {initialEntries: ['/login?oauthError=account-conflict']},
     React.createElement(AuthProvider, null, React.createElement(Login, {dark: true, setDark() {}}))));
-  await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+  await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
   assert.match(view.getByRole('alert').textContent, /처음 가입할 때 사용한 방식으로 로그인/);
   assert.equal(view.getByRole('link', {name: '비밀번호 찾기'}).getAttribute('href'), '/password-reset');
   assert.equal(view.getByRole('button', {name: 'Google 로그인'}).disabled, false);
@@ -156,7 +156,7 @@ test('React ignores unknown and repeated OAuth error parameters without reflecti
     beginSession(null);
     const view = render(React.createElement(MemoryRouter, {initialEntries: ['/login?' + query]},
       React.createElement(AuthProvider, null, React.createElement(Login, {dark: false, setDark() {}}))));
-    await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+    await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
     assert.equal(view.queryByRole('alert'), null);
     assert.equal(view.container.textContent.includes('private-fixture'), false);
     cleanup();

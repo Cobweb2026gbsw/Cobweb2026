@@ -8,6 +8,7 @@ import {FILE_NAMES,sourceBytes,starterCode} from '../lib/problemModel';
 import {preferredLanguage,rememberLanguage} from '../lib/editorLanguagePreference';
 import useProblemDrafts from '../lib/useProblemDrafts';
 import {draftOwner} from '../lib/problemDraftCache';
+import {problemTrail,problemUrl,rememberProblem,neighborDestination,neighborRequest} from '../lib/problemNavigation';
 import CodeEditor from '../components/CodeEditor';
 import ProblemStatement from '../components/ProblemStatement';
 import ProblemAttribution from '../components/ProblemAttribution';
@@ -25,6 +26,14 @@ function DetailPage({dark}){
   const [language,setLanguage]=useState(''),[codes,setCodes]=useState({}),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [submission,setSubmission]=useState(null),flight=useRef(false),guard=useMutationGuard(number,epoch);
   const drafts=useProblemDrafts({problem:problem.data,number,user,loading,epoch});
+  const trail=problemTrail(location,number),owner=loading?'':draftOwner(user);
+  const chapter=trail.listOrigin==null;
+  const questions=new URLSearchParams({problemNumber:number});
+  if(!chapter)questions.set('list',trail.listOrigin);
+  const neighbor=useApiData(!gid && problem.data?.canLinkInForum && !trail.next
+    ?neighborRequest(number,trail.from,chapter):null);
+  const nextLink=trail.next?problemUrl(trail.next,trail.from):neighborDestination(neighbor.data,trail.from,chapter);
+  useEffect(()=>{if(problem.data&&!gid)rememberProblem(owner,number,trail.listOrigin);},[problem.data,gid,owner,number,trail.listOrigin]);
   useEffect(()=>{setCodes({});setLanguage('');setError('');setBusy(false);setSubmission(null);},[number,epoch]);
   useEffect(()=>{if(problem.data)setLanguage(old=>preferredLanguage(problem.data.languages||[],old));},[problem.data]);
   const allowed=(catalog.data||[]).filter(l=>problem.data?.languages?.includes(l.id));
@@ -35,7 +44,7 @@ function DetailPage({dark}){
   async function submit(showSubmissionResult){
     if(busy||flight.current)return;
     const current=guard();setError('');
-    if(!user){navigate('/login',{state:{from:location.pathname}});return;}
+    if(!user){navigate('/login',{state:{from:location.pathname+location.search}});return;}
     showSubmissionResult();
     if(!code.trim()){setError('풀이 코드를 입력하세요.');return;}
     if(sourceBytes(code)>65536){setError('코드는 UTF-8 64 KiB 이하여야 합니다.');return;}
@@ -66,27 +75,29 @@ function DetailPage({dark}){
   const p=problem.data;
   const submissionResult=<>
     {error&&<p className="cw-status-message error" role="alert">{error}</p>}
-    {submission&&<SubmissionFeedback id={submission.id} recovered={submission.recovered} onPendingChange={setBusy}/>}
+    {submission&&<SubmissionFeedback id={submission.id} recovered={submission.recovered} onPendingChange={setBusy} nextAction={!gid&&<Link className="cw-btn primary" to={nextLink||trail.from} state={trail.state}>{nextLink?'다음 문제 풀기':'목록에서 다음 문제 찾기'}</Link>}/>}
     {!submission&&!error&&<p className="cw-hint cw-test-empty" role={busy?'status':undefined}>
       {busy?'코드를 제출하고 있습니다…':'제출한 코드의 채점 결과가 여기에 표시됩니다.'}
     </p>}
   </>;
-  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap"><header className="cw-head"><div><p className="cw-eyebrow">PROBLEM / {number}</p><h1 className="cw-title">{p?`${number}. ${p.problem_title}`:'문제 불러오는 중…'}</h1><ProblemAttribution problem={p}/></div><div className="cw-head-actions"><Link className="cw-btn" to={gid?`/groups/${gid}`:'/problems'}>{gid?'그룹으로':'문제 목록'}</Link><Link className="cw-btn" to={`/forum/new?problemNumber=${number}`}>질문 작성</Link></div></header>
-    {(problem.error||catalog.error)&&<p className="cw-status-message error" role="alert">{problem.error||catalog.error}</p>}
+  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap"><header className="cw-head"><div><p className="cw-eyebrow">PROBLEM / {number}</p><h1 className="cw-title">{p?`${number}. ${p.problem_title}`:problem.error?'문제를 불러오지 못했어요':'문제 불러오는 중…'}</h1><ProblemAttribution problem={p}/></div><div className="cw-head-actions"><Link className="cw-btn" to={gid?`/groups/${gid}`:trail.from}>{gid?'그룹으로':'문제 목록'}</Link>{!gid&&p?.canLinkInForum&&<Link className="cw-btn" to={'/forum?'+questions} state={trail.state}>이 문제의 질문{p.questionCount!=null?` (${p.questionCount})`:''}</Link>}{p&&!gid&&nextLink&&<Link className="cw-btn" to={nextLink} state={trail.state}>다음 문제</Link>}
+      {neighbor.error&&<button type="button" className="cw-btn" onClick={neighbor.reload}>다음 문제 다시 찾기</button>}</div></header>
+    {(problem.error||catalog.error)&&<div className="cw-card"><p className="cw-status-message error" role="alert">{problem.error||catalog.error}</p><button type="button" className="cw-btn" onClick={()=>{if(problem.error)problem.reload();if(catalog.error)catalog.reload();}}>다시 시도</button></div>}
     {/* 언어가 정해지기 전에 편집하면 언어 키가 없는 초안이 생길 수 있어 준비 후에만 엽니다. */}
     {p&&language&&<ProblemWorkspace statement={<ProblemStatement problem={p}/>}><div className="pd-side">
+      <TestRunPanel problem={p} number={number} language={language} code={code} disabled={busy} submissionResult={submissionResult}
+        renderSubmitAction={({testing,showSubmissionResult})=><button className="cw-btn primary" type="button"
+          disabled={busy||testing||!language||!code.trim()} onClick={()=>submit(showSubmissionResult)}>
+          {busy?'채점 중…':user?'제출 및 채점':'로그인 후 제출'}
+        </button>}
+        renderLayout={({actions,panel})=><>
       <section className="cw-card pd-workspace">
-        <div className="pd-toolbar"><label className="pd-lang">언어<select id="pd-lang" name="language" className="cw-select" value={language} disabled={busy} onChange={event=>{setLanguage(event.target.value);rememberLanguage(event.target.value);}}>{allowed.map(item=><option value={item.id} key={item.id}>{item.label}</option>)}</select></label><button className="cw-btn" type="button" disabled={busy} onClick={()=>{if(confirm('현재 언어의 저장 초안을 삭제하고 시작 코드로 되돌릴까요?')){const initial=starterCode(p,language);setCodes(previous=>({...previous,[language]:initial}));drafts.reset(language,initial);}}}>초기화</button></div>
+        <div className="pd-toolbar"><label className="pd-lang">언어<select id="pd-lang" name="language" className="cw-select" value={language} disabled={busy} onChange={event=>{setLanguage(event.target.value);rememberLanguage(event.target.value);}}>{allowed.map(item=><option value={item.id} key={item.id}>{item.label}</option>)}</select></label>{actions}</div>
         <CodeEditor value={code} onChange={changeCode} language={language} fileName={FILE_NAMES[language]} disabled={busy} id="source"/>
         <p className="cw-hint" role="status">{({pending:'초안 저장 중…',saved:'이 브라우저에 초안을 저장했습니다.',restored:'이 브라우저의 저장 초안을 복원했습니다.',reset:'현재 언어의 저장 초안을 삭제했습니다.',storage:'브라우저 저장소를 사용할 수 없어 자동 저장하지 못했습니다. 코드를 별도로 복사해 주세요.',size:'64 KiB를 초과해 현재 변경은 저장되지 않았습니다. 마지막으로 저장한 초안은 유지됩니다.'})[drafts.status]||(!drafts.enabled?'인증 정보 확인 중에는 자동 저장을 기다립니다.':'')}</p>
       </section>
-      <section className="cw-card pd-result">
-        <TestRunPanel problem={p} number={number} language={language} code={code} disabled={busy} submissionResult={submissionResult}
-          renderSubmitAction={({testing,showSubmissionResult})=><button className="cw-btn primary" type="button"
-            disabled={busy||testing||!language||!code.trim()} onClick={()=>submit(showSubmissionResult)}>
-            {busy?'채점 중…':user?'제출 및 채점':'로그인 후 제출'}
-          </button>}/>
-      </section>
+      <section className="cw-card pd-result">{panel}</section>
+        </>}/>
     </div></ProblemWorkspace>}
   </div></main>;
 }

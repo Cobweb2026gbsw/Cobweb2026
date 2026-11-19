@@ -79,7 +79,7 @@ function CaseValues({ problem, test, showActual = false }) {
   </dl>;
 }
 
-export default function TestRunPanel({ problem, number, language, code, disabled = false, renderSubmitAction, submissionResult }) {
+export default function TestRunPanel({ problem, number, language, code, disabled = false, renderSubmitAction, submissionResult, renderLayout }) {
   const { user, epoch, loading } = useAuth();
   const publicCases = useMemo(() => publicExamples(problem), [problem]);
   const owner = user?.id ?? user?.username ?? null;
@@ -208,17 +208,24 @@ export default function TestRunPanel({ problem, number, language, code, disabled
     } catch (error) { fail(error); }
   }
 
-  return <section className="cw-test-run-panel" aria-label="코드 테스트">
+  const actions = <div className="cw-test-actions" role="group" aria-label="코드 실행 작업">
+    <button type="button" className="cw-btn" disabled={disabled || busy || !hasCases || !language || !code?.trim()} onClick={execute}>
+      {busy ? '테스트 실행 중…' : user ? '테스트 및 실행' : '로그인 후 테스트'}
+    </button>
+    {renderSubmitAction?.({ testing: busy, showSubmissionResult })}
+  </div>;
+
+  const panel = <section className="cw-test-run-panel" aria-label="코드 테스트">
     <div className="cw-test-heading">
       <h2 className="cw-card-title">코드 테스트</h2>
       <div className="cw-test-modes" role="group" aria-label="테스트 방식">
         <button type="button" aria-pressed={!isPrivate} onClick={() => selectMode('public')}>공개 예제</button>
-        <button type="button" aria-pressed={isPrivate} onClick={() => selectMode('private')}>비공개 채점</button>
+        <button type="button" aria-pressed={isPrivate} onClick={() => selectMode('private')}>비공개 테스트</button>
       </div>
     </div>
     <p className="cw-hint">{isPrivate
-      ? '실제 채점 케이스 2개의 통과 여부와 실행 시간을 보여줍니다.'
-      : '문제에 공개된 예제로 입출력을 확인합니다.'}</p>
+      ? '비공개 케이스 2개로 테스트합니다. 최종 판정은 제출 및 채점에서 확인하세요.'
+      : `공개 예제 중 실행 가능한 ${publicCases.length}개로 입출력을 확인합니다. 한 번에 최대 ${CASE_LIMIT}개를 테스트합니다.`}</p>
     <div className="cw-test-tabs" role="tablist" aria-label="코드 테스트 보기">
       {tabItems.map(([tab, label]) => <button key={tab} type="button" role="tab" id={`${tabId}-tab-${tab}`}
         aria-controls={`${tabId}-panel-${tab}`} aria-selected={activeTab === tab} tabIndex={activeTab === tab ? 0 : -1}
@@ -238,7 +245,7 @@ export default function TestRunPanel({ problem, number, language, code, disabled
           {publicCases.map((test, i) => <article key={i} className="cw-test-public-case" aria-label={`공개 예제 ${i + 1}`}>
             <h3>테스트 {i + 1}</h3><CaseValues problem={problem} test={test} />
           </article>)}
-        </div> : <p className="cw-hint cw-test-empty">실행할 수 있는 공개 예제가 없습니다. 비공개 채점을 선택해 테스트할 수 있습니다.</p>}
+        </div> : <p className="cw-hint cw-test-empty">실행할 수 있는 공개 예제가 없습니다. 비공개 테스트를 선택해 실행할 수 있습니다.</p>}
       </div>
       <div className="cw-test-tabpanel" role="tabpanel" id={`${tabId}-panel-output`}
         aria-labelledby={`${tabId}-tab-output`} hidden={activeTab !== 'output'} tabIndex={0} aria-busy={busy}>
@@ -248,6 +255,7 @@ export default function TestRunPanel({ problem, number, language, code, disabled
         {visible?.error && visible.errorKind !== 'validation' && <p role="alert" className="cw-status-message error">{visible.error}</p>}
         {busy && <p role="status" className="cw-hint">{visible.status === 'RUNNING' ? '코드를 실행하고 있습니다.' : '테스트 실행을 기다리고 있습니다.'}</p>}
         {visible?.status === 'SYSTEM_ERROR' && <p role="alert" className="cw-status-message error">테스트 실행을 완료하지 못했습니다. 잠시 후 다시 시도해주세요.</p>}
+        {visible?.status === 'COMPLETED' && <div className="cw-test-summary" role="status"><strong>{visible.results.length}개 중 {visible.results.filter(result=>result.status==='ACCEPTED').length}개 통과</strong><p className="cw-hint">{visible.results.every(result=>result.status==='ACCEPTED')?'선택한 테스트를 통과했습니다. 해결 완료로 기록하려면 제출 및 채점을 진행하세요.':'실패한 테스트를 확인하고 코드를 수정해 다시 실행해 보세요. 최종 판정은 제출 및 채점에서 확인할 수 있습니다.'}</p></div>}
         {Boolean(visible?.results?.length) && <div className="cw-test-results" role="region" aria-label="테스트 실행 결과">
           {visible.results.map((result, i) => <article key={i}
             className={isPrivate ? 'cw-test-result' : 'cw-test-public-case'} aria-label={`테스트 ${i + 1} 결과`}>
@@ -267,11 +275,8 @@ export default function TestRunPanel({ problem, number, language, code, disabled
         {submissionResult}
       </div>}
     </div>
-    <div className="cw-test-actions" aria-label="코드 실행 작업">
-      <button type="button" className="cw-btn" disabled={disabled || busy || !hasCases || !language || !code?.trim()} onClick={execute}>
-        {busy ? '테스트 실행 중…' : user ? '테스트 및 실행' : '로그인 후 테스트'}
-      </button>
-      {renderSubmitAction?.({ testing: busy, showSubmissionResult })}
-    </div>
+    {!renderLayout && actions}
   </section>;
+  // Keep execution state together while the page places actions next to its editor.
+  return renderLayout ? renderLayout({ actions, panel }) : panel;
 }

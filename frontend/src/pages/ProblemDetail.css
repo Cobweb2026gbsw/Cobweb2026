@@ -111,20 +111,51 @@
 }
 
 .pd-workspace {
-  padding: 18px;
+  padding: 14px;
+}
+
+.pd-toolbar > .cw-test-actions {
+  margin: 0;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pd-toolbar .cw-test-actions > .cw-btn {
+  height: 36px;
+  padding: 0 12px;
+  max-width: none;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .pd-toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-end;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .pd-lang {
-  width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 154px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pd-lang .cw-select {
+  width: 128px;
+  max-width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .pd-toolbar-right {
@@ -223,8 +254,14 @@
 
 /* ---------- 실행 결과 ---------- */
 .pd-result {
-  padding: 18px 20px;
+  padding: 14px;
 }
+
+.pd-result .cw-card-title { font-size: 15px; }
+.pd-result .cw-test-run-panel > .cw-hint { margin: 6px 0 8px; line-height: 1.5; }
+.pd-result .cw-test-tabs [role=tab] { padding: 7px 12px; min-height: 34px; }
+.pd-result .cw-test-scroll { height: clamp(180px, 28dvh, 300px); border-bottom: 0; }
+.pd-result .cw-test-tabpanel { padding-top: 10px; padding-bottom: 0; }
 
 .pd-result-head {
   display: flex;
@@ -305,14 +342,8 @@
 }
 
 @media (max-width: 600px) {
-  .pd-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .pd-lang {
-    width: 100%;
-  }
+  .pd-toolbar > .cw-test-actions { flex-basis: 100%; }
+  .pd-toolbar .cw-test-actions > .cw-btn { height: 40px; }
 
   .pd-sample {
     grid-template-columns: 1fr;

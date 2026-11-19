@@ -91,11 +91,50 @@ class SystemGroupServiceTest {
 
     @Test void publicSummaryFlagUsesTheKeyNotTheDisplayName() {
         when(db.queryForList(anyString(),eq("%%"),eq(0))).thenReturn(List.of(
-            Map.of("id",9L,"group_name","COBWEB GROUP","member_count",2L,"system_key",GroupService.SYSTEM_GROUP_KEY),
+            Map.of("id",9L,"group_name","COBWEB GROUP","group_description","함께 문제를 푸는 그룹","member_count",2L,"system_key",GroupService.SYSTEM_GROUP_KEY),
             Map.of("id",10L,"group_name","COBWEB GROUP","member_count",1L)));
         var result=groups.publicList(0,"");
         assertEquals(true,result.get(0).get("systemGroup"));
         assertEquals(false,result.get(1).get("systemGroup"));
+        assertEquals("함께 문제를 푸는 그룹",result.get(0).get("description"));
+        assertNull(result.get(1).get("description"));
+    }
+
+    @Test void membershipSummaryCarriesRoleIdentityWithoutUsingItsMutableDisplayName() {
+        when(db.queryForList(contains("FROM group_members gm JOIN study_groups g"),eq(42L)))
+            .thenReturn(List.of(Map.of("id",9L,"group_name","My group","role_name","Renamed owner","builtin_key","OWNER","member_count",2L)));
+        var result=groups.mine(actor(false));
+        assertEquals("OWNER",result.getFirst().get("roleKey"));
+        assertEquals("Renamed owner",result.getFirst().get("roleName"));
+        assertEquals(List.of(),result.getFirst().get("permissions"));
+    }
+
+    @Test void memberNewsReturnsVisiblePracticeCountAndNextContestInUtc() {
+        when(db.queryForList(contains("FROM group_members gm JOIN study_groups g"),eq(42L)))
+            .thenReturn(List.of(Map.of("id",9L,"group_name","My group","status","ACCEPTED","role_name","회원","member_count",2L)));
+        when(db.queryForList(contains("SELECT gr.*"),eq(9L),eq(42L)))
+            .thenReturn(List.of(Map.of("can_view_problems",true)));
+        when(db.queryForObject(contains("SELECT COUNT(*) FROM problems p"),eq(Long.class),eq(9L))).thenReturn(3L);
+        when(db.queryForList(contains("SELECT id,title,starts_at FROM group_contests"),eq(9L)))
+            .thenReturn(List.of(Map.of("id",4L,"title","Weekly contest","starts_at",java.sql.Timestamp.valueOf("2030-12-20 01:00:00"))));
+        var result=groups.mine(actor(false));
+        var activity=(Map<?,?>)result.getFirst().get("activity");
+        assertEquals(7,activity.get("windowDays"));
+        assertEquals(3L,activity.get("recentProblemCount"));
+        assertEquals(Map.of("id",4L,"title","Weekly contest","startsAt","2030-12-20T01:00:00Z"),activity.get("nextContest"));
+    }
+
+    @Test void memberWithoutProblemPermissionGetsNoProblemCountAndInactiveGroupsGetNoNews() {
+        when(db.queryForList(contains("FROM group_members gm JOIN study_groups g"),eq(42L)))
+            .thenReturn(List.of(Map.of("id",9L,"group_name","My group","status","ACCEPTED","role_name","회원","member_count",2L),
+                Map.of("id",10L,"group_name","Inactive group","status","PENDING","role_name","회원","member_count",1L)));
+        var result=groups.mine(actor(false));
+        var activity=(Map<?,?>)result.getFirst().get("activity");
+        assertNull(activity.get("recentProblemCount"));
+        assertNull(activity.get("nextContest"));
+        assertFalse(result.get(1).containsKey("activity"));
+        verify(db,never()).queryForObject(contains("FROM problems"),eq(Long.class),any());
+        verify(db,never()).queryForList(contains("FROM group_contests"),eq(10L));
     }
 
     private void missingMembershipCount() {

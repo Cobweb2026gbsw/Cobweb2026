@@ -9,7 +9,6 @@ export default function Footer({dark}) {
     <div className="cw-footer-inner">
       <div className="cw-footer-brand">
         <Link to="/" className="cw-footer-logo">CobWeb</Link>
-        <p>문제를 풀고, 배운 내용을 함께 나누는 공간.</p>
       </div>
       <nav className="cw-footer-nav" aria-label="푸터 메뉴">
         {LINKS.map(([to,label])=><Link to={to} key={to}>{label}</Link>)}

@@ -197,3 +197,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+.ms-filter-row > label { display: grid; gap: 8px; min-width: 0; font-size: 12px; }
+.ms-empty p { margin-top: 0; margin-bottom: 16px; }
+@media (max-width: 760px) {
+  .ms-stats { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  .ms-stat { padding: 16px; }
+  .ms-table { overflow: hidden; }
+  .ms-row { min-width: 0; grid-template-columns: 50px minmax(0,1fr) 90px; gap: 8px; padding: 12px; }
+  .ms-row > :nth-child(3),.ms-row > :nth-child(n+5) { display: none; }
+  .ms-row-item { height: auto; min-height: 62px; }
+  .ms-title { white-space: normal; overflow-wrap: anywhere; }
+  .ms-row .cw-badge { white-space: normal; text-align: center; }
+}

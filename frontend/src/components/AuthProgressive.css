@@ -1,0 +1,16 @@
+.auth-field > label { display: block; margin: 18px 0 8px; font-size: 14px; }
+.auth-field--revealed { animation: auth-field-enter 240ms ease-out; }
+.LoginBox .auth-progress, .SignupBox .auth-progress {
+  margin: -18px 0 24px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #aaa;
+}
+.LoginPage.light .auth-progress, .SignupPage.light .auth-progress { color: var(--light-muted); }
+@keyframes auth-field-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-field--revealed { animation: none; }
+}

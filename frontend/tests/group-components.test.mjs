@@ -8,11 +8,14 @@ import {JSDOM} from 'jsdom';
 import {installEditorDom,editorValue,setEditorValue} from './editor-dom.mjs';
 
 const require = createRequire(import.meta.url), root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost:8080/'});
+const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost:8080/', pretendToBeVisual: true});
 Object.defineProperty(globalThis, 'navigator', {value: dom.window.navigator, configurable: true});
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'InputEvent', 'KeyboardEvent', 'MutationObserver', 'FormData']) globalThis[key] = dom.window[key];
 installEditorDom(dom.window);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// jsdom does not implement the browser's native modal-dialog lifecycle.
+dom.window.HTMLDialogElement.prototype.showModal = function () {this.setAttribute('open', '');};
+dom.window.HTMLDialogElement.prototype.close = function () {this.removeAttribute('open');};
 window.confirm = () => true;
 window.CobwebCodeEditor = require('../../src/main/resources/static/code-editor.js');
 const React = require('react'), {render, fireEvent, waitFor, cleanup, act, within} = require('@testing-library/react');
@@ -91,6 +94,7 @@ scenario('missing or throwing browser UUID support reports a safe protection-eve
       };
       const view=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
       await view.findByRole('button',{name:'1. 그룹 코테 문제'});
+      await act(async () => {await tick();});
       fireEvent.copy(document);
       await view.findByText(/감시 신호를 기록하지 못했습니다/);
       assert.equal(events,0);assert.doesNotMatch(view.container.textContent,/private-crypto-detail/);cleanup();
@@ -102,10 +106,78 @@ scenario('group browser creates using real DTO and follows returned group ID', a
   reset(); const {default: Page} = await load('Groups'), calls = [];
   globalThis.__groupApi = async (path, method = 'GET', body) => {calls.push({path, method, body}); if (path === '/api/groups' && method === 'POST') return 77; if (path === '/api/groups/mine') return []; return [{id: 5, groupName: '검색 그룹', memberCount: 2}];};
   const view = mount(Page, '/groups', '/groups'); await view.findByText('검색 그룹');
+  absent(view.queryByRole('dialog'));
+  fireEvent.click(view.getByRole('button', {name: '그룹 만들기'}));
+  const dialog = within(view.getByRole('dialog', {name: '그룹 만들기'}));
   fireEvent.change(view.container.querySelector('#group-name'), {target: {value: '새 실제 그룹'}});
   fireEvent.change(view.container.querySelector('#group-description'), {target: {value: '새 소개'}});
-  fireEvent.click(view.getByRole('button', {name: '그룹 만들기'})); await view.findByText('destination-route');
+  fireEvent.click(dialog.getByRole('button', {name: '그룹 만들기'})); await view.findByText('destination-route');
   assert.deepEqual(calls.find(call => call.path === '/api/groups' && call.method === 'POST').body, {name: '새 실제 그룹', description: '새 소개'}); cleanup();
+});
+
+scenario('group search separates initial and searched empty states and preserves the search across tabs', async () => {
+  reset(); const {default: Page} = await load('Groups'), calls = [];
+  globalThis.__groupApi = async path => {calls.push(path); return [];};
+  const view = mount(Page, '/groups', '/groups');
+  await view.findByText('그룹 이름으로 검색해 보세요');
+  absent(view.queryByRole('button', {name: '이전'})); absent(view.queryByRole('textbox', {name: /소개/}));
+  const search = view.getByRole('textbox', {name: '그룹 이름 검색'});
+  fireEvent.change(search, {target: {value: '  알고리즘  '}}); fireEvent.submit(search.closest('form'));
+  await view.findByText('일치하는 그룹이 없어요');
+  assert.equal(calls.some(path => path.includes('search=') && new URL(path, window.location.origin).searchParams.get('search') === '알고리즘'), true);
+  absent(view.queryByRole('button', {name: '다음'}));
+  fireEvent.click(view.getByRole('button', {name: '검색어 바꾸기'})); assert.equal(document.activeElement === search, true);
+  fireEvent.click(view.getByRole('tab', {name: '내 그룹'}));
+  await view.findByText('아직 가입한 그룹이 없어요');
+  absent(view.queryByRole('textbox', {name: '그룹 이름 검색'}));
+  assert.equal(view.getAllByRole('tabpanel').length, 1);
+  fireEvent.click(view.getByRole('button', {name: '그룹 탐색하기'}));
+  assert.equal(view.getByRole('textbox', {name: '그룹 이름 검색'}).value, '  알고리즘  ');
+  assert.equal(document.activeElement === view.getByRole('tab', {name: '그룹 탐색'}), true);
+});
+
+scenario('group lists show descriptions and memberships in one panel with keyboard tab switching', async () => {
+  reset(); const {default: Page} = await load('Groups');
+  globalThis.__groupApi = async path => path === '/api/groups/mine' ? [{id: 9, groupName: '가입 그룹', description: '매주 함께 공부해요', memberCount: 3}] : [{id: 5, groupName: '공개 그룹', description: '매일 한 문제', memberCount: 8}];
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('매일 한 문제');
+  await view.findByText('일반 그룹 1/3'); absent(view.queryByText('가입 그룹'));
+  fireEvent.keyDown(view.getByRole('tab', {name: '그룹 탐색'}), {key: 'ArrowRight'});
+  assert.equal(view.getByRole('tab', {name: '내 그룹'}).getAttribute('aria-selected'), 'true');
+  assert.equal(new URL(view.getByRole('link', {name: '그룹 열기'}).getAttribute('href'), window.location.origin).pathname, '/groups/9');
+  await view.findByText('매주 함께 공부해요'); absent(view.queryByText('공개 그룹'));
+  fireEvent.keyDown(view.getByRole('tab', {name: '내 그룹'}), {key: 'Home'});
+  await view.findByText('공개 그룹');
+});
+
+scenario('a failed group search remains an error instead of a misleading zero-results state', async () => {
+  reset(); const {default: Page} = await load('Groups'); let fail = true;
+  globalThis.__groupApi = async path => {if (path !== '/api/groups/mine' && fail) throw new Error('그룹 조회 실패'); return [];};
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('그룹 조회 실패');
+  absent(view.queryByText('일치하는 그룹이 없어요')); absent(view.queryByRole('button', {name: '다음'}));
+  fail = false; fireEvent.click(view.getByRole('button', {name: '다시 불러오기'}));
+  await view.findByText('그룹 이름으로 검색해 보세요'); absent(view.queryByRole('alert'));
+});
+
+scenario('group creation keeps a draft after dismissal and shows submission errors inside the dialog', async () => {
+  reset(); const {default: Page} = await load('Groups'); let posts = 0;
+  globalThis.__groupApi = async (_path, method) => {if (method === 'POST') {posts++; throw new Error('이미 사용 중인 그룹 이름입니다.');} return [];};
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('일반 그룹 0/3');
+  const opener = view.getByRole('button', {name: '그룹 만들기'}); opener.focus(); fireEvent.click(opener);
+  let dialog = view.getByRole('dialog', {name: '그룹 만들기'});
+  const input = within(dialog).getByRole('textbox', {name: /그룹 이름/});
+  assert.equal(document.activeElement === input, true);
+  assert.equal(within(dialog).getByRole('button', {name: '그룹 만들기', exact: true}).disabled, true);
+  fireEvent.change(input, {target: {value: '내 그룹 초안'}});
+  fireEvent.change(within(dialog).getByRole('textbox', {name: /소개/}), {target: {value: '매주 함께 공부'}});
+  fireEvent.click(within(dialog).getByRole('button', {name: '취소'}));
+  absent(view.queryByRole('dialog')); assert.equal(document.activeElement === opener, true); assert.equal(posts, 0);
+  fireEvent.click(opener); dialog = view.getByRole('dialog', {name: '그룹 만들기'});
+  assert.equal(within(dialog).getByRole('textbox', {name: /그룹 이름/}).value, '내 그룹 초안');
+  fireEvent.click(within(dialog).getByRole('button', {name: '그룹 만들기', exact: true}));
+  await within(dialog).findByRole('alert'); assert.equal(posts, 1);
+  assert.equal(within(dialog).getByRole('textbox', {name: /소개/}).value, '매주 함께 공부');
+  fireEvent(dialog, new window.Event('cancel', {bubbles: false, cancelable: true}));
+  absent(view.queryByRole('dialog')); assert.equal(document.body.style.overflow, '');
 });
 
 scenario('group role editor exposes all eleven switches and sends exact permission IDs', async () => {
@@ -324,3 +396,155 @@ scenario('revoked take permission discards late personal history even if transpo
 });
 
 test.after(() => {cleanup(); dom.window.close();});
+
+scenario('public group preview shows the full introduction before joining without requesting private details', async () => {
+  reset(); const {default: Page} = await load('Groups'), calls = [];
+  const introduction = '매주 토요일에 함께 문제를 풉니다.\n초보자도 환영해요. '.repeat(15);
+  globalThis.__groupApi = async (path, method = 'GET') => {
+    calls.push({path, method});
+    if (method === 'POST') return null;
+    if (path === '/api/groups/mine') return [];
+    return [{id: 5, groupName: '함께 공부', description: introduction, memberCount: 8}];
+  };
+  const view = mount(Page, '/groups', '/groups');
+  const opener = await view.findByRole('button', {name: '함께 공부 미리보기'});
+  opener.focus(); fireEvent.click(opener);
+  const dialog = view.getByRole('dialog', {name: '함께 공부'});
+  assert.equal(dialog.querySelector('.gp-preview-description').textContent, introduction);
+  assert.equal(within(dialog).getByText('8명 참여').textContent, '8명 참여');
+  assert.equal(calls.some(call => call.path === '/api/groups/5'), false);
+  fireEvent.click(within(dialog).getByRole('button', {name: '닫기', exact: true}));
+  absent(view.queryByRole('dialog')); assert.equal(document.activeElement === opener, true);
+  fireEvent.click(opener);
+  fireEvent.click(within(view.getByRole('dialog')).getByRole('button', {name: '가입', exact: true}));
+  await view.findByText('destination-route');
+  assert.equal(calls.filter(call => call.path === '/api/groups/5/join' && call.method === 'POST').length, 1);
+});
+
+scenario('guests can preview a public group while joining still requires login', async () => {
+  reset(); globalThis.__groupAuth.user = null; const {default: Page} = await load('Groups');
+  globalThis.__groupApi = async () => [{id: 5, groupName: '공개 소개', description: '가입 전에 볼 수 있는 소개', memberCount: 8}];
+  const view = mount(Page, '/groups', '/groups');
+  fireEvent.click(await view.findByRole('button', {name: '공개 소개 미리보기'}));
+  const dialog = within(view.getByRole('dialog', {name: '공개 소개'}));
+  assert.equal(dialog.getByRole('link', {name: '로그인 후 가입'}).getAttribute('href'), '/login');
+  absent(dialog.queryByRole('button', {name: '가입', exact: true}));
+});
+
+scenario('my groups display the actual role including renamed built-in and custom roles', async () => {
+  reset(); const {default: Page} = await load('Groups');
+  globalThis.__groupApi = async path => path === '/api/groups/mine' ? [
+    {id: 1, groupName: '직접 만든 그룹', roleKey: 'OWNER', roleName: '이름을 바꾼 소유자', memberCount: 3},
+    {id: 2, groupName: '관리하는 그룹', roleKey: 'MANAGER', roleName: '관리자', memberCount: 8},
+    {id: 3, groupName: '함께하는 그룹', roleKey: null, roleName: '스터디 리더', memberCount: 4},
+  ] : [];
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('일반 그룹 3/3');
+  fireEvent.click(view.getByRole('tab', {name: '내 그룹'}));
+  assert.deepEqual([...view.container.querySelectorAll('.gp-role-badge')].map(node => node.textContent), ['그룹장', '관리자', '스터디 리더']);
+  assert.equal(view.getAllByRole('link', {name: '그룹 열기'}).length, 3);
+});
+
+scenario('opening a group and returning preserves the tab, search and page even when route changes remount the page', async () => {
+  reset(); const {default: Page} = await load('Groups'), {default: Detail} = await load('GroupDetail');
+  const {useLocation} = require('react-router-dom');
+  globalThis.__groupApi = async (path, method) => {
+    if (path === '/api/groups/mine' || path.startsWith('/api/groups?')) return [{id: 7, groupName: '실제 그룹', memberCount: 2, roleKey: 'OWNER'}];
+    return standardGroupApi(path, method);
+  };
+  function ResetOnLocation({component: Component}) {
+    const location = useLocation();
+    return React.createElement(React.Fragment, null, React.createElement('output', {'data-testid': 'location'}, location.pathname + location.search), React.createElement(Component, {key: location.key, dark: true}));
+  }
+  const view = render(React.createElement(MemoryRouter, {initialEntries: ['/groups?tab=mine&q=study&page=2']}, React.createElement(Routes, null,
+    React.createElement(Route, {path: '/groups', element: React.createElement(ResetOnLocation, {component: Page})}),
+    React.createElement(Route, {path: '/groups/:gid', element: React.createElement(ResetOnLocation, {component: Detail})}))));
+  fireEvent.click(await view.findByRole('link', {name: '그룹 열기'}));
+  const back = await view.findByRole('link', {name: '← 그룹 목록'});
+  assert.equal(back.getAttribute('href'), '/groups?tab=mine&q=study&page=2');
+  fireEvent.click(back);
+  await view.findByRole('tab', {name: '내 그룹', selected: true});
+  fireEvent.click(view.getByRole('tab', {name: '그룹 탐색'}));
+  await view.findByRole('textbox', {name: '그룹 이름 검색'});
+  assert.equal(view.getByRole('textbox', {name: '그룹 이름 검색'}).value, 'study');
+  assert.equal(new URL(view.getByTestId('location').textContent, window.location.origin).searchParams.get('page'), '2');
+});
+
+scenario('creation explains both unmet conditions and offers useful destinations', async () => {
+  reset(); globalThis.__groupAuth.user.solved_count = 38; const {default: Page} = await load('Groups');
+  globalThis.__groupApi = async path => path === '/api/groups/mine' ? [1, 2, 3].map(id => ({id, groupName: '내 그룹 ' + id, memberCount: 2})) : [{id: 8, groupName: '가입할 그룹', memberCount: 2}];
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('일반 그룹 3/3');
+  assert.equal(view.getByRole('button', {name: '가입', exact: true}).disabled, true);
+  await view.findByText('일반 그룹은 최대 3개까지 가입할 수 있어요.');
+  fireEvent.click(view.getByRole('button', {name: '그룹 만들기'}));
+  const dialog = within(view.getByRole('dialog'));
+  await dialog.findByText(/문제 12개를 더 풀면/); await dialog.findByText(/참여 중인 일반 그룹이 3개예요/);
+  assert.equal(dialog.getByRole('link', {name: /문제 풀러 가기/}).getAttribute('href'), '/problems?solved=unsolved');
+  fireEvent.click(dialog.getByRole('button', {name: /내 그룹 확인하기/}));
+  absent(view.queryByRole('dialog')); assert.equal(view.getByRole('tab', {name: '내 그룹'}).getAttribute('aria-selected'), 'true');
+});
+
+scenario('failed eligibility lookup can be retried from inside the creation dialog', async () => {
+  reset(); const {default: Page} = await load('Groups'); let fail = true;
+  globalThis.__groupApi = async path => {if (path === '/api/groups/mine' && fail) throw new Error('가입 현황 오류'); return [];};
+  const view = mount(Page, '/groups', '/groups'); await view.findByText('가입 현황 확인 불가');
+  fireEvent.click(view.getByRole('button', {name: '그룹 만들기'}));
+  const dialog = within(view.getByRole('dialog'));
+  await dialog.findByText(/가입 현황을 불러오지 못해/); fail = false;
+  fireEvent.click(dialog.getByRole('button', {name: '가입 현황 다시 확인'}));
+  await waitFor(() => absent(dialog.queryByText(/가입 현황을 불러오지 못해/)));
+  fireEvent.change(dialog.getByRole('textbox', {name: /그룹 이름/}), {target: {value: '다시 만들기'}});
+  await waitFor(() => assert.equal(dialog.getByRole('button', {name: '그룹 만들기', exact: true}).disabled, false));
+});
+
+scenario('my group news uses server counts and schedules while public previews reveal no member activity', async () => {
+  reset(); const {default: Page} = await load('Groups');
+  const item = {id: 7, groupName: '새 소식 그룹', memberCount: 3, roleKey: 'MEMBER', activity: {windowDays: 7, recentProblemCount: 3, nextContest: {id: 4, title: '주간 코딩테스트', startsAt: '2030-12-20T01:00:00Z'}}};
+  globalThis.__groupApi = async () => [item];
+  const view = mount(Page, '/groups', '/groups');
+  fireEvent.click(await view.findByRole('button', {name: '새 소식 그룹 미리보기'}));
+  absent(within(view.getByRole('dialog')).queryByText(/최근 7일 새 문제/));
+  fireEvent.click(within(view.getByRole('dialog')).getByRole('button', {name: '닫기', exact: true}));
+  fireEvent.click(view.getByRole('tab', {name: '내 그룹'}));
+  const news = view.getByRole('link', {name: /최근 7일 새 문제 3개/});
+  assert.equal(news.getAttribute('href').endsWith('#group-problems'), true);
+  const next = view.getByRole('link', {name: /예정 코딩테스트 · 주간 코딩테스트/});
+  assert.equal(next.querySelector('time').getAttribute('datetime'), '2030-12-20T01:00:00Z');
+  assert.equal(next.getAttribute('href').endsWith('#group-contests'), true);
+});
+
+scenario('news distinguishes no recent activity from unavailable problem visibility', async () => {
+  reset(); const {default: Page} = await load('Groups');
+  globalThis.__groupApi = async path => path === '/api/groups/mine' ? [
+    {id: 1, groupName: '조용한 그룹', memberCount: 2, activity: {windowDays: 7, recentProblemCount: 0, nextContest: null}},
+    {id: 2, groupName: '문제 권한 없는 그룹', memberCount: 2, activity: {windowDays: 7, recentProblemCount: null, nextContest: null}},
+  ] : [];
+  const view = mount(Page, '/groups?tab=mine', '/groups'); await view.findByText('조용한 그룹');
+  assert.equal(view.getAllByText('최근 7일 새 문제 없음').length, 1);
+  assert.equal(view.getAllByText('예정된 코딩테스트 없음').length, 2);
+});
+
+scenario('contest list preserves available groups on partial failure and retries the missing group', async () => {
+  reset();
+  const {default:Page} = await load('Contests');
+  let fail=true,release;
+  const calls=[];
+  globalThis.__groupApi = async path => {
+    calls.push(path);
+    if (path === '/api/groups/mine') return [{id:7,groupName:'A'},{id:8,groupName:'B'}];
+    if (path === '/api/groups/7/contests') return [contest];
+    if (fail) return new Promise((resolve,reject)=>{release=()=>reject(Error('조회 실패'));});
+    return [{...contest,title:'복구된 시험'}];
+  };
+  const view = mount(Page,'/contests','/contests');
+  await view.findByRole('link',{name:/실제 코테/});
+  assert.ok(view.getByRole('status'));
+  await act(async()=>release());
+  await view.findByRole('alert');
+  assert.ok(view.getByRole('link',{name:/실제 코테/}));
+  absent(view.queryByText(/상태의 시험이 없습니다/));
+  fail = false;
+  fireEvent.click(view.getByRole('button',{name:'다시 시도'}));
+  await view.findByRole('link',{name:/복구된 시험/});
+  absent(view.queryByRole('alert'));
+  assert.deepEqual(calls,['/api/groups/mine','/api/groups/7/contests','/api/groups/8/contests','/api/groups/8/contests']);
+});

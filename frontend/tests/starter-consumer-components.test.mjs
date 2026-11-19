@@ -49,8 +49,7 @@ test('ordinary language switching fills public parameters, preserves edits and i
   assert.match(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),/return x \+ y/);
   fireEvent.change(view.getByRole('combobox',{name:'언어'}),{target:{value:'JAVASCRIPT'}});
   assert.equal(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),'');
-  fireEvent.click(view.getByRole('button',{name:'초기화'}));
-  assert.equal(editorValue(view.getByRole('textbox',{name:'풀이 코드'})),starters[1].sourceCode);
+  assert.equal(view.queryByRole('button',{name:'초기화'}),null);
 });
 
 test('untouched starter submission uses the visible source, not an empty draft map', {timeout:5000},async()=>{

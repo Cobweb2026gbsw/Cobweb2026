@@ -4,6 +4,7 @@
   --h-text: #eef3f2;
   --h-muted: #8d9896;
   --h-accent: #64e6ca;
+  --h-accent-ink: #04201d;
   --h-field: #0f1212;
   --h-btn: #000000;
 
@@ -24,13 +25,14 @@
 }
 
 .cw-header.light {
-  --h-bg: #dbfffd;
-  --h-line: #9dbab8;
-  --h-text: #121414;
-  --h-muted: #536260;
-  --h-accent: #0a7f76;
-  --h-field: #ffffff;
-  --h-btn: #f4fffe;
+  --h-bg: var(--light-bg);
+  --h-line: var(--light-line);
+  --h-text: var(--light-text);
+  --h-muted: var(--light-muted);
+  --h-accent: var(--light-accent);
+  --h-accent-ink: var(--light-on-accent);
+  --h-field: var(--light-field);
+  --h-btn: var(--light-surface);
 }
 
 .cw-header-left {
@@ -125,8 +127,8 @@
   width: 34px;
   height: 34px;
 
-  background-color: #64e6ca;
-  color: #04201d;
+  background-color: var(--h-accent);
+  color: var(--h-accent-ink);
   border: none;
   border-radius: 50%;
 
@@ -174,9 +176,9 @@
 }
 
 .cw-header-btn.primary {
-  background-color: #64e6ca;
-  border-color: #64e6ca;
-  color: #04201d;
+  background-color: var(--h-accent);
+  border-color: var(--h-accent);
+  color: var(--h-accent-ink);
 }
 
 .cw-header :focus-visible {
@@ -184,10 +186,11 @@
   outline-offset: 2px;
 }
 
-/* 검색 입력은 포커스 때도 프레임을 표시하지 않습니다. 검색 버튼과
-   다른 헤더 링크/버튼의 키보드 포커스 표시는 그대로 유지합니다. */
+/* 검색 입력과 버튼 모두 키보드 초점을 구분할 수 있게 합니다. */
 .cw-header-search input:focus-visible {
-  outline: none;
+  outline: 2px solid var(--h-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
   box-shadow: none;
 }
 
@@ -264,3 +267,16 @@
 /* 세대가 바뀐 인증 안내는 작은 화면에서도 헤더 밖으로 넘치지 않습니다. */
 .cw-session-notice { padding: 12px 20px; font-size: 13px; color: #f8ddd6; background: #522b25; overflow-wrap: anywhere; }
 .cw-session-notice a { color: inherit; text-decoration: underline; }
+
+.cw-mobile-search { display: none; }
+.cw-problem-nav { display: flex; gap: 24px; overflow-x: auto; padding: 12px 32px; background: #121414; color: #eef3f2; border-bottom: 1px solid #2b3131; }
+.cw-problem-nav.light { background: var(--light-surface); color: var(--light-text); border-color: var(--light-line); }
+.cw-problem-nav a { flex: none; padding: 4px 0; font-size: 13px; color: inherit; text-decoration: none; }
+.cw-problem-nav a.active { font-weight: 700; text-decoration: underline; text-underline-offset: 6px; }
+.cw-problem-nav a:focus-visible { outline: 2px solid #64e6ca; outline-offset: 3px; }
+.cw-problem-nav.light a:focus-visible { outline-color: var(--light-accent); }
+@media (max-width: 1250px) {
+  .cw-mobile-search { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 6px 4px; color: var(--h-accent); background: none; border: none; font: inherit; font-size: 13px; cursor: pointer; }
+  .cw-header-search.is-open { display: flex; grid-column: 1 / -1; grid-row: 3; max-width: none; width: 100%; min-width: 0; }
+}
+@media (max-width: 760px) { .cw-problem-nav { gap: 20px; padding: 10px 16px; } }

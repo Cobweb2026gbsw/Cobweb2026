@@ -44,7 +44,7 @@ test('initial cookie restore blocks normal login and OAuth, including direct for
   globalThis.fetch = async path => {calls.push(path); assert.equal(path, '/api/auth/reissue'); return restore.promise;};
   const view = mount();
   fireEvent.change(view.getByLabelText('아이디'), {target: {value: 'account-b'}});
-  fireEvent.change(view.getByLabelText('비밀번호'), {target: {value: 'test-password'}});
+  assert.equal(view.queryByLabelText('비밀번호'), null);
   assert.equal(view.getByRole('button', {name: '로그인 상태 확인 중…'}).disabled, true);
   for (const name of ['Google 로그인', 'GitHub 로그인', '네이버 로그인']) {
     const button = view.getByRole('button', {name}); assert.equal(button.disabled, true); fireEvent.click(button);
@@ -52,7 +52,7 @@ test('initial cookie restore blocks normal login and OAuth, including direct for
   fireEvent.submit(view.getByLabelText('아이디').closest('form'));
   assert.deepEqual(calls, ['/api/auth/reissue']);
   await act(async () => {restore.resolve(response(null, 401)); await tick();});
-  await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+  await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
   assert.deepEqual(calls, ['/api/auth/reissue']);
   cleanup();
 });

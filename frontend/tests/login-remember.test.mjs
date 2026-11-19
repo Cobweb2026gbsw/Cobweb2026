@@ -59,12 +59,15 @@ for (const remember of [false, true]) test(`password login sends rememberMe=${re
     throw new Error(path);
   };
   const view = mount();
-  await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+  await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
+  fireEvent.change(view.getByLabelText('아이디'), {target: {value: 'sample-user'}});
+  fireEvent.keyDown(view.getByLabelText('아이디'), {key: 'Enter'});
   const checkbox = view.getByRole('checkbox', {name: '로그인 유지'});
   assert.equal(checkbox.checked, false);
   assert.equal(document.getElementById(checkbox.getAttribute('aria-describedby')).textContent, '일반 로그인에 적용됩니다.');
   if (remember) fireEvent.click(checkbox);
   fireEvent.change(view.getByLabelText('아이디'), {target: {value: 'sample-user'}});
+  fireEvent.keyDown(view.getByLabelText('아이디'), {key: 'Enter'});
   fireEvent.change(view.getByLabelText('비밀번호'), {target: {value: 'test-password'}});
   fireEvent.submit(view.getByLabelText('아이디').closest('form'));
   await waitFor(() => assert.equal(getAccessToken(), token));
@@ -84,9 +87,10 @@ test('HTTP IP blocks password and OAuth requests and offers only the same-host c
     throw new Error(path);
   };
   const view = mount('http://192.0.2.8:18080/login?next=ignored');
-  await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+  await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
   await waitFor(() => assert.equal(view.getByRole('link', {name: 'HTTPS로 로그인하기'}).href, 'https://192.0.2.8:18443/login'));
   fireEvent.change(view.getByLabelText('아이디'), {target: {value: 'sample-user'}});
+  fireEvent.keyDown(view.getByLabelText('아이디'), {key: 'Enter'});
   fireEvent.change(view.getByLabelText('비밀번호'), {target: {value: 'test-password'}});
   fireEvent.submit(view.getByLabelText('아이디').closest('form'));
   assert.match(view.getByRole('alert').textContent, /HTTPS/);
@@ -99,9 +103,9 @@ test('HTTP IP blocks password and OAuth requests and offers only the same-host c
 test('missing local HTTPS configuration does not invent a port or hide the secure-login requirement', async () => {
   globalThis.fetch = async path => path === '/api/auth/reissue' ? response(null, 401) : response({secureCookieRequired: true, httpsPort: null});
   const view = mount('http://192.0.2.8:8080/login');
-  await waitFor(() => assert.equal(view.getByRole('button', {name: '로그인', exact: true}).disabled, false));
+  await waitFor(() => assert.equal(view.getByRole('button', {name: '다음', exact: true}).disabled, false));
   assert.equal(view.queryByRole('link', {name: 'HTTPS로 로그인하기'}), null);
-  assert.match(view.getByRole('status').textContent, /서버의 HTTPS 주소/);
+  assert.match(view.getByText(/서버의 HTTPS 주소로 다시 접속/).textContent, /서버의 HTTPS 주소/);
   cleanup();
 });
 

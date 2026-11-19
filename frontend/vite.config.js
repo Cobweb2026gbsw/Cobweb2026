@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { analysisPreviewPlugin } from './dev/analysisPreview.mjs';
 
 export default defineConfig(({command}) => ({
-  plugins: [react()],
+  plugins: [react(), analysisPreviewPlugin()],
   // 개발 라우터는 /, JAR에 포함되는 운영 자산만 /ui/ 아래에 둡니다.
   base: command === 'build' ? '/ui/' : '/',
   build: { outDir: '../build/generated-frontend/static/ui', emptyOutDir: true },

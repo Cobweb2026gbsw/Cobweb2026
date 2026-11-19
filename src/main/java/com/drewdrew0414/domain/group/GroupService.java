@@ -10,6 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.drewdrew0414.global.exception.ApiException;
 
 import java.util.*;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 /** 그룹 소속과 역할을 관리합니다. 권한 판단은 매 요청마다 DB의 현재 역할을 읽습니다. */
 @Service @RequiredArgsConstructor
@@ -126,6 +129,7 @@ public class GroupService {
         return rows.stream().map(r -> {
             Map<String,Object> item=new LinkedHashMap<>();
             item.put("id",r.get("id")); item.put("groupName",r.get("group_name"));
+            item.put("description",r.get("group_description"));
             item.put("memberCount",r.get("member_count"));
             item.put("systemGroup",systemGroup(r));
             return item;
@@ -134,10 +138,11 @@ public class GroupService {
     public List<Map<String,Object>> mine(CustomUserDetails user) {
         long uid=requireUser(user);
         var rows=db.queryForList("""
-            SELECT g.id,g.group_name,g.group_description,g.system_key,gr.role_name,gr.id AS role_id,
+            SELECT g.id,g.group_name,g.group_description,g.status,g.system_key,gr.role_name,gr.builtin_key,gr.id AS role_id,
                 (SELECT COUNT(*) FROM group_members all_members WHERE all_members.group_id=g.id) AS member_count
             FROM group_members gm JOIN study_groups g ON g.id=gm.group_id
             JOIN group_roles gr ON gr.group_id=gm.group_id AND gr.id=gm.role_id
+            JOIN users u ON u.id=gm.user_id AND u.status='ACTIVE'
             WHERE gm.user_id=? ORDER BY g.id DESC
             """,uid);
         List<Map<String,Object>> result=new ArrayList<>();
@@ -146,12 +151,43 @@ public class GroupService {
             Map<String,Object> item=new LinkedHashMap<>();
             item.put("id",gid); item.put("groupName",row.get("group_name"));
             item.put("description",row.get("group_description")); item.put("roleName",row.get("role_name"));
+            item.put("roleKey",row.get("builtin_key"));
             item.put("systemGroup",systemGroup(row));
-            item.put("permissions",permissionNames(permissions(gid,user)));
+            var granted=permissions(gid,user);
+            item.put("permissions",permissionNames(granted));
+            if("ACCEPTED".equals(row.get("status"))) item.put("activity",membershipActivity(gid,granted));
             item.put("memberCount",row.get("member_count")); result.add(item);
         }
         return result;
     }
+    /** A membership-only summary: published practice problems and upcoming contest metadata. */
+    private Map<String,Object> membershipActivity(long gid,Set<GroupPermission> granted) {
+        Map<String,Object> activity=new LinkedHashMap<>();
+        activity.put("windowDays",7);
+        // Contest questions stay out of the practice feed, including their counts.
+        activity.put("recentProblemCount",granted.contains(GroupPermission.VIEW_PROBLEMS)?db.queryForObject("""
+            SELECT COUNT(*) FROM problems p
+            WHERE p.group_id=? AND p.visibility='GROUP' AND p.status='PUBLISHED'
+              AND p.published_at >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '7 days'
+              AND p.published_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+              AND NOT EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=p.id)
+            """,Long.class,gid):null);
+        var upcoming=db.queryForList("""
+            SELECT id,title,starts_at FROM group_contests
+            WHERE group_id=? AND starts_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            ORDER BY starts_at,id LIMIT 1
+            """,gid);
+        if(upcoming.isEmpty()) activity.put("nextContest",null);
+        else {
+            var contest=upcoming.getFirst();
+            Object start=contest.get("starts_at");
+            LocalDateTime startsAt=start instanceof Timestamp timestamp?timestamp.toLocalDateTime():(LocalDateTime)start;
+            activity.put("nextContest",Map.of("id",contest.get("id"),"title",contest.get("title"),
+                "startsAt",startsAt.toInstant(ZoneOffset.UTC).toString()));
+        }
+        return activity;
+    }
+
     public Map<String,Object> detail(long gid,CustomUserDetails user) {
         requireMember(gid,user);
         var row=group(gid,false);

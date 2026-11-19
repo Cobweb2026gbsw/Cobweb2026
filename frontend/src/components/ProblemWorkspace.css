@@ -5,4 +5,18 @@
 .pd-splitter:hover>span,.pd-splitter:focus-visible>span,.pd-resizable.is-resizing>.pd-splitter>span{background:var(--accent-text);height:76px}
 .pd-splitter:focus-visible{outline:2px solid var(--accent-text)}
 .pd-resizable.is-resizing{user-select:none;cursor:col-resize}
+/* Both columns share one height; long statements, code and results scroll inside. */
+@media(min-width:1101px){
+  .pd-grid.pd-resizable{height:clamp(720px,calc(100dvh - 240px),960px);align-items:stretch;min-height:0}
+  .pd-resizable>.pd-statement{height:100%;min-height:0}
+  .pd-resizable>.pd-side{display:grid;grid-template-rows:minmax(0,1.8fr) minmax(240px,1fr);gap:12px;height:100%;min-height:0}
+  .pd-resizable .pd-workspace,.pd-resizable .pd-result{display:flex;flex-direction:column;min-height:0}
+  .pd-resizable .pd-toolbar,.pd-resizable .pd-workspace>.cw-hint{flex-shrink:0}
+  .pd-resizable .cw-rich-editor{display:flex;flex-direction:column;flex:1;min-height:0}
+  .pd-resizable .cw-rich-editor>.pd-editor-bar,.pd-resizable .cw-rich-editor>.pd-editor-status{flex-shrink:0}
+  .pd-resizable .cw-rich-editor>.cw-editor-host{flex:1;min-height:0}
+  .pd-resizable .cw-test-run-panel{display:flex;flex-direction:column;flex:1;min-height:0}
+  .pd-resizable .cw-test-run-panel>.cw-test-heading,.pd-resizable .cw-test-run-panel>.cw-hint,.pd-resizable .cw-test-tabs{flex-shrink:0}
+  .pd-resizable .pd-result .cw-test-scroll{flex:1;height:auto;min-height:0}
+}
 @media(max-width:1100px){.pd-grid.pd-resizable{grid-template-columns:minmax(0,1fr);gap:20px}.pd-resizable>.pd-splitter{display:none}}

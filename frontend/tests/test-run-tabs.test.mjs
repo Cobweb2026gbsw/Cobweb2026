@@ -25,7 +25,7 @@ const selected=(view,name)=>assert.equal(tab(view,name).getAttribute('aria-selec
 const runButton=view=>view.getByRole('button',{name:'테스트 및 실행'});
 function privatePanel(){
   const view=render(React.createElement(Panel,props()));
-  fireEvent.click(view.getByRole('button',{name:'비공개 채점'}));
+  fireEvent.click(view.getByRole('button',{name:'비공개 테스트'}));
   return view;
 }
 test.beforeEach(()=>{globalThis.__testRunTabsAuth={epoch:0,user:{id:1,username:'alice'},loading:false};globalThis.__testRunTabsApi=async()=>{throw Error('Unexpected API request');};});
