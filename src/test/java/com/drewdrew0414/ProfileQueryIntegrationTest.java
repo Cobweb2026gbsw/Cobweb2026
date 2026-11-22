@@ -1,5 +1,8 @@
 package com.drewdrew0414;
 
+import com.drewdrew0414.domain.user.controller.ProfileController;
+import com.drewdrew0414.domain.user.repository.UserRepository;
+import com.drewdrew0414.global.security.CustomUserDetails;
 import com.drewdrew0414.global.security.jwt.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -9,6 +12,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
@@ -31,6 +36,8 @@ class ProfileQueryIntegrationTest {
     @Autowired ObjectMapper json;
     @Autowired JwtTokenProvider jwt;
     @Autowired PasswordEncoder encoder;
+    @Autowired ProfileController profiles;
+    @Autowired UserRepository users;
     @org.springframework.beans.factory.annotation.Value("${local.server.port}") int port;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -46,6 +53,73 @@ class ProfileQueryIntegrationTest {
         var content=body==null ? HttpRequest.BodyPublishers.noBody() :
                 HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body));
         return client.send(builder.header("Content-Type","application/json").method(method,content).build(),HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test @Transactional
+    void topLanguagesCountDistinctPublicProblemsForEachAcceptedLanguageAndAccount() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String username = "top" + suffix;
+        long owner = profileUser(username);
+        long other = profileUser("other" + suffix);
+        assertEquals(json.createArrayNode(), topLanguages(profiles.profile(username)));
+
+        long first = profileProblem(owner, "PUBLISHED", "PUBLIC", null);
+        long second = profileProblem(owner, "PUBLISHED", "PUBLIC", null);
+        long third = profileProblem(owner, "PUBLISHED", "PUBLIC", null);
+        for (long problem : new long[]{first, second, third, first}) {
+            submit(owner, problem, "PYTHON", "ACCEPTED", null);
+        }
+        submit(owner, first, "CPP", "ACCEPTED", null);
+        submit(owner, second, "CPP", "ACCEPTED", null);
+        submit(owner, first, "CSHARP", "ACCEPTED", null);
+        submit(owner, first, "JAVA", "ACCEPTED", null);
+
+        long group = db.queryForObject("SELECT id FROM study_groups WHERE system_key='COBWEB_DEFAULT'", Long.class);
+        long contest = db.queryForObject("""
+                INSERT INTO group_contests(group_id,title,starts_at,ends_at,created_by)
+                VALUES (?,'테스트',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP + INTERVAL '1 hour',?) RETURNING id
+                """, Long.class, group, owner);
+        db.update("INSERT INTO contest_problems(contest_id,problem_id,display_order) VALUES(?,?,1)", contest, second);
+        // 아래 각 행이 잘못 집계되면 Java가 공동 3위에서 C#을 앞지릅니다.
+        submit(other, second, "JAVA", "ACCEPTED", null);
+        submit(owner, second, "JAVA", "WRONG_ANSWER", null);
+        submit(owner, second, "JAVA", "ACCEPTED", contest);
+        submit(owner, profileProblem(owner, "ARCHIVED", "PUBLIC", null), "JAVA", "ACCEPTED", null);
+        submit(owner, profileProblem(owner, "PUBLISHED", "PRIVATE", null), "JAVA", "ACCEPTED", null);
+        submit(owner, profileProblem(owner, "PUBLISHED", "PUBLIC", group), "JAVA", "ACCEPTED", null);
+
+        var expected = json.readTree("""
+                [{"language":"PYTHON","label":"Python","solved_count":3},
+                 {"language":"CPP","label":"C++","solved_count":2},
+                 {"language":"CSHARP","label":"C#","solved_count":1}]
+                """);
+        assertEquals(expected, topLanguages(profiles.profile(username)));
+        var principal = new CustomUserDetails(users.findById(owner).orElseThrow());
+        assertEquals(expected, topLanguages(profiles.me(principal)));
+    }
+
+    private JsonNode topLanguages(Object response) {
+        return json.readTree(json.writeValueAsString(response)).path("data").path("topLanguages");
+    }
+
+    private long profileUser(String name) {
+        return db.queryForObject("INSERT INTO users(username,password) VALUES (?,'unused') RETURNING id", Long.class, name);
+    }
+
+    private long profileProblem(long author, String status, String visibility, Long group) {
+        int number = db.queryForObject("SELECT COALESCE(MAX(problem_number),999)+1 FROM problems", Integer.class);
+        return db.queryForObject("""
+                INSERT INTO problems(problem_number,problem_title,description,input_description,output_description,
+                                     author_id,status,visibility,group_id)
+                VALUES (?,?,'설명','입력','출력',?,?,?,?) RETURNING id
+                """, Long.class, number, "language-test-" + number, author, status, visibility, group);
+    }
+
+    private void submit(long user, long problem, String language, String status, Long contest) {
+        db.update("""
+                INSERT INTO submissions(user_id,problem_id,language,status,contest_id,source_code)
+                VALUES (?,?,?,?,?,'test')
+                """, user, problem, language, status, contest);
     }
 
     @Test void renamingKeepsTheSameSessionLoginAndCommunityAuthorAfterOldNameIsReused() throws Exception {
@@ -71,6 +145,7 @@ class ProfileQueryIntegrationTest {
         assertEquals(200,reissue.statusCode());
         String fresh=json.readTree(reissue.body()).get("data").get("accessToken").asText();
         var me=json.readTree(request("GET","/api/me",fresh,null).body()).get("data");
+        assertEquals(json.createArrayNode(), me.get("topLanguages"));
         assertEquals(200,request("POST","/api/auth/login",null,Map.of("username",newName,"password",password)).statusCode());
         assertEquals(Long.toString(id),me.get("id").asText());
         assertEquals(newName,me.get("username").asText());
@@ -112,6 +187,7 @@ class ProfileQueryIntegrationTest {
         var profile = envelope.get("data");
         assertEquals(username, profile.get("username").asText());
         assertTrue(profile.get("solvedProblems").isArray());
+        assertTrue(profile.get("topLanguages").isArray());
         for (String privateField : new String[]{"id", "email", "password", "role", "provider_id", "accessToken"})
             assertFalse(profile.has(privateField), privateField);
         assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM users WHERE username=?", Integer.class, username));

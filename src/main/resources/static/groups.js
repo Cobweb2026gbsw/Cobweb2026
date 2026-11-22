@@ -145,6 +145,7 @@ const CobwebGroups=(()=>{
       previous.disabled=pageIndex===0;next.disabled=items.length<30;pager.append(previous,next);}
     catch(error){if(epoch===groupEpoch&&detailRequest===groupDetailRequest&&request===groupProblemRequest)box.textContent=error.message;}
   }
+  let contestClockOffset=0, removeExamGuard=null;
   function contestForm(gid,current=null){
     const form=document.createElement('form');form.className='contest-form';form.append(node('h4',current?'코테 수정':'새 코테 만들기'));
     form.append(field('제목','title',current?.title||''),field('시작 (내 시간대)','startsAt',current?.startsAt?localDatetime(current.startsAt):'','datetime-local'),field('종료 (내 시간대)','endsAt',current?.endsAt?localDatetime(current.endsAt):'','datetime-local'));
@@ -154,15 +155,15 @@ const CobwebGroups=(()=>{
       for(const name of ['title','startsAt','endsAt','problemNumbers'])form.querySelector('[name='+name+']').readOnly=true;
       form.append(node('p','시작된 시험은 문제와 시각을 변경할 수 없습니다. 아래 보호·다시 보기 설정만 수정할 수 있습니다.','field-hint'));
     }
-    form.append(checkbox('종료 후 참여자 다시 보기 허용','replayAllowed',current?.replayAllowed),checkbox('복사·인쇄 억제 및 캡처 키 신호','captureProtection',current?.captureProtection),checkbox('전체 화면 권고 및 창 전환 신호','windowSwitchProtection',current?.windowSwitchProtection));
-    form.append(node('p','운영체제 스크린샷의 완전 차단은 불가능합니다. 신호는 참고 자료이며 자동 실격에 사용하지 않습니다.','field-hint'));
+    form.append(checkbox('종료 후 참여자 다시 보기 허용','replayAllowed',current?.replayAllowed),checkbox('코드 자동완성 허용','autocompleteAllowed',current?.autocompleteAllowed??true),checkbox('캡처 단축키 감지 시 새로고침 · 인쇄 차단','captureProtection',current?.captureProtection??true),checkbox('전체 화면 권고 및 창 전환 신호','windowSwitchProtection',current?.windowSwitchProtection));
+    form.append(node('p','응시 중 복사와 붙여넣기는 항상 차단합니다. 캡처 감지는 브라우저에 전달되는 단축키에만 적용됩니다.','field-hint'));
     const submit=node('button',current?'변경 저장':'코테 생성');submit.type='submit';form.append(submit);
     formAction(form,async values=>{const inContest=Boolean(current&&contest?.id===current.id&&contestGroupId===gid&&$('#contest')?.hidden!==true),scope=inContest?contestScope():groupScope(),body=contestPayload(values,current);
       await ctx.api(base(gid)+'/contests'+(current?'/'+current.id:''),current?'PUT':'POST',body);if(!(inContest?contestScopeCurrent(scope):groupScopeCurrent(scope)))return;ctx.notice('코딩 테스트를 저장했습니다.');if(inContest)await refreshContest(true);else await openGroup(gid);});return form;
   }
   function localDatetime(value){const date=new Date(value);return Number.isNaN(date.getTime())?'':new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16);}
   function contestPayload(values,current=null){
-    const options={replayAllowed:values.replayAllowed==='on',captureProtection:values.captureProtection==='on',windowSwitchProtection:values.windowSwitchProtection==='on'};
+    const options={autocompleteAllowed:values.autocompleteAllowed==='on',replayAllowed:values.replayAllowed==='on',captureProtection:values.captureProtection==='on',windowSwitchProtection:values.windowSwitchProtection==='on'};
     // 시작 후에는 옵션만 편집합니다. 표시용 분 단위 입력/Date 변환을 거치면
     // 같은 분 안의 시험이 잘못 거절되거나 서버의 마이크로초 시각이 손실됩니다.
     if(current&&current.status!=='UPCOMING')return {title:current.title,startsAt:current.startsAt,endsAt:current.endsAt,problemNumbers:(current.problems||[]).map(problemNumber),...options};
@@ -183,7 +184,7 @@ const CobwebGroups=(()=>{
   async function openContest(gid,cid){
     leaveContest();const epoch=contestEpoch;lastBoundaryRefresh=0;
     const detail=await ctx.api(contestBase(gid,cid));if(epoch!==contestEpoch)return;
-    contestGroupId=gid;contest=detail;
+    contestGroupId=gid;syncContest(detail);
     await ctx.show('contest');if(epoch!==contestEpoch)return;await renderContest();if(epoch!==contestEpoch)return;
     ticker=setInterval(updateClock,1000);refreshTimer=setInterval(()=>refreshContest().catch(error=>ctx.notice(error.message)),15000);
   }
@@ -195,11 +196,16 @@ const CobwebGroups=(()=>{
   function clear(){leaveContest();groupEpoch++;groupDetailRequest++;groupDetail=null;groupPage=0;groupQuery='';
     $('#groups-app')?.replaceChildren();$('#contest-app')?.replaceChildren();}
   function clearProtectionListeners(){
+    removeExamGuard?.();removeExamGuard=null;
     for(const [target,type,handler,options] of activeListeners)target.removeEventListener(type,handler,options);
     activeListeners=[];
   }
   function addListener(target,type,handler,options){target.addEventListener(type,handler,options);activeListeners.push([target,type,handler,options]);}
-  function timeLeft(){if(!contest)return 0;const end=contest.status==='UPCOMING'?contest.startsAt:contest.endsAt;return Math.max(0,new Date(end).getTime()-Date.now());}
+  function syncContest(value){
+    contest=value;const serverTime=Date.parse(value.serverNow);
+    contestClockOffset=Number.isFinite(serverTime)?serverTime-Date.now():0;
+  }
+  function timeLeft(){if(!contest)return 0;const end=contest.status==='UPCOMING'?contest.startsAt:contest.endsAt;return Math.max(0,new Date(end).getTime()-Date.now()-contestClockOffset);}
   function updateClock(){
     const label=$('#contest-clock');if(!label||!contest)return;
     const remaining=timeLeft(),seconds=Math.ceil(remaining/1000),hours=Math.floor(seconds/3600),minutes=Math.floor(seconds%3600/60);
@@ -210,7 +216,7 @@ const CobwebGroups=(()=>{
   async function refreshContest(forceRender=false){
     if(!contest)return;const epoch=contestEpoch,request=++contestRefreshRequest,gid=contestGroupId,cid=contest.id;
     const latest=await ctx.api(contestBase(gid,cid));if(epoch!==contestEpoch||request!==contestRefreshRequest||!contest)return;
-    const redraw=forceRender||['status','title','startsAt','endsAt','captureProtection','windowSwitchProtection','replayAllowed','canManage','canViewResults'].some(key=>latest[key]!==contest[key]);contest=latest;
+    const redraw=forceRender||['status','title','startsAt','endsAt','autocompleteAllowed','captureProtection','windowSwitchProtection','replayAllowed','canManage','canViewResults'].some(key=>latest[key]!==contest[key]);syncContest(latest);
     if(redraw)await renderContest();
     else updateClock();
     if(epoch!==contestEpoch||request!==contestRefreshRequest||!contest)return;
@@ -230,11 +236,11 @@ const CobwebGroups=(()=>{
     const back=button('← 그룹으로',async()=>{leaveContest();await ctx.show('groups');await openGroup(gid);},true),head=node('div','','section-heading'),copy=node('div');
     copy.append(node('p','그룹 코딩 테스트 · #'+cid,'eyebrow'),node('h1',contest.title),node('p',formatRange(contest.startsAt,contest.endsAt)));
     const clock=node('p');clock.id='contest-clock';head.append(copy,back);root.append(head,clock);
-    root.append(node('p','시험 문제와 제출은 서버 시각·권한으로 통제됩니다. 자동 실격은 없으며 감시 신호만으로 부정행위를 단정하지 않습니다.','field-hint'));
-    if(contest.captureProtection||contest.windowSwitchProtection)root.append(node('p','복사·인쇄 억제와 전체 화면 감시는 브라우저 범위에서만 가능합니다. 운영체제 스크린샷은 완전히 막을 수 없습니다.','contest-caution'));
+    root.append(node('p','시험 답안과 결과는 시험 안에서만 보이며 개인 랭크 점수에 포함되지 않습니다. 응시 중 복사·붙여넣기는 차단됩니다.','field-hint'));
+    if(contest.captureProtection||contest.windowSwitchProtection)root.append(node('p','브라우저에서 감지할 수 있는 캡처 단축키와 창 전환에만 보호 설정이 적용됩니다.','contest-caution'));
     root.append(node('div','','contest-warning'));
     updateClock();
-    if(contest.status==='UPCOMING')root.append(node('section','시작 전에는 문제 본문을 볼 수 없습니다.','panel contest-wait'));
+    if(contest.status==='UPCOMING')root.append(node('section','코딩 테스트 대기실 · 시작 시각이 되면 이 화면에서 시험이 열립니다.','panel contest-wait'));
     else {
       const layout=node('div','','contest-layout'),listPanel=node('section','','panel'),question=node('section','','panel');listPanel.append(node('h2','시험 문제'),node('div','','contest-problem-list'));
       question.id='contest-question';question.append(node('p','왼쪽에서 문제를 선택하세요.'));layout.append(listPanel,question);root.append(layout);
@@ -243,7 +249,10 @@ const CobwebGroups=(()=>{
         for(const item of problems){const number=problemNumber(item);listBox.append(button('#'+number+' · '+problemTitle(item),()=>openContestProblem(number),true));}}
       catch(error){if(epoch!==contestEpoch||renderRequest!==contestRenderRequest||!contest)return;listPanel.querySelector('.contest-problem-list').textContent=contest.status==='ENDED'?'종료 후 다시 보기는 참여 이력과 설정에 따라 허용됩니다. '+error.message:error.message;}
       if(epoch!==contestEpoch||renderRequest!==contestRenderRequest)return;
-      if(contest.status==='ACTIVE'&&groupDetail?.permissions?.includes('TAKE_CONTESTS'))enableProtections();
+      if(contest.status==='ACTIVE'&&groupDetail?.permissions?.includes('TAKE_CONTESTS')) {
+        await enableProtections(epoch,renderRequest);
+        if(epoch!==contestEpoch||renderRequest!==contestRenderRequest)return;
+      }
       const canTake=await renderContestMine(root).catch(()=>false);if(epoch!==contestEpoch||renderRequest!==contestRenderRequest)return;
       if(contest.status==='ACTIVE'&&canTake&&contestDraft?.epoch===epoch&&contestDraft.renderRequest===renderRequest&&
           contestDraft.gid===gid&&contestDraft.cid===cid&&restoreQuestionRequest===questionRequest){
@@ -270,13 +279,13 @@ const CobwebGroups=(()=>{
     if(draft){form.querySelector('[name=sourceCode]').value=draft.sourceCode;if((problem.languages||[]).includes(draft.language))form.querySelector('[name=language]').value=draft.language;contestDraft=null;}
     form.querySelector('textarea').className='contest-source';form.querySelector('textarea').required=true;form.querySelector('textarea').setAttribute('data-code-editor','');form.querySelector('textarea').spellcheck=false;
     form.append(node('p','Tab: 공백 4칸 · Shift+Tab: 내어쓰기 · Enter: 자동 들여쓰기 · Esc 다음 Tab: 입력란 밖으로 이동','field-hint'));
-    const submit=node('button','제출하고 채점하기');submit.type='submit';submit.disabled=contest.status!=='ACTIVE'||Date.now()>=new Date(contest.endsAt).getTime();form.append(submit,node('p',contest.status==='ACTIVE'?'시험 중에만 제출할 수 있습니다.':'종료된 시험은 다시 볼 수 있어도 제출할 수 없습니다.','field-hint'));
-    formAction(form,async values=>{const scope=contestScope(),activeQuestion=questionRequest;if(contest.status!=='ACTIVE'||Date.now()>=new Date(contest.endsAt).getTime())throw Error('제출 가능 시간이 아닙니다.');
+    const submit=node('button','제출하고 채점하기');submit.type='submit';submit.disabled=contest.status!=='ACTIVE'||timeLeft()<=0;form.append(submit,node('p',contest.status==='ACTIVE'?'시험 중에만 제출할 수 있습니다.':'종료된 시험은 다시 볼 수 있어도 제출할 수 없습니다.','field-hint'));
+    formAction(form,async values=>{const scope=contestScope(),activeQuestion=questionRequest;if(contest.status!=='ACTIVE'||timeLeft()<=0)throw Error('제출 가능 시간이 아닙니다.');
       const id=await ctx.api(contestBase(gid,cid)+'/submissions','POST',{problemNumber:number,sourceCode:values.sourceCode,language:values.language});
       if(!contestScopeCurrent(scope)||activeQuestion!==questionRequest)return;ctx.notice('시험 제출 #'+id+' 접수');await pollSubmission(id,scope.epoch,activeQuestion);if(contestScopeCurrent(scope)&&activeQuestion===questionRequest)await renderContestMine($('#contest-app')).catch(()=>{});});box.append(form,node('pre','','contest-result'));
   }
   async function pollSubmission(id,epoch=contestEpoch,activeQuestion=questionRequest){
-    if(!contest||epoch!==contestEpoch||activeQuestion!==questionRequest)return;try{const result=await ctx.api('/api/submissions/'+id);if(epoch!==contestEpoch||activeQuestion!==questionRequest)return;
+    if(!contest||epoch!==contestEpoch||activeQuestion!==questionRequest)return;try{const result=await ctx.api(contestBase(contestGroupId,contest.id)+'/submissions/'+id);if(epoch!==contestEpoch||activeQuestion!==questionRequest)return;
       const output=$('#contest-question .contest-result');if(output)output.textContent='#'+id+' · '+result.status+(result.score===null?'':' · '+result.score+'점');
       if(['QUEUED','RUNNING'].includes(result.status))setTimeout(()=>{if(epoch===contestEpoch&&activeQuestion===questionRequest)pollSubmission(id,epoch,activeQuestion);},1500);}
     catch(error){if(epoch===contestEpoch&&activeQuestion===questionRequest)ctx.notice(error.message);}
@@ -324,8 +333,8 @@ const CobwebGroups=(()=>{
     return windows.includes(type)?Boolean(item.windowSwitchProtection):capture.includes(type)?Boolean(item.captureProtection):false;
   }
   function signal(type){
-    if(!shouldRecordEvent(contest,type))return;
-    const eventId=crypto.randomUUID();ctx.api(contestBase(contestGroupId,contest.id)+'/events','POST',{eventId,type}).catch(error=>ctx.notice('시험 신호를 기록하지 못했습니다: '+error.message));
+    if(!shouldRecordEvent(contest,type,Date.now()+contestClockOffset))return;
+    const eventId=crypto.randomUUID();return ctx.api(contestBase(contestGroupId,contest.id)+'/events','POST',{eventId,type}).catch(error=>ctx.notice('시험 신호를 기록하지 못했습니다: '+error.message));
   }
   function warn(text){
     if(!contest?.windowSwitchProtection)return;eventLocked=true;const box=$('#contest-app .contest-warning');if(!box)return;
@@ -333,13 +342,16 @@ const CobwebGroups=(()=>{
     box.append(button('전체 화면으로 돌아가기',async()=>{try{await document.documentElement.requestFullscreen();eventLocked=false;box.classList.remove('active');}catch{ctx.notice('전체 화면이 허용되지 않았습니다. 브라우저 설정을 확인해 주세요.');}},false));
     box.append(button('시험 화면 나가기',()=>ctx.show('groups'),true));
   }
-  function enableProtections(){
-    if(contest.captureProtection){
-      for(const type of ['copy','cut','contextmenu'])addListener(document,type,event=>{if(!$('#contest')?.hidden){event.preventDefault();signal(type==='contextmenu'?'COPY_BLOCKED':'COPY_BLOCKED');}});
-      addListener(window,'beforeprint',event=>{event.preventDefault();signal('PRINT_BLOCKED');});
-      addListener(document,'keydown',event=>{if(event.key==='PrintScreen'){event.preventDefault();signal('CAPTURE_KEY');}
-        if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='p'){event.preventDefault();signal('PRINT_BLOCKED');}});
-    }
+  async function enableProtections(epoch,renderRequest){
+    const {installContestInputGuard}=await import('/contest-input-guard.mjs');
+    if(epoch!==contestEpoch||renderRequest!==contestRenderRequest||!contest)return;
+    const root=$('#contest-app');
+    removeExamGuard=installContestInputGuard({
+      document,window,captureProtection:contest.captureProtection,
+      active:()=>epoch===contestEpoch&&contest?.status==='ACTIVE'&&timeLeft()>0&&!$('#contest')?.hidden,
+      appliesTo:target=>target===document||root.contains(target),record:signal,
+      reload:()=>refreshContest(true).catch(error=>ctx.notice(error.message))
+    });
     if(contest.windowSwitchProtection){
       addListener(window,'blur',()=>{signal('WINDOW_BLUR');warn('시험 창을 벗어났습니다. 전체 화면으로 돌아와 주세요.');});
       addListener(document,'visibilitychange',()=>{if(document.hidden){signal('VISIBILITY_HIDDEN');warn('시험 탭이 숨겨졌습니다. 돌아와 주세요.');}});

@@ -35,13 +35,13 @@ public class ContestService {
         if(value instanceof LocalDateTime t) return t;
         throw new IllegalStateException("Unexpected UTC datetime value");
     }
-    private static String iso(Object value) { return local(value).toInstant(ZoneOffset.UTC).toString(); }
-    private LocalDateTime now() { return local(db.queryForObject("SELECT (clock_timestamp() AT TIME ZONE 'UTC')",Timestamp.class)); }
-    private static String status(Map<String,Object> contest,LocalDateTime now) {
+    static String iso(Object value) { return local(value).toInstant(ZoneOffset.UTC).toString(); }
+    LocalDateTime now() { return local(db.queryForObject("SELECT (clock_timestamp() AT TIME ZONE 'UTC')",Timestamp.class)); }
+    static String status(Map<String,Object> contest,LocalDateTime now) {
         if(now.isBefore(local(contest.get("starts_at")))) return "UPCOMING";
         return now.isBefore(local(contest.get("ends_at")))?"ACTIVE":"ENDED";
     }
-    private Map<String,Object> contest(long gid,long cid,boolean lock) {
+    Map<String,Object> contest(long gid,long cid,boolean lock) {
         var rows=db.queryForList("SELECT * FROM group_contests WHERE group_id=? AND id=?"+(lock?" FOR UPDATE":""),gid,cid);
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND,"코딩테스트를 찾을 수 없습니다.");
         return rows.getFirst();
@@ -51,6 +51,7 @@ public class ContestService {
         result.put("id",row.get("id")); result.put("title",row.get("title"));
         result.put("startsAt",iso(row.get("starts_at"))); result.put("endsAt",iso(row.get("ends_at")));
         result.put("status",status(row,now)); result.put("replayAllowed",enabled(row.get("replay_allowed")));
+        result.put("autocompleteAllowed",enabled(row.get("autocomplete_allowed")));
         result.put("captureProtection",enabled(row.get("capture_protection")));
         result.put("windowSwitchProtection",enabled(row.get("window_switch_protection")));
         result.put("problemCount",db.queryForObject("SELECT COUNT(*) FROM contest_problems WHERE contest_id=?",Long.class,row.get("id")));
@@ -72,7 +73,7 @@ public class ContestService {
         if(questionStaff(gid,user)) return true;
         return personalReadAllowed(contest,user,now);
     }
-    private boolean personalReadAllowed(Map<String,Object> contest,CustomUserDetails user,LocalDateTime now) {
+    boolean personalReadAllowed(Map<String,Object> contest,CustomUserDetails user,LocalDateTime now) {
         long gid=id(contest.get("group_id"));
         if(!groups.can(gid,user,GroupPermission.TAKE_CONTESTS)) return false;
         String state=status(contest,now);
@@ -86,7 +87,7 @@ public class ContestService {
         if(!canReadQuestions(contest,user,now()))
             throw new ApiException(HttpStatus.FORBIDDEN,"현재 시험 문제를 볼 수 없습니다.");
     }
-    private void requireActiveTake(Map<String,Object> contest,CustomUserDetails user) {
+    void requireActiveTake(Map<String,Object> contest,CustomUserDetails user) {
         GroupService.requireUser(user);
         if(!groups.can(id(contest.get("group_id")),user,GroupPermission.TAKE_CONTESTS) ||
             !"ACTIVE".equals(status(contest,now())))
@@ -102,7 +103,9 @@ public class ContestService {
     public Map<String,Object> detail(long gid,long cid,CustomUserDetails user) {
         groups.requireMember(gid,user);
         var row=contest(gid,cid,false);
-        var result=summary(row,now());
+        var at=now();
+        var result=summary(row,at);
+        result.put("serverNow",iso(at));
         result.put("canManage",groups.can(gid,user,GroupPermission.MANAGE_CONTESTS));
         result.put("canViewResults",groups.can(gid,user,GroupPermission.VIEW_CONTEST_RESULTS));
         result.put("problems",visibleProblemSummaries(row,user));
@@ -131,10 +134,10 @@ public class ContestService {
         validateWrite(request,true,null);
         long cid=db.queryForObject("""
             INSERT INTO group_contests(group_id,title,starts_at,ends_at,replay_allowed,
-              capture_protection,window_switch_protection,created_by)
-            VALUES(?,?,?,?,?,?,?,?) RETURNING id
+              capture_protection,window_switch_protection,autocomplete_allowed,created_by)
+            VALUES(?,?,?,?,?,?,?,?,?) RETURNING id
             """,Long.class,gid,request.title().trim(),utc(request.startsAt()),utc(request.endsAt()),
-            request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),uid);
+            request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),!Boolean.FALSE.equals(request.autocompleteAllowed()),uid);
         var problemIds=lockProblems(gid,request.problemNumbers());
         insertProblems(cid,request.problemNumbers(),problemIds);
         if(!utc(request.startsAt()).isAfter(now()))
@@ -152,16 +155,16 @@ public class ContestService {
             var problemIds=lockProblems(gid,request.problemNumbers());
             db.update("""
                 UPDATE group_contests SET title=?,starts_at=?,ends_at=?,replay_allowed=?,
-                    capture_protection=?,window_switch_protection=? WHERE id=?
+                    capture_protection=?,window_switch_protection=?,autocomplete_allowed=COALESCE(?,autocomplete_allowed) WHERE id=?
                 """,request.title().trim(),utc(request.startsAt()),utc(request.endsAt()),
-                request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),cid);
+                request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),request.autocompleteAllowed(),cid);
             db.update("DELETE FROM contest_problems WHERE contest_id=?",cid);
             insertProblems(cid,request.problemNumbers(),problemIds);
             if(!local(old.get("starts_at")).isAfter(now()) || !utc(request.startsAt()).isAfter(now()))
                 throw new ApiException(HttpStatus.CONFLICT,"시작된 시험은 문제와 시간을 바꿀 수 없습니다.");
         } else db.update("""
-            UPDATE group_contests SET replay_allowed=?,capture_protection=?,window_switch_protection=? WHERE id=?
-            """,request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),cid);
+            UPDATE group_contests SET replay_allowed=?,capture_protection=?,window_switch_protection=?,autocomplete_allowed=COALESCE(?,autocomplete_allowed) WHERE id=?
+            """,request.replayAllowed(),request.captureProtection(),request.windowSwitchProtection(),request.autocompleteAllowed(),cid);
     }
     private void validateWrite(ContestRequests.Write request,boolean upcoming,Map<String,Object> old) {
         if(request==null || request.title()==null || request.title().isBlank() || request.title().length()>200 ||

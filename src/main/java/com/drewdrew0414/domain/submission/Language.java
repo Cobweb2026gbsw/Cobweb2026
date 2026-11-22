@@ -20,6 +20,13 @@ public enum Language {
     Language(String label,String fileName,boolean compiled) { this.label=label;this.fileName=fileName;this.compiled=compiled; }
     public String fileName() { return fileName; }
     public boolean compiled() { return compiled; }
+    /** 카탈로그에서 제거된 언어의 과거 제출도 저장된 식별자로 표시합니다. */
+    public static String displayName(String id) {
+        for (Language language : values()) {
+            if (language.name().equals(id)) return language.label;
+        }
+        return id;
+    }
     public boolean supports(String mode) {
         return switch(mode) {
             // 엄랭에는 sol 함수를 정의하는 구문이 없으므로 표준 입출력 문제에만 제공합니다.

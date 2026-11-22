@@ -31,6 +31,7 @@ public class UserService {
     @Transactional
     // 중복 체크 + 저장이 하나의 트렌잭션으로 묶여야 함
     public Long signup(SignupRequest request) {
+        ServiceTerms.requireCurrent(request.getAcceptedTermsVersion());
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new DuplicateUsernameException();
         }
@@ -58,6 +59,8 @@ public class UserService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 // 평문 비밀번호를 절대 그대로 저장하지 않고 BCrypt로 해시해서 저장
                 .build();
+
+        user.recordSignupConsent(request.getAcceptedTermsVersion());
 
         // V17 users AFTER INSERT 트리거가 기본 그룹 MEMBER 가입도 같은 DB 트랜잭션으로 처리합니다.
         // 그룹 가입에 실패하면 계정 저장과 인증 기록 소비도 함께 롤백되므로 반쪽 계정이 남지 않습니다.

@@ -134,6 +134,20 @@ public class DockerJudge {
             }
             finally {captureTestOutput=false;testOutput=null;}
         }
+        /** 검수 담당자에게만 제한된 출력 일부를 제공합니다. 판정에는 전체 정식 채점 출력을 사용합니다. */
+        public TestOutput runForReview(String input,String expected,int millis,int memory,Long caseId) {
+            captureTestOutput=true;
+            testOutput=null;
+            try {
+                var result=run(input,expected,millis,memory,caseId);
+                String actual=testOutput==null?null:reviewExcerpt(testOutput);
+                return new TestOutput(result,actual);
+            } finally {captureTestOutput=false;testOutput=null;}
+        }
+        static String reviewExcerpt(String text) {
+            int end=text.offsetByCodePoints(0,Math.min(text.codePointCount(0,text.length()),2048));
+            return text.substring(0,end).replace('\0','\u2400')+(end<text.length()?"…":"");
+        }
         private static String limitTestDisplayBytes(String value) {
             int offset=0,bytes=0;
             while(offset<value.length()) {

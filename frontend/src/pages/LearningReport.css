@@ -245,6 +245,18 @@
 .lr-summary h4 { color: var(--accent-text); }
 .lr-summary p { margin: 0; color: var(--text); line-height: 1.6; overflow-wrap: anywhere; }
 
+.lr-evidence { margin-top: 20px; }
+.lr-evidence h4 { margin: 0 0 8px; font-size: 14px; }
+.lr-evidence p, .lr-practice > p { margin: 4px 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.lr-evidence strong, .lr-practice-title { color: var(--text); }
+.lr-practice { margin-top: 20px; }
+.lr-practice ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.lr-practice li + li { border-top: 1px solid var(--line); }
+.lr-practice li a { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 14px; padding: 12px 0; text-decoration: none; }
+.lr-practice li a:hover .lr-practice-title, .lr-practice li a:focus-visible .lr-practice-title { text-decoration: underline; }
+.lr-practice-title { overflow-wrap: anywhere; font-weight: 600; }
+.lr-practice-title .cw-mono, .lr-practice-meta { color: var(--muted); font-size: 13px; }
+
 .lr-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-block: 30px; text-align: center; }
 .lr-empty .cw-icon { color: var(--accent-text); }
 .lr-empty h3, .lr-empty p { margin: 0; }

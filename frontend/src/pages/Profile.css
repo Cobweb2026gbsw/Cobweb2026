@@ -70,6 +70,41 @@
   text-decoration: underline;
 }
 
+.pf-languages {
+  margin-top: 20px;
+}
+
+.pf-languages h2 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pf-languages ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.pf-languages li {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pf-languages li::marker, .pf-languages small, .pf-languages p {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.pf-languages p {
+  margin: 0;
+}
+
 .pf-joined {
   color: var(--muted);
   font-size: 12px;

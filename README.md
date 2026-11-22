@@ -79,7 +79,7 @@ ZIP 기반 새 화면 소스는 `frontend/src/`이며 Gradle이 잠금 파일로
 [보안 검토 기록](docs/security/REVIEW.md)을 참고하세요.
 전체 API의 요청·응답·권한, DB와 채점 동작은 [백엔드 구현 명세](docs/BACKEND_SPEC.md)에 정리했습니다.
 
-local 프로필은 5433 포트의 PostgreSQL DB를 사용합니다. Flyway가 PostgreSQL 스키마, AI 리포트, 랭크 점수 마이그레이션(V1~V3)을 순서대로 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력입니다.
+local 프로필은 5433 포트의 PostgreSQL DB를 사용합니다. Flyway가 PostgreSQL 스키마, AI 리포트, 랭크 점수, 코테 자동완성, 가입 약관과 운영 기능 마이그레이션(V1~V10)을 순서대로 적용합니다. 아래 날짜가 붙은 MySQL 검증 기록은 전환 전 이력입니다.
 기본 웹 기동에서는 Lv.0 입문 100문제, Lv.1 SKILLED 75문제, Lv.2 ELITE 90문제, Lv.3 EXPERT 80문제, Lv.4 LEGEND 50문제, Lv.5 MYTHIC 35문제, Lv.6 ABSOLUTE 20문제를 등록합니다.
 기존 체인 레이저 1문제까지 합쳐 기본 과정은 **451문제**입니다. 기존 사용자 문제의 번호·제목과 충돌하면
 트랜잭션 전체를 중단하며 덮어쓰지 않습니다. 기존 체인 레이저는 ID·제출·테스트를 보존한 채
@@ -155,7 +155,7 @@ EXPERT 80문제만 별도로 실제 Docker에서 재채점하려면 `EXPERT_CATA
 
 ### AI 학습 리포트
 
-**내 활동 → AI 리포트**에서 최근 1년 풀이 잔디, 회차별 육각형, 해결능력 점수와 짧은 피드백을 확인합니다.
+**내 활동 → AI 리포트**에서 최근 1년 풀이 잔디, 회차별 육각형, 해결능력 점수와 짧은 피드백을 확인합니다. 새 회차에는 첫 제출 정답 수와 자주 나온 오류의 연습 팁을 함께 표시합니다. 직전 회차와 정답률을 비교하고 최근 회차와 주제가 겹치는 미해결 공개 문제를 최대 3개까지 바로 열 수 있습니다.
 공개 연습 문제를 처음 맞힌 기록이 5개 쌓이면 리포트 페이지를 열 때 다음 회차를 생성합니다.
 생성을 켜려면 서버 `.env`에 `OPENAI_API_KEY`와 `OPENAI_ENABLED=true`를 설정하고 재기동합니다.
 기본 모델은 `gpt-6-luna`, 추론은 `none`입니다. [AI 리포트 운영 안내](docs/OPENAI_PREPARATION.md)를 참고하세요.
@@ -238,8 +238,10 @@ Lv.0 가져오기를 끈 웹/워커와 test 프로필의 고정 테스트 JWT �
 그룹의 일반 회원 권한은 현재 ACTIVE 계정과 ACCEPTED 그룹에서만 유효합니다. 운영자 관리 권한은 시험 응시를 대신하지 않습니다.
 API·인증 필터·프런트 요청/렌더 경계에서 오류를 분류하며, 서버 내부 메시지·SQL·토큰·제출 코드는 응답에 포함하지 않습니다.
 
-회원가입 `POST /api/auth/signup`에는 `username`, `email`, `password`와
-`verificationCode`(앞서 JOIN 인증을 확인한 숫자 8자리 코드)가 필요합니다.
+회원가입 `POST /api/auth/signup`에는 `username`, `email`, `password`,
+`verificationCode`(JOIN 인증을 확인한 숫자 8자리 코드), `acceptedTermsVersion`이 필요합니다.
+`/terms`의 약관에 동의한 경우 현재 버전 `2026-11-20`을 전송합니다. 서버는 가입 트랜잭션에서 동의한 버전과 UTC 시각을 기록합니다.
+신규 Google·GitHub 계정은 `/signup/social`에서 동의한 뒤 제공자 인증을 완료합니다. 기존 소셜 계정은 원래 로그인 흐름을 사용합니다.
 인증 완료 상태만 공유해서 다른 사람이 가입하는 것을 막기 위해 가입 시에도 코드를 확인합니다.
 이메일 중복 409도 유효한 코드를 확인한 뒤에만 반환합니다.
 코드가 만료됐다면 새 코드를 발급받아 다시 인증해야 합니다.
@@ -255,7 +257,9 @@ API·인증 필터·프런트 요청/렌더 경계에서 오류를 분류하며,
 | POST /api/problems/{번호}/review | 승인·반려·보관 | OPERATOR/DEVELOPER 또는 그룹 검수 권한 |
 | POST /api/submissions | 언어 선택 및 코드 제출 | 로그인 |
 | GET /api/submissions | 일반 내 제출 50개 (시험 제외) | 로그인 |
-| GET /api/submissions/{id} | 제출 판정·케이스 결과, 시험은 다시보기 검사 | 제출자/운영자, 시험 결과 권한 |
+| GET /api/submissions/{id} | 일반 제출 판정과 케이스 결과 | 제출자 또는 운영자 |
+| GET /api/groups/{groupId}/contests/{contestId}/submissions/{id} | 해당 시험의 제출 코드와 판정 | 시험 내 본인 열람 또는 결과 조회 권한 |
+| GET /api/terms/current | 현재 약관 판본, 시행일, 운영자와 문의 이메일 | 공개 |
 | GET /api/submissions/{id}/source | 일반 제출의 코드 원문 | 제출한 본인 |
 | GET /api/ranking?page=0 | 누적 점수 순 랭킹 | 공개 |
 | GET /api/profiles/{username} | 공개 프로필과 공개 해결 문제 | 공개 |
@@ -280,21 +284,29 @@ API·인증 필터·프런트 요청/렌더 경계에서 오류를 분류하며,
 - `/create`: 예제·비공개 테스트 추가/삭제, 언어·태그·출처 선택, 정답 코드 붙여넣기 또는 UTF-8 파일 첨부, 초안 편집·검수 요청.
   정답 파일은 언어별 하나, 최대 64KiB입니다. 초안에는 정답/테스트가 없어도 되지만 게시 전에는 필요합니다.
   제목은 공백 정규화 및 DB unique 제약으로 일반 문제 전체 또는 각 그룹 안에서 중복을 금지합니다.
-- `/admin`: 운영자 문제 목록·검색·검수·공개/비공개 전환. 그룹 문제는 전체 공개로 전환하지 않습니다.
+- `/admin/review`: 운영자 문제 목록·검색·검수·공개/비공개 전환. 그룹 문제는 전체 공개로 전환하지 않습니다.
+- `/admin`의 **채점 현황**에서 대기·채점 중인 제출, 최장 대기 시간, 최근 24시간 시스템 오류, 검수 대기를 확인합니다. 상태와 언어로 제출 목록을 좁힐 수 있습니다.
+- **정답 검증·재채점**은 채점 워커가 처리합니다. 검수 화면에서 등록된 참고 풀이를 공개 예제·활성 비공개 케이스에 실행해 예상·실제 출력을 비교합니다. 판정 수정은 문제 전체 또는 해당 제출만 미리 실행하고 영향을 확인한 뒤 확정합니다. 일반 문제는 개인 점수·등급, 시험 문제는 해당 시험의 순위를 계산합니다. 이전 판정과 변경 사유는 작업 이력에 남습니다.
+- **이의제기**에서 문제 오류와 채점 이의를 접수하고 담당자·답변·처리 상태를 관리합니다. 회원은 문제 및 제출 화면에서 접수하고 `내 활동 → 내 문의`에서 결과를 확인합니다. 시험 신고는 해당 시험 화면에서 조회합니다.
+- **회원 이용 제한**에서 게시글 또는 댓글·답글 작성과 수정을 각각 제한합니다. 사유와 만료 시각을 기록하고 즉시 해제할 수 있습니다.
+- **예약 공개**에서는 검수를 마친 비공개 일반 문제를 묶어 한국 시각으로 공개하거나 대기 중에 취소합니다. 공개를 요청한 검수 대기 문제는 예약 시 함께 승인할 수 있습니다. 예약 후 판본·권한·공개 요건이 달라진 묶음은 실패 사유를 남깁니다. 웹은 실행 중 5초마다, 절전 후에는 기동 시 밀린 예약을 처리합니다.
+- **AI 리포트 사용량**은 한국 날짜별 생성 시도·성공·실패와 남은 일일 한도를 표시합니다. 신규 생성을 일시 중지하면 이미 접수한 작업은 마무리되고 기존 리포트는 계속 열람할 수 있습니다.
 - `/groups`: 50문제 이상 해결한 회원이 일반 그룹을 생성하며 소유 그룹 포함 일반 그룹 동시 가입 3개까지입니다.
   모든 계정이 자동으로 속하는 내장 `COBWEB GROUP`은 이 상한에서 제외하므로 총 4개까지 표시될 수 있습니다.
   내장 그룹에서는 탈퇴·강퇴·사용자 OWNER 지정·이름/상태/고유 키 변경을 허용하지 않습니다. 플랫폼 운영 권한은 기존대로입니다.
   기본 역할 5개+커스텀 최대 3개, 기능별 권한 11개를 설정합니다. 소유자 역할은 잠금 방지용으로 고정합니다.
   그룹 문제는 그룹 검색에서만 보이며, 검수 권한자는 그룹 관리 목록에서 승인·반려합니다.
-- 그룹 코테: 그룹 화면의 `새 코테 만들기`에서 `/groups/{id}/mkct`로 이동해 시간과 문제를 설정합니다. 별도 시험 답안과 실시간 결과 새로고침,
-  관리자 다시보기 허용 옵션. 시험 답안은 일반 해결 수·제출 수·랭킹에 합산하지 않습니다.
+- 그룹 화면의 `새 코테 만들기`에서 `/groups/{id}/mkct`로 이동해 시험 시간, 출제 문제, 편집기 자동완성과 다시보기 허용 여부를 설정합니다.
+  응시자는 대기실에서 시작 시각을 확인하고, 시작 후에는 남은 시간과 출제 문제를 봅니다. 코테 답안과 실시간 결과는 시험 안에서 조회하며, 일반 해결 수·제출 수·랭킹에서 제외합니다.
   종료 후 다시보기는 응시 기록이 있는 회원에게만 허용합니다. 시작 후 문제·시간 변경은 금지합니다.
+  응시 중 보낸 질문에 운영자가 개별 답변하거나 전체 공지를 게시할 수 있습니다. 전체 공지에는 답변만 게시됩니다. 결과 조회 권한자는 참가자별 각 문제의 시도 횟수와 첫 정답 시각을 보고 CSV를 내려받을 수 있습니다.
+  시험 복제 시 새 시작·종료 시각을 지정합니다. 문제 순서와 시험 설정만 이어받으며 제출·점수·질문·공지는 새로 시작합니다. 다른 그룹에 복제할 때는 양쪽 권한과 문제 충돌을 검사합니다.
 - `/community`, `/notices`: 하드웨어·소프트웨어·정보·문제 질문·전공 질문·일반 게시판과 운영자 공지.
   댓글→대댓글→대대댓글까지 지원하고 부모별 20개 더보기로 읽습니다.
   작성자/운영자가 수정·삭제하며 삭제는 soft delete입니다. 원문, 이전/이후 버전, 수정자,
   문제 연결 스냅샷은 DB에 보존하고 운영자만 이력 조회·복원할 수 있습니다.
 
-코테 감시 옵션은 브라우저 내 복사·인쇄 억제, 전체화면 복귀 요구, 창 전환 신호 기록입니다.
+응시 중에는 복사·잘라내기·붙여넣기와 드래그 입력을 차단합니다. 캡처 보호를 켠 시험에서는 브라우저에 전달된 스크린샷 단축키 신호를 기록하고 화면을 새로고침합니다. 이때 미제출 코드는 사라질 수 있습니다. 창 전환 보호는 별도로 설정합니다.
 운영체제 캡처와 다른 기기 사용을 완전히 차단할 수 없으며, 이벤트만으로 부정행위를 확정하지 않습니다.
 제작 화면의 추가 버튼으로 공개 예제 최대 20개·비공개 테스트 최대 50개를 입력할 수 있습니다.
 
@@ -410,7 +422,7 @@ PostgreSQL 초기 스키마는 **`src/main/resources/db/migration/V1__postgresql
 기존 MySQL V1–V22의 최종 35개 테이블, 제약·인덱스·시스템 그룹 보호 트리거와 선택적 체인 레이저 시드 함수까지 통합했습니다.
 입문·알고리즘 문제의 JSON 카탈로그는 문제 데이터의 원본이므로 유지합니다. 체인 레이저 SQL은 별도 파일로 복제하지 않습니다.
 
-- Flyway는 새 PostgreSQL DB에 V1~V3를 순서대로 적용하며, 기존 DB에서는 누락된 다음 버전부터 진행합니다.
+- Flyway는 새 PostgreSQL DB에 V1~V10을 순서대로 적용하며, 기존 DB에서는 누락된 다음 버전부터 진행합니다. 약관 시행일은 해당 판본으로 운영 웹이 처음 정상 기동한 날의 한국 날짜로 기록됩니다.
   SQL에는 비밀번호·CREATE DATABASE·실사용자 데이터가 없습니다.
 - SQL 적용만으로 문제를 무조건 공개하지 않습니다. Java의 기존 `curriculum.level0.enabled`/`demo.seed` 설정이 시드 함수를 선택적으로 호출합니다.
 - PostgreSQL은 identity PK, JSONB, BOOLEAN, UTC `TIMESTAMP(6)`와 `ON CONFLICT`/`RETURNING`을 사용합니다.
@@ -449,11 +461,13 @@ Spring의 `neon` 프로필은 `DATABASE_URL`을 앱 연결에 사용하고, Flyw
 
 V2까지 적용한 DB는 소유자 계정으로 [랭크 점수 업그레이드 SQL](deploy/postgres/upgrade-v3-rank-points.sql) 전체를 실행하세요. 기존 일반 해결 기록에 현재 문제 난이도의 배점을 부여하고 Flyway V3 이력을 함께 기록합니다. 이후의 적립 점수는 첫 해결 시점의 배점을 보존합니다. Flyway가 V3까지 자동 적용한 DB는 이미 업그레이드된 상태입니다.
 
+웹 시작 로그에 `function "cobweb_rank_tiers" already exists`가 나오고 Flyway 이력이 V2에서 끝나면 [V3 이력 복구 SQL](deploy/postgres/reconcile-v3-rank-points.sql)을 사용하세요. PostgreSQL 18에서 기존 스키마, 채점 권한, 적립 점수와 등급이 정식 V3와 일치할 때만 누락된 이력 한 행을 추가합니다.
+
 ### Neon SQL Editor에서 초기화
 
 새 DB를 한 번에 준비하려면 [neon-bootstrap.sql](deploy/postgres/neon-bootstrap.sql)을 사용합니다.
 Neon SQL Editor에서 운영 브랜치, Cobweb용 DB, DB 소유자 역할을 선택하고 파일 전체를 한 번 실행합니다.
-스키마, 기본 그룹, Flyway 이력 3개, 채점용 권한을 한 트랜잭션으로 설정합니다.
+스키마, 기본 그룹, Flyway 이력 10개, 채점용 권한을 한 트랜잭션으로 설정합니다.
 기존 Cobweb 테이블이나 동명의 채점 역할이 있으면 실행을 중단합니다.
 웹이 첫 기동 시 Flyway 이력을 확인하고 기본 과정 450문제와 체인 레이저를 등록합니다.
 
@@ -480,38 +494,16 @@ GRANT cobweb_judge_runtime TO cobweb_judge_login;
 | `cobweb-web` | 웹용 `DATABASE_URL`(풀링), 스키마 소유자의 `DATABASE_URL_UNPOOLED`(직접), `JWT_SECRET` | Google OAuth `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, 이메일 인증 `MAIL_USERNAME`, `MAIL_PASSWORD`, Naver/GitHub OAuth, OpenAI |
 | `cobweb-judge` | 채점 전용 로그인의 `DATABASE_URL`(풀링), 웹과 별개인 32바이트 이상의 `JWT_SECRET` | |
 
-저장소 루트에서 Node 24, JDK 21, Docker를 사용합니다. 채점 언어 이미지를 미리 빌드하고,
-Cloudflare용 채점 이미지 빌드가 아카이브를 최대 192 MiB 레이어로 나눕니다. 채점기는 시작할 때
-조각을 순서대로 읽어 Docker에 로딩합니다.
+기존 Neon DB와 두 Worker의 Secret이 구성된 운영 환경은 저장소 루트에서 다음 한 명령으로 업데이트합니다. Node 24, JDK 21, 실행 중인 Docker 및 해당 Cloudflare 계정의 Wrangler 로그인이 필요합니다.
 
 ```bash
-npm ci
-./gradlew bootJar
-docker build --platform linux/amd64 -t cobweb-languages:cloudflare-amd64 ./judge
-mkdir -p build/cloudflare/judge
-(
-  set -o pipefail
-  docker image save cobweb-languages:cloudflare-amd64 | gzip -1 > build/cloudflare/judge/cobweb-languages-amd64.tar.gz.part &&
-  mv build/cloudflare/judge/cobweb-languages-amd64.tar.gz.part build/cloudflare/judge/cobweb-languages-amd64.tar.gz
-)
+./deploy/cloudflare/release.sh
 ```
 
-로컬에서 먼저 두 Worker와 이미지를 검증합니다.
+이 명령은 JAR과 AMD64 채점 이미지 준비 후 웹을 배포합니다. 새 웹 컨테이너가 시작될 때 Flyway가 Neon 직접 연결로 보류 중인 마이그레이션을 적용합니다. `https://cobweb.kr/api/ready`에서 이번 배포의 버전 태그와 준비 완료를 확인한 뒤 같은 JAR의 채점기를 배포합니다. 실패한 단계에서 중단되며, 원인을 해결한 다음 같은 명령을 다시 실행할 수 있습니다.
 
-```bash
-npx wrangler deploy --dry-run --config deploy/cloudflare/wrangler.web.jsonc
-npx wrangler deploy --dry-run --config deploy/cloudflare/wrangler.judge.jsonc
-```
+`./deploy/cloudflare/release.sh --dry-run`은 DB와 운영 Worker에 쓰지 않고 빌드와 Wrangler 패키징을 검사합니다. 최초 배포 또는 Secret 변경이 필요한 경우에는 `COBWEB_WEB_SECRETS_FILE`과 `COBWEB_JUDGE_SECRETS_FILE`에 각 파일 경로를 지정합니다. 기존 운영 DB 업데이트에는 신규 설치용 `neon-bootstrap.sql`을 다시 실행할 필요가 없습니다.
 
-운영 DB 초기화 후, 실제 배포는 웹부터 진행합니다. 아래 Secret 파일 경로는 준비한 파일 경로로 바꿉니다.
-
-```bash
-npx wrangler login
-npx wrangler deploy --config deploy/cloudflare/wrangler.web.jsonc --secrets-file /secure/cobweb-web.env
-npx wrangler deploy --config deploy/cloudflare/wrangler.judge.jsonc --secrets-file /secure/cobweb-judge.env
-```
-
-웹의 `https://cobweb.kr/api/ready` 응답과 문제 목록을 확인한 다음 채점기를 배포합니다.
 채점기는 격리 검사를 통과한 뒤 실행되고 매분 예약 호출로 유지됩니다. 실제 Cloudflare에 올린 뒤
 채점 로그에서 `Nested sandbox checks passed.`를 확인하고 정상 코드로 한 번 채점합니다.
 예약 호출이 유지되는 동안 채점 인스턴스의 메모리·디스크 요금이 계속 발생합니다.

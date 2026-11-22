@@ -63,6 +63,8 @@ test('the dedicated creator checks group permissions and routes to the newly cre
     '제목': '연습 코딩 테스트', '시작 (내 시간대)': start, '종료 (내 시간대)': end,
   })) fireEvent.change(screen.getByLabelText(label), { target: { value } });
   fireEvent.change(screen.getByLabelText(/문제 번호/), { target: { value: '1002, 1001' } });
+  assert.equal(screen.getByLabelText('코드 자동완성 허용').checked,true);
+  fireEvent.click(screen.getByLabelText('코드 자동완성 허용'));
   fireEvent.click(screen.getByLabelText(/다시 보기 허용/));
   fireEvent.click(screen.getByRole('button', { name: '코테 생성' }));
   await screen.findByText('이동 7:19');
@@ -70,7 +72,7 @@ test('the dedicated creator checks group permissions and routes to the newly cre
     path: '/api/groups/7/contests', method: 'POST',
     body: {
       title: '연습 코딩 테스트', startsAt: new Date(start).toISOString(), endsAt: new Date(end).toISOString(),
-      problemNumbers: [1002, 1001], replayAllowed: true, captureProtection: false, windowSwitchProtection: false,
+      problemNumbers: [1002, 1001], replayAllowed: true, captureProtection: true, windowSwitchProtection: false, autocompleteAllowed: false,
     },
   });
 });

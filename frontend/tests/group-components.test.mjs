@@ -72,11 +72,14 @@ function standardContestApi(path, method = 'GET') {
   if (path === '/api/groups/7/contests/3') return contest;
   if (path === '/api/groups/7/contests/3/problems/1002') return problem;
   if (path === '/api/languages') return [{id:'PYTHON',label:'Python',modes:['STDIN','FUNCTION']},{id:'DART',label:'Dart',modes:['STDIN','FUNCTION']}];
+  if (path === '/api/groups/mine') return [];
+  if (path.startsWith('/api/groups/7/contests/3/communications')) return {questions:[],announcements:[],hasMore:false};
+  if (path.startsWith('/api/groups/7/contests/3/scorecard?')) return [];
   if (path === '/api/groups/7/contests/3/me') return {submissions: []};
   if (path === '/api/groups/7/contests/3/results') return [{userId: 2, username: 'bob', solvedCount: 1, timeSumSeconds: 10}];
   if (path.startsWith('/api/groups/7/contests/3/events')) return [];
   if (path === '/api/groups/7/contests/3/submissions' && method === 'POST') return 42;
-  if (path === '/api/submissions/42') return {id: 42, status: 'ACCEPTED', score: 100, cases: []};
+  if (path === '/api/groups/7/contests/3/submissions/42') return {id: 42, status: 'ACCEPTED', score: 100, cases: []};
   if (path === '/api/groups/7/contests/3/submissions?userId=2') return {submissions: [{id: 42, problemNumber: 1002, language: 'DART', status: 'ACCEPTED', score: 100, sourceCode: 'protected-staff-answer'}]};
   throw new Error('Unexpected contest API: ' + path);
 }
@@ -223,7 +226,7 @@ scenario('ended contest form preserves exact timestamps/order while saving optio
   const view = render(React.createElement(ContestForm, {gid:7, current}));
   fireEvent.click(view.getByRole('checkbox', {name: '종료 후 참여자 다시 보기 허용'})); fireEvent.click(view.getByRole('button', {name:'변경 저장'}));
   await waitFor(() => assert.equal(calls.length, 1)); assert.equal(calls[0].path, '/api/groups/7/contests/3'); assert.equal(calls[0].method, 'PUT');
-  assert.deepEqual(calls[0].body, {title:current.title, startsAt:current.startsAt, endsAt:current.endsAt, problemNumbers:[1002,1001], replayAllowed:true, captureProtection:false, windowSwitchProtection:false}); cleanup();
+  assert.deepEqual(calls[0].body, {title:current.title, startsAt:current.startsAt, endsAt:current.endsAt, problemNumbers:[1002,1001], replayAllowed:true, captureProtection:false, windowSwitchProtection:false, autocompleteAllowed:true}); cleanup();
 });
 
 scenario('group contest consumes real snake-case problem and submits through scoped API', async () => {
@@ -259,6 +262,24 @@ scenario('contest submission has a synchronous flight guard against repeated for
   assert.equal(posts, 1);
 });
 
+scenario('the waiting room opens only assigned questions when the server clock reaches the start', async () => {
+  reset(); const {default:Page}=await load('GroupContest'); let fetches=0;
+  const paths=[], base='/api/groups/7/contests/3';
+  globalThis.__groupApi=async (path,method='GET')=>{
+    paths.push(path);
+    if(path===base) return {...contest, startsAt:'2031-04-01T10:00:00Z', endsAt:'2031-04-01T11:00:00Z',
+      ...(fetches++===0 ? {status:'UPCOMING',serverNow:'2031-04-01T09:59:59.500Z'} : {status:'ACTIVE',serverNow:'2031-04-01T10:00:00Z'})};
+    return standardContestApi(path,method);
+  };
+  const view=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
+  await view.findByRole('heading',{name:'코딩 테스트 대기실'});
+  absent(view.queryByRole('button',{name:'1. 그룹 코테 문제'}));
+  assert.ok(!paths.includes(base+'/me'));
+  await view.findByRole('button',{name:'1. 그룹 코테 문제'},{timeout:2500});
+  assert.ok(view.getByText('시험 남은 시간'));
+  assert.ok(paths.includes(base+'/me'));
+  assert.ok(!paths.includes('/api/problems'));
+});
 scenario('late submit failure is discarded after the active time window closes and does not lock a reopened window', async () => {
   reset(); const {default: Page} = await load('GroupContest'); let current = {...contest}, rejectPost, posts = 0;
   globalThis.__groupApi = async (path, method = 'GET') => {
@@ -276,10 +297,11 @@ scenario('late submit failure is discarded after the active time window closes a
   await waitFor(() => assert.equal(typeof rejectPost, 'function'));
   current = {...contest, endsAt:new Date(Date.now() - 1000).toISOString()};
   fireEvent.click(view.getByRole('button', {name:'새로고침'}));
-  await waitFor(() => assert.equal(view.getByRole('combobox', {name:'제출 언어'}).disabled, true));
+  await view.findByText('시험이 끝났습니다. 다시 보기 권한을 확인하고 있습니다.');
+  absent(view.queryByRole('textbox', {name:'풀이 코드'}));
   await act(async () => {rejectPost(new Error('late-window-submit-failure')); await tick();});
   assert.doesNotMatch(view.container.textContent, /late-window-submit-failure/);
-  fireEvent.submit(view.getByRole('button', {name:'시험 답안 제출'}).closest('form')); assert.equal(posts, 1);
+  fireEvent.submit(view.container.querySelector('.gc-question form')); assert.equal(posts, 1);
   current = {...contest};fireEvent.click(view.getByRole('button', {name:'새로고침'}));
   await waitFor(() => assert.equal(view.getByRole('button', {name:'시험 답안 제출'}).disabled, false));
   assert.equal(editorValue(view.getByRole('textbox', {name:'풀이 코드'})), 'preserved-time-window-draft');
@@ -547,4 +569,66 @@ scenario('contest list preserves available groups on partial failure and retries
   await view.findByRole('link',{name:/복구된 시험/});
   absent(view.queryByRole('alert'));
   assert.deepEqual(calls,['/api/groups/mine','/api/groups/7/contests','/api/groups/8/contests','/api/groups/8/contests']);
+});
+
+scenario('contest question keeps editor mounted and pins only the staff announcement',async()=>{
+  reset();const {default:Page}=await load('GroupContest');
+  const posted=[];
+  globalThis.__groupApi=async(path,method='GET',body)=>{
+    if(path.endsWith('/communications'))return {announcements:[{id:1,body:'행 번호는 0부터입니다.',createdAt:contest.startsAt}],questions:[],hasMore:false};
+    if(path.endsWith('/questions')){posted.push(body);return 3;}
+    return standardContestApi(path,method);
+  };
+  const v=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
+  assert.ok(await v.findByText('행 번호는 0부터입니다.'));
+  fireEvent.click(v.getByRole('button',{name:'1. 그룹 코테 문제'}));
+  const editor=await v.findByRole('textbox',{name:'풀이 코드'});
+  setEditorValue(editor,'print(123)');
+  fireEvent.click(v.getByText('시험 질문과 공지 관리'));
+  fireEvent.change(v.getByLabelText('문제 #1002 비공개 질문'),{target:{value:'예제 질문'}});
+  fireEvent.click(v.getByRole('button',{name:'질문 보내기'}));
+  await waitFor(()=>assert.deepEqual(posted,[{body:'예제 질문',problemNumber:1002}]));
+  assert.equal(editorValue(editor),'print(123)');
+});
+
+scenario('contest copy posts a fresh schedule and stable retry key without sending participant records',async()=>{
+  reset();const {default:Page}=await load('GroupContest');
+  const copies=[];
+  globalThis.__groupApi=async(path,method='GET',body)=>{
+    if(path.endsWith('/copies')){copies.push(body);throw new Error('잠시 후 다시 시도');}
+    if(path==='/api/groups/mine')return [{id:20,groupName:'다른 반',permissions:allFlags}];
+    return standardContestApi(path,method);
+  };
+  const v=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
+  fireEvent.click(await v.findByRole('button',{name:'시험 운영'}));
+  fireEvent.click(v.getByText('대회 복제'));
+  await v.findByRole('option',{name:'다른 반'});
+  fireEvent.change(v.getByLabelText('대상 그룹'),{target:{value:'20'}});
+  fireEvent.change(v.getByLabelText('새 시작 시각'),{target:{value:'2030-05-01T10:00'}});
+  fireEvent.change(v.getByLabelText('새 종료 시각'),{target:{value:'2030-05-01T11:00'}});
+  fireEvent.click(v.getByRole('button',{name:'새 일정으로 복제'}));
+  await v.findByText('잠시 후 다시 시도');
+  fireEvent.click(v.getByRole('button',{name:'새 일정으로 복제'}));
+  await waitFor(()=>assert.equal(copies.length,2));
+  assert.deepEqual(copies[0],copies[1]);assert.equal(copies[0].targetGroupId,20);
+  assert.deepEqual(Object.keys(copies[0]).sort(),['endsAt','requestId','startsAt','targetGroupId']);
+});
+
+scenario('authorized staff opens the per-problem scorecard and downloads CSV with quoted plain-text cells',async()=>{
+  reset();const {default:Page}=await load('GroupContest');
+  const cell={userId:2,username:'bob',problemNumber:1002,problemTitle:' =SUM(1,1)',attempts:3,verdict:'ACCEPTED',firstAcceptedAt:'2026-01-01T11:00:00Z'};
+  let exported,clicked;
+  const original=URL.createObjectURL,click=dom.window.HTMLAnchorElement.prototype.click;
+  URL.createObjectURL=blob=>{exported=blob;return 'blob:scorecard';};
+  dom.window.HTMLAnchorElement.prototype.click=function(){clicked=this.download;};
+  try{
+    globalThis.__groupApi=async(path,method='GET')=>path.includes('/scorecard?')?[cell]:standardContestApi(path,method);
+    const v=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
+    fireEvent.click(await v.findByRole('button',{name:'시험 운영'}));
+    fireEvent.click(await v.findByRole('button',{name:'제출 보기'}));
+    assert.ok(await v.findByText('#1002 =SUM(1,1)'));
+    fireEvent.click(v.getByRole('button',{name:'문제별 성적표 CSV'}));
+    await waitFor(()=>assert.equal(clicked,'contest-3-scorecard.csv'));
+    assert.match(await exported.text(),/"' =SUM\(1,1\)"/);
+  }finally{URL.createObjectURL=original;dom.window.HTMLAnchorElement.prototype.click=click;}
 });

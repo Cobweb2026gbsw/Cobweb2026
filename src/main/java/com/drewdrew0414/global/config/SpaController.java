@@ -10,20 +10,22 @@ import org.springframework.web.bind.annotation.GetMapping;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class SpaController {
     public static final String[] PUBLIC_ROUTES = {
-        "/", "/app.html", "/login", "/signup", "/password-reset", "/oauth/callback",
+        "/", "/app.html", "/login", "/signup", "/signup/social", "/terms", "/password-reset", "/oauth/callback",
         "/problems", "/problems/new", "/problems/mine", "/problems/{id:[0-9]+}", "/problems/{id:[0-9]+}/edit",
         "/steps", "/ranking", "/users", "/users/{username}", "/me", "/me/edit", "/dashboard", "/dashboard/learning-report",
-        "/submissions", "/submissions/{id:[0-9]+}", "/create", "/admin", "/admin/review",
+        "/submissions", "/submissions/{id:[0-9]+}", "/create", "/issues", "/issues/manage", "/admin", "/admin/review",
+        "/admin/judging", "/admin/issues", "/admin/releases", "/admin/restrictions", "/admin/report-usage",
         "/admin/community", "/admin/community/{id:[0-9]+}", "/forum", "/forum/new",
         "/forum/{id:[0-9]+}", "/forum/{id:[0-9]+}/edit", "/community", "/notices",
         "/groups", "/groups/{gid:[0-9]+}", "/groups/{gid:[0-9]+}/mkct", "/groups/{gid:[0-9]+}/problems/{id:[0-9]+}",
         "/groups/{gid:[0-9]+}/contests/{cid:[0-9]+}", "/contests", "/contests/{id:[0-9]+}"
     };
 
-    @GetMapping({"/", "/app.html", "/login", "/signup", "/password-reset", "/oauth/callback",
+    @GetMapping({"/", "/app.html", "/login", "/signup", "/signup/social", "/terms", "/password-reset", "/oauth/callback",
         "/problems", "/problems/new", "/problems/mine", "/problems/{id:[0-9]+}", "/problems/{id:[0-9]+}/edit",
         "/steps", "/ranking", "/users", "/users/{username}", "/me", "/me/edit", "/dashboard", "/dashboard/learning-report",
-        "/submissions", "/submissions/{id:[0-9]+}", "/create", "/admin", "/admin/review",
+        "/submissions", "/submissions/{id:[0-9]+}", "/create", "/issues", "/issues/manage", "/admin", "/admin/review",
+        "/admin/judging", "/admin/issues", "/admin/releases", "/admin/restrictions", "/admin/report-usage",
         "/admin/community", "/admin/community/{id:[0-9]+}", "/forum", "/forum/new",
         "/forum/{id:[0-9]+}", "/forum/{id:[0-9]+}/edit", "/community", "/notices",
         "/groups", "/groups/{gid:[0-9]+}", "/groups/{gid:[0-9]+}/mkct", "/groups/{gid:[0-9]+}/problems/{id:[0-9]+}",

@@ -1,5 +1,5 @@
 import {lazy, Suspense} from 'react';
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -7,6 +7,8 @@ import RenderErrorBoundary from './components/RenderErrorBoundary';
 import Main from './pages/Main';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import SocialSignup from './pages/SocialSignup';
+import Terms from './pages/Terms';
 import PasswordReset from './pages/PasswordReset';
 import OAuthCallBack from './pages/OAuthCallBack';
 import ProblemList from './pages/ProblemList';
@@ -29,10 +31,27 @@ import GroupContestCreate from './pages/GroupContestCreate';
 import Contests from './pages/Contests';
 import ContestDetail from './pages/ContestDetail';
 import './pages/common.css';
+import './pages/AdminOperations.css';
 
 const ProblemDetail=lazy(()=>import('./pages/ProblemDetail'));
 const ProblemEditor=lazy(()=>import('./pages/ProblemEditor'));
 const GroupContest=lazy(()=>import('./pages/GroupContest'));
+const AdminOperations=lazy(()=>import('./pages/AdminOperations'));
+const AdminReportUsage=lazy(()=>import('./pages/AdminReportUsage'));
+const AdminJudging=lazy(()=>import('./pages/AdminJudging'));
+const AdminModeration=lazy(()=>import('./pages/AdminModeration'));
+const MyIssues=lazy(()=>import('./pages/MyIssues'));
+
+const adminLinks = [
+  ['/admin','채점 현황'], ['/admin/review','문제 검수'], ['/admin/judging','정답 검증·재채점'],
+  ['/admin/issues','이의제기'], ['/admin/releases','예약 공개'], ['/admin/community','커뮤니티'],
+  ['/admin/restrictions','회원 이용 제한'], ['/admin/report-usage','AI 리포트 사용량'],
+];
+function AdminLayout({dark}) {
+  return <><nav className={'cw-page ops-navigation ' + (dark?'dark':'light')} aria-label="운영 메뉴">
+    <div className="cw-wrap">{adminLinks.map(([to,label]) =>
+      <NavLink to={to} end={to==='/admin'} key={to}>{label}</NavLink>)}</div></nav><Outlet/></>;
+}
 
 // 메인을 제외한 화면은 인증 페이지까지 공통 푸터를 한 번만 렌더링합니다.
 // 푸터를 fixed로 띄우지 않으므로 긴 문제·편집기·모달의 본문을 덮지 않습니다.
@@ -64,9 +83,11 @@ export default function AppRoutes({dark,setDark}){
   return <Routes>
     <Route element={<AppShell dark={dark}/>}>
     <Route path="/login" element={<Login {...theme}/>}/><Route path="/signup" element={<Signup {...theme}/>}/>
+    <Route path="/signup/social" element={<SocialSignup {...theme}/>}/>
     <Route path="/password-reset" element={<PasswordReset {...theme}/>}/><Route path="/oauth/callback" element={<OAuthCallBack {...theme}/>}/>
     <Route element={<WithHeader {...theme}/>}>
       <Route path="/" element={<Main dark={dark}/>}/>
+      <Route path="/terms" element={<Terms dark={dark}/>}/>
       <Route path="/app.html" element={<Navigate to="/" replace/>}/>
       <Route path="/problems" element={<ProblemList dark={dark}/>}/>
       <Route path="/problems/:id" element={<ProblemDetail dark={dark}/>}/>
@@ -80,8 +101,9 @@ export default function AppRoutes({dark,setDark}){
       <Route path="/forum/:id" element={<ForumPost dark={dark}/>}/>
       <Route path="/groups" element={<Groups dark={dark}/>}/>
       <Route path="/create" element={<Navigate to="/problems/new" replace/>}/>
-      <Route path="/admin" element={<Navigate to="/admin/review" replace/>}/>
       <Route element={<RequireAuth/>}>
+        <Route path="/issues" element={<MyIssues dark={dark}/>}/>
+        <Route path="/issues/manage" element={<AdminModeration dark={dark} mode="issues"/>}/>
         <Route path="/problems/mine" element={<ProblemList dark={dark} mine/>}/>
         <Route path="/problems/new" element={<ProblemEditor dark={dark} mode="new"/>}/>
         <Route path="/problems/:id/edit" element={<ProblemEditor dark={dark} mode="edit"/>}/>
@@ -101,9 +123,17 @@ export default function AppRoutes({dark,setDark}){
         <Route path="/contests/:id" element={<ContestDetail dark={dark}/>}/>
       </Route>
       <Route element={<RequireAuth manage/>}>
+        <Route element={<AdminLayout dark={dark}/>}>
+        <Route path="/admin" element={<AdminOperations dark={dark}/>}/>
+        <Route path="/admin/report-usage" element={<AdminReportUsage dark={dark}/>}/>
+        <Route path="/admin/judging" element={<AdminJudging dark={dark}/>}/>
+        <Route path="/admin/issues" element={<AdminModeration dark={dark} mode="issues"/>}/>
+        <Route path="/admin/releases" element={<AdminModeration dark={dark} mode="releases"/>}/>
+        <Route path="/admin/restrictions" element={<AdminModeration dark={dark} mode="restrictions"/>}/>
         <Route path="/admin/review" element={<ProblemReview dark={dark} isAdmin/>}/>
         <Route path="/admin/community" element={<ForumList dark={dark} admin/>}/>
         <Route path="/admin/community/:id" element={<ForumPost dark={dark} admin/>}/>
+        </Route>
       </Route>
       <Route path="*" element={<ComingSoon dark={dark} title="페이지를 찾을 수 없어요" desc="주소를 다시 확인해 주세요."/>}/>
     </Route>

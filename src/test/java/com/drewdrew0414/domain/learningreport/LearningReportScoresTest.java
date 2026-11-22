@@ -62,6 +62,20 @@ class LearningReportScoresTest {
         assertThat(facts.ordinaryErrorCounts()).containsEntry("WRONG_ANSWER", 1L);
     }
 
+    @Test
+    void advancedCatalogTopicsAreRecognizedAndMissingAttemptsDoNotProduceAnErrorTip() {
+        var facts = LearningReportScores.evaluate(List.of(
+                new LearningReportScores.ProblemEvidence("ABSOLUTE", 1,
+                        List.of("다항식과 합성곱", "Lv.6-3", "사용자 작성 태그"), null),
+                new LearningReportScores.ProblemEvidence("ABSOLUTE", 1, List.of("고급 문자열 자료구조"), null)
+        ), 14);
+        assertThat(facts.radar().firstPassAccuracy()).isNull();
+        assertThat(facts.radar().difficultyChallenge()).isEqualTo(100);
+        assertThat(facts.radar().practiceConsistency()).isEqualTo(100);
+        assertThat(facts.topicCounts()).containsOnlyKeys("수학", "문자열", "자료구조");
+        assertThat(LearningReportScores.evidence(facts)).isEqualTo(new LearningReportService.Evidence(0, 0, null, 0));
+    }
+
     private static LearningReportScores.ProblemEvidence problem(List<String> tags,
                                                                 LearningReportScores.AttemptEvidence attempt) {
         return new LearningReportScores.ProblemEvidence("INITIATE", 3, tags, attempt);

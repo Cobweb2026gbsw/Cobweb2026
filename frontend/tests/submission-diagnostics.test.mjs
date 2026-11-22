@@ -92,7 +92,7 @@ test('contest submission shows the authorized runtime cause without persisting i
     if(path==='/api/languages')return [{id:'PYTHON',label:'Python',modes:['STDIN']}];
     if(path.endsWith('/me'))return {submissions:[]};
     if(path.endsWith('/submissions')&&method==='POST')return 42;
-    if(path==='/api/submissions/42')return submission('RUNTIME_ERROR');
+    if(path==='/api/groups/7/contests/3/submissions/42')return submission('RUNTIME_ERROR');
     throw new Error('unexpected diagnostic test request '+path);
   };
   const view=render(route(Contest,'/groups/7/contests/3','/groups/:gid/contests/:cid'));

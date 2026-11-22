@@ -206,7 +206,7 @@ function deferred() { let resolve;const promise=new Promise(done=>{resolve=done;
     assert.equal(submitted.length,1,status+' short contest must issue its PUT');
     assert.deepEqual(submitted[0],{endpoint:'/api/groups/7/contests/4',method:'PUT',body:{
       title:shortContest.title,startsAt:shortContest.startsAt,endsAt:shortContest.endsAt,problemNumbers:[202,101],
-      replayAllowed:status==='ACTIVE',captureProtection:status==='ENDED',windowSwitchProtection:status==='ACTIVE'
+      replayAllowed:status==='ACTIVE',captureProtection:status==='ENDED',windowSwitchProtection:status==='ACTIVE',autocompleteAllowed:true
     }},status+' option-only edits must preserve exact immutable values and problem order');
     section.hidden=false;
   }

@@ -91,8 +91,12 @@ public class LearningReportService {
     public record Generation(String generationState) {}
 
     public record Report(int schemaVersion, int reportNumber, List<Integer> problemIds, LearningReportScores.Radar radar,
-                         Integer problemSolvingScore, String userSummary, String createdAt) {}
+                         Integer problemSolvingScore, String userSummary, String createdAt, Evidence evidence) {}
+
+    public record Evidence(int firstPassCount, int observedSubmissionCount, String mostFrequentError, long errorCount) {}
+
+    public record Recommendation(int problemNumber, String title, String rankType, int rankInt, String sharedTopic) {}
 
     public record Dashboard(List<ActivityDay> activity, int remainingToNextReport, int availableBatches,
-                            String generationState, List<Report> reports) {}
+                            String generationState, List<Report> reports, List<Recommendation> recommendations) {}
 }

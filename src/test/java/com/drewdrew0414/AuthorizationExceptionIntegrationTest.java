@@ -82,7 +82,7 @@ class AuthorizationExceptionIntegrationTest {
         problems.requestReview(number,author);
         problems.review(number,new ProblemRequests.Review("PUBLISHED","권한 검증"),author);
         long cid=contests.create(gid,new ContestRequests.Write("Access contest "+unique(),
-            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(number),false,false,false),author);
+            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(number),false,false,false, true),author);
         db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minute'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
         String groupPath="/api/groups/"+gid;
         String examPath=groupPath+"/contests/"+cid;

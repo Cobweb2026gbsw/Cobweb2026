@@ -26,7 +26,7 @@ import static com.drewdrew0414.domain.learningreport.LearningReportScores.PRACTI
 public class LearningReportRepository {
     static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int DAILY_ACCOUNT_LIMIT = 5;
-    private static final int DAILY_TOTAL_LIMIT = 100;
+    static final int DAILY_TOTAL_LIMIT = 100;
 
     private static final String KOREAN_SOLVED_DATE =
             "CAST((s.solved_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul' AS date)";
@@ -90,10 +90,12 @@ public class LearningReportRepository {
         int unassigned = countUnassigned(userId);
         OpenReport pending = openReport(userId, false);
         int availableBatches = unassigned / BATCH_SIZE + (pending == null ? 0 : 1);
-        String state = state(pending, gatewayAvailable, availableBatches == 0 || hasBudget(userId, today));
+        String state = state(pending, gatewayAvailable, generationPaused(false), availableBatches == 0 || hasBudget(userId, today));
+        var reports = storedReports(userId);
         return new LearningReportService.Dashboard(
                 dailyActivity(userId, today), BATCH_SIZE - (unassigned % BATCH_SIZE),
-                availableBatches, state, storedReports(userId));
+                availableBatches, state, reports,
+                reports.isEmpty() ? List.of() : recommendations(userId, reports.getFirst().reportNumber()));
     }
 
     @Transactional
@@ -103,7 +105,8 @@ public class LearningReportRepository {
         if (account.isEmpty()) return Decision.only("unavailable");
 
         OpenReport pending = openReport(userId, true);
-        String state = state(pending, true, true);
+        // 운영자가 중지 상태를 확정하면 이후 어느 웹 인스턴스에서도 새 예약이 시작되지 않습니다.
+        String state = state(pending, true, generationPaused(true), true);
         if (!"idle".equals(state)) return Decision.only(state);
         if (pending == null && countUnassigned(userId) < BATCH_SIZE) return Decision.only("idle");
         if (!hasBudget(userId, today)) return Decision.only("retry_later");
@@ -114,7 +117,12 @@ public class LearningReportRepository {
         if (!reserveBudget(userId, today)) return Decision.only("retry_later");
 
         UUID token = UUID.randomUUID();
+        db.update("""
+                INSERT INTO learning_report_attempts(claim_token, usage_date, expires_at, outcome)
+                VALUES (?, ?, clock_timestamp() + INTERVAL '2 minutes', 'RUNNING')
+                """, token, today);
         if (next == null) {
+            if (pending.token() != null) finishAttempt(pending.token(), "FAILED");
             db.update("""
                     UPDATE learning_reports
                     SET status = 'RUNNING', claim_token = ?, claim_until = clock_timestamp() + INTERVAL '2 minutes',
@@ -128,9 +136,9 @@ public class LearningReportRepository {
                 SELECT COALESCE(MAX(report_number), 0) + 1 FROM learning_reports WHERE user_id = ?
                 """, Integer.class, userId));
         String facts = json.writeValueAsString(next.facts());
-        var draft = new LearningReportService.Report(1, reportNumber,
+        var draft = new LearningReportService.Report(2, reportNumber,
                 next.problems().stream().map(SolvedProblem::number).toList(), next.facts().radar(),
-                next.facts().problemSolvingScore(), null, null);
+                next.facts().problemSolvingScore(), null, null, LearningReportScores.evidence(next.facts()));
         db.update("""
                 INSERT INTO learning_reports (user_id, report_number, status, report_json, facts_json, claim_token, claim_until)
                 VALUES (?, ?, 'RUNNING', CAST(? AS jsonb), CAST(? AS jsonb), ?, clock_timestamp() + INTERVAL '2 minutes')
@@ -143,8 +151,9 @@ public class LearningReportRepository {
         return Decision.running(new Claim(userId, reportNumber, token, facts, previousSummary(userId)));
     }
 
+    @Transactional
     public void commit(Claim claim, String userSummary, String carryForwardSummary, String createdAt) {
-        db.update("""
+        int updated = db.update("""
                 UPDATE learning_reports
                 SET status = 'READY', report_json = report_json || jsonb_build_object(
                         'userSummary', CAST(? AS text), 'createdAt', CAST(? AS text)),
@@ -152,15 +161,59 @@ public class LearningReportRepository {
                     claim_token = NULL, claim_until = NULL
                 WHERE user_id = ? AND report_number = ? AND claim_token = ? AND status = 'RUNNING'
                 """, userSummary, createdAt, carryForwardSummary, claim.userId(), claim.number(), claim.token());
+        if (updated == 1) finishAttempt(claim.token(), "SUCCEEDED");
     }
 
+    @Transactional
     public void fail(Claim claim) {
-        db.update("""
+        int updated = db.update("""
                 UPDATE learning_reports
                 SET status = 'RETRY', retry_after = clock_timestamp() + INTERVAL '15 minutes',
                     claim_token = NULL, claim_until = NULL
                 WHERE user_id = ? AND report_number = ? AND claim_token = ? AND status = 'RUNNING'
                 """, claim.userId(), claim.number(), claim.token());
+        if (updated == 1) finishAttempt(claim.token(), "FAILED");
+    }
+
+    private void finishAttempt(UUID token, String outcome) {
+        db.update("UPDATE learning_report_attempts SET outcome = ? WHERE claim_token = ? AND outcome = 'RUNNING'", outcome, token);
+    }
+
+    private boolean generationPaused(boolean reserve) {
+        String sql = "SELECT paused FROM learning_report_controls WHERE singleton";
+        return Boolean.TRUE.equals(db.queryForObject(reserve ? sql + " FOR SHARE" : sql, Boolean.class));
+    }
+
+    public record Usage(LocalDate day, boolean paused, int limit, int attempts, int succeeded,
+                        int failed, int running, int expired, int untracked, int remaining) {}
+
+    public Usage usage(LocalDate day) {
+        return db.queryForObject("""
+                SELECT c.paused, COALESCE(b.attempts, 0) AS attempts, logged.*
+                FROM learning_report_controls c
+                LEFT JOIN learning_report_daily_budget b ON b.usage_date = ?
+                CROSS JOIN (
+                    SELECT COUNT(*) AS tracked,
+                           COUNT(*) FILTER (WHERE outcome = 'SUCCEEDED') AS succeeded,
+                           COUNT(*) FILTER (WHERE outcome = 'FAILED') AS failed,
+                           COUNT(*) FILTER (WHERE outcome = 'RUNNING' AND expires_at > CURRENT_TIMESTAMP) AS running,
+                           COUNT(*) FILTER (WHERE outcome = 'RUNNING' AND expires_at <= CURRENT_TIMESTAMP) AS expired
+                    FROM learning_report_attempts WHERE usage_date = ?
+                ) logged
+                WHERE c.singleton
+                """, (rs, row) -> {
+            int attempts = rs.getInt("attempts");
+            return new Usage(day, rs.getBoolean("paused"), DAILY_TOTAL_LIMIT, attempts, rs.getInt("succeeded"),
+                    rs.getInt("failed"), rs.getInt("running"), rs.getInt("expired"),
+                    Math.max(0, attempts - rs.getInt("tracked")), Math.max(0, DAILY_TOTAL_LIMIT - attempts));
+        }, day, day);
+    }
+
+    public void setPaused(boolean paused, long operatorId) {
+        db.update("""
+                UPDATE learning_report_controls SET paused = ?, changed_at = clock_timestamp(), changed_by = ?
+                WHERE singleton AND paused IS DISTINCT FROM ?
+                """, paused, operatorId, paused);
     }
 
     private int countUnassigned(long userId) {
@@ -183,6 +236,35 @@ public class LearningReportRepository {
                 """, (rs, row) -> json.readValue(rs.getString("data"), LearningReportService.Report.class), userId);
     }
 
+    // 현재 공개 상태와 해결 여부가 바뀌면 다음 조회에 반영합니다. 회차 번호나 문제 제목은 모델로 보내지 않습니다.
+    private List<LearningReportService.Recommendation> recommendations(long userId, int reportNumber) {
+        return db.query("""
+                WITH topics AS (
+                    SELECT pt.tag_id, COUNT(*) AS frequency, AVG(p.reward_points) AS avg_points
+                    FROM learning_report_problems batch
+                    JOIN problems p ON p.id = batch.problem_id
+                    JOIN problem_tags pt ON pt.problem_id = p.id
+                    JOIN tags t ON t.id = pt.tag_id
+                    WHERE batch.user_id = ? AND batch.report_number = ?
+                      AND p.status = 'PUBLISHED' AND p.visibility = 'PUBLIC' AND p.group_id IS NULL
+                      AND t.name NOT LIKE 'Lv.%'
+                    GROUP BY pt.tag_id
+                ), matches AS (
+                    SELECT DISTINCT ON (p.id) p.problem_number, p.problem_title, p.rank_type, p.rank_int,
+                           t.name AS shared_topic, topics.frequency, ABS(p.reward_points - topics.avg_points) AS distance
+                    FROM topics JOIN tags t ON t.id = topics.tag_id
+                    JOIN problem_tags pt ON pt.tag_id = topics.tag_id
+                    JOIN problems p ON p.id = pt.problem_id
+                    WHERE p.status = 'PUBLISHED' AND p.visibility = 'PUBLIC' AND p.group_id IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM user_solved_problems s WHERE s.user_id = ? AND s.problem_id = p.id)
+                    ORDER BY p.id, frequency DESC, distance, t.id
+                )
+                SELECT * FROM matches ORDER BY frequency DESC, distance, problem_number LIMIT 3
+                """, (rs, row) -> new LearningReportService.Recommendation(rs.getInt("problem_number"),
+                rs.getString("problem_title"), rs.getString("rank_type"), rs.getInt("rank_int"), rs.getString("shared_topic")),
+                userId, reportNumber, userId);
+    }
+
     boolean generationRunning(long userId) {
         OpenReport pending = openReport(userId, false);
         return pending != null && "RUNNING".equals(pending.status()) && pending.leaseActive();
@@ -190,18 +272,20 @@ public class LearningReportRepository {
 
     private OpenReport openReport(long userId, boolean forUpdate) {
         return db.query("""
-                SELECT report_number, status, facts_json::text AS facts,
+                SELECT report_number, status, facts_json::text AS facts, claim_token,
                        claim_until > clock_timestamp() AS lease_active,
                        retry_after > clock_timestamp() AS cooling_down
                 FROM learning_reports WHERE user_id = ? AND status IN ('RUNNING', 'RETRY')
                 """ + (forUpdate ? " FOR UPDATE" : ""),
                 (rs, row) -> new OpenReport(rs.getInt("report_number"), rs.getString("status"),
-                        rs.getBoolean("lease_active"), rs.getBoolean("cooling_down"), rs.getString("facts")), userId)
+                        rs.getBoolean("lease_active"), rs.getBoolean("cooling_down"), rs.getString("facts"),
+                        rs.getObject("claim_token", UUID.class)), userId)
                 .stream().findFirst().orElse(null);
     }
 
-    private static String state(OpenReport pending, boolean gatewayAvailable, boolean hasBudget) {
+    private static String state(OpenReport pending, boolean gatewayAvailable, boolean paused, boolean hasBudget) {
         if (pending != null && "RUNNING".equals(pending.status()) && pending.leaseActive()) return "running";
+        if (paused) return "paused";
         if (!gatewayAvailable) return "unavailable";
         if ((pending != null && pending.coolingDown()) || !hasBudget) return "retry_later";
         return "idle";
@@ -288,7 +372,7 @@ public class LearningReportRepository {
         static Decision running(Claim claim) { return new Decision("running", claim); }
     }
 
-    private record OpenReport(int number, String status, boolean leaseActive, boolean coolingDown, String facts) {}
+    private record OpenReport(int number, String status, boolean leaseActive, boolean coolingDown, String facts, UUID token) {}
     private record SolvedProblem(long id, int number, LocalDateTime solvedAt, String rankType, int rankLevel,
                                  List<String> tags) {}
     private record NewReport(List<SolvedProblem> problems, LearningReportScores.Facts facts) {}

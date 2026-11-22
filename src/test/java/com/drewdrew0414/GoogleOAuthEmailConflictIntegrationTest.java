@@ -1,6 +1,9 @@
 package com.drewdrew0414;
 
 import com.drewdrew0414.domain.user.entity.Provider;
+import com.drewdrew0414.domain.user.service.ServiceTerms;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import com.drewdrew0414.domain.user.oauth.GoogleOAuthClient;
 import com.drewdrew0414.domain.user.oauth.OAuthUserInfo;
 import com.drewdrew0414.domain.user.repository.UserRepository;
@@ -55,16 +58,21 @@ class GoogleOAuthEmailConflictIntegrationTest {
         // Uniqueness remains authoritative if another request inserts after this request's precheck.
         doReturn(false).when(users).existsByEmail(email);
 
-        assertLoginRedirectWithoutSession(callback());
+        assertLoginRedirectWithoutSession(callback(consentedState()));
         assertLocalAccountPreserved();
     }
 
     @Test void aNewGoogleIdentityIsCreatedAndCanLogInAgain() throws Exception {
         stubGoogle(email);
-        var signup = callback();
+        var beforeConsent = callback();
+        assertEquals("/signup/social?provider=google", location(beforeConsent));
+        assertTrue(beforeConsent.headers().allValues("Set-Cookie").stream().noneMatch(cookie -> cookie.startsWith("refreshToken=")));
+        assertEquals(0, db.queryForObject("SELECT count(*) FROM users WHERE email = ?", Integer.class, email));
+        assertEquals(400, signupStart("obsolete").statusCode());
+        var signup = callback(consentedState());
         assertEquals(302, signup.statusCode());
         assertTrue(location(signup).startsWith("/oauth/callback#accessToken="));
-        assertEquals(1, db.queryForObject("SELECT count(*) FROM users WHERE email = ? AND provider = 'GOOGLE'", Integer.class, email));
+        assertEquals(1, db.queryForObject("SELECT count(*) FROM users WHERE email = ? AND provider = 'GOOGLE' AND accepted_terms_version=? AND terms_accepted_at IS NOT NULL", Integer.class, email, ServiceTerms.VERSION));
 
         // Once linked, the provider ID is sufficient even when Google omits the verified email.
         stubGoogle(null);
@@ -80,13 +88,30 @@ class GoogleOAuthEmailConflictIntegrationTest {
 
     private void stubGoogle(String verifiedEmail) {
         doReturn(new OAuthUserInfo(Provider.GOOGLE, identifier, verifiedEmail, "fixture"))
-                .when(google).fetchUserInfo("fixture-code", "fixture-state");
+                .when(google).fetchUserInfo(eq("fixture-code"), anyString());
     }
 
-    private HttpResponse<String> callback() throws Exception {
+    private HttpResponse<String> signupStart(String version) throws Exception {
+        doReturn("http://127.0.0.1:" + port + "/api/auth/oauth/google/callback").when(google).getRedirectUri();
+        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/auth/oauth/google/signup-start"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"acceptedTermsVersion\":\"" + version + "\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String consentedState() throws Exception {
+        var start = signupStart(ServiceTerms.VERSION);
+        assertEquals(200, start.statusCode(), start::body);
+        return start.headers().allValues("Set-Cookie").stream().filter(cookie -> cookie.startsWith("oauthState="))
+                .findFirst().orElseThrow().split(";", 2)[0].substring("oauthState=".length());
+    }
+
+    private HttpResponse<String> callback() throws Exception { return callback("fixture-state"); }
+
+    private HttpResponse<String> callback(String state) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/api/auth/oauth/google/callback?code=fixture-code&state=fixture-state"))
-                .header("Cookie", "oauthState=fixture-state")
+                        + "/api/auth/oauth/google/callback?code=fixture-code&state=" + state))
+                .header("Cookie", "oauthState=" + state)
                 .timeout(Duration.ofSeconds(10)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 

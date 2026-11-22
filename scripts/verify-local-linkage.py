@@ -58,7 +58,7 @@ def check_targets():
             "전용 Docker 컨테이너·DB만 허용합니다")
     versions = scalar("SELECT string_agg(CASE WHEN success THEN version ELSE 'failed' END, ',' "
                       "ORDER BY installed_rank) FROM flyway_schema_history")
-    require(versions == "1,2,3", "전용 DB에 PostgreSQL Flyway V1~V3 적용이 필요합니다")
+    require(versions == "1,2,3,4,5,6,7,8,9,10", "전용 DB에 PostgreSQL Flyway V1~V10 적용이 필요합니다")
     seed = int(scalar("SELECT COUNT(*) FROM problems WHERE problem_number=1000 "
                       "AND status='PUBLISHED' AND visibility='PUBLIC' AND execution_mode='FUNCTION'"))
     require(seed == 1, "전용 DB의 공개 FUNCTION 시드 문제 1000번이 없습니다")
@@ -133,7 +133,7 @@ def account(prefix, role, solved):
              sql_string(email) + "," + sql_string(digest) + ",'JOIN',TRUE," +
              "CAST(" + sql_string(expires_at) + " AS timestamp(6)))")
     uid = http("POST", "/api/auth/signup", {"username": name, "email": email,
-               "password": PASSWORD, "verificationCode": code})
+               "password": PASSWORD, "verificationCode": code, "acceptedTermsVersion": "2026-11-20"})
     postgres("UPDATE users SET role=" + sql_string(role) + ",solved_count=" + str(int(solved)) + " WHERE id=" + str(int(uid)))
     response = http("POST", "/api/auth/login", {"username": name, "password": PASSWORD})
     token = response.get("accessToken") if isinstance(response, dict) else None
@@ -170,11 +170,11 @@ def problem_payload(title, mode="STDIN", group_id=None):
     }, source
 
 
-def poll_accepted(submission_id, token, label):
+def poll_accepted(submission_id, token, label, base="/api"):
     phase(label + " 자동 채점 대기 (최대 90초)")
     deadline = time.monotonic() + 90
     while True:
-        item = http("GET", "/api/submissions/" + str(submission_id), token=token)
+        item = http("GET", base + "/submissions/" + str(submission_id), token=token)
         status = item.get("status") if isinstance(item, dict) else None
         if status == "ACCEPTED":
             require(item.get("cases") and all(c.get("status") == "ACCEPTED" for c in item["cases"]),
@@ -392,7 +392,8 @@ def sol(matrix, target):
                     {"problemNumber": group_number, "sourceCode": cpp_code, "language": "CPP"},
                     member["token"])
     IDS["contestSubmission"] = exam_sid
-    poll_accepted(exam_sid, member["token"], "contest_cpp")
+    poll_accepted(exam_sid, member["token"], "contest_cpp", base)
+    http("GET", "/api/submissions/" + str(exam_sid), token=member["token"], expected=404)
     mine = http("GET", base + "/me", token=member["token"])
     require(any(item.get("id") == exam_sid and item.get("sourceCode") == cpp_code and
                 str(item.get("judgedAt", "")).endswith("Z") for item in mine.get("submissions", [])),
@@ -422,7 +423,7 @@ def sol(matrix, target):
             "시험 종료 시각 오류")
     http("GET", base + "/me", token=member["token"], expected=403)
     http("GET", base + "/problems/" + str(group_number), token=member["token"], expected=403)
-    http("GET", "/api/submissions/" + str(exam_sid), token=member["token"], expected=403)
+    http("GET", base + "/submissions/" + str(exam_sid), token=member["token"], expected=403)
     latest = http("GET", base, token=owner["token"])
     http("PUT", base, {"title": latest["title"], "startsAt": latest["startsAt"],
                        "endsAt": latest["endsAt"],
@@ -433,10 +434,10 @@ def sol(matrix, target):
                 http("GET", base + "/me", token=member["token"])["submissions"]),
             "참여자 다시보기 답안 오류")
     http("GET", base + "/problems/" + str(group_number), token=member["token"])
-    http("GET", "/api/submissions/" + str(exam_sid), token=member["token"])
+    http("GET", base + "/submissions/" + str(exam_sid), token=member["token"])
     http("GET", base + "/me", token=other["token"], expected=403)
     http("GET", base + "/problems/" + str(group_number), token=other["token"], expected=403)
-    http("GET", "/api/submissions/" + str(exam_sid), token=other["token"], expected=403)
+    http("GET", base + "/submissions/" + str(exam_sid), token=other["token"], expected=403)
     require(sql_count("submissions", "contest_id", contest_id) == 1,
             "시험 제출 행 보존 오류")
     CHECKS.append("contest_replay_participation_gate")

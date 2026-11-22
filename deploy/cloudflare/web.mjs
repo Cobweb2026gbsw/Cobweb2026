@@ -60,9 +60,14 @@ export class CobwebWeb extends DurableObject {
 }
 
 export default {
-  fetch(request, env) {
+  async fetch(request, env) {
     // Each Worker release starts with its own image and secrets. Old web instances age out.
     const version = env.DEPLOYMENT?.id ?? "local";
-    return env.WEB.getByName(`web-${version}`).fetch(request);
+    const upstream = await env.WEB.getByName(`web-${version}`).fetch(request);
+    if (new URL(request.url).pathname !== "/api/ready" || !env.DEPLOYMENT?.tag) return upstream;
+    const response = new Response(upstream.body, upstream);
+    response.headers.set("X-Cobweb-Release", env.DEPLOYMENT.tag);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
   },
 };

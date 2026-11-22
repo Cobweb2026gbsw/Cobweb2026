@@ -124,6 +124,22 @@ test('completion excludes the currently typed partial word and prioritizes the r
   act(()=>selectEditor(area,editorValue(area).length));act(()=>startCompletion(editorView(area)));await act(tick);
   const options=currentCompletions(editorView(area).state);assert.equal(options.some(item=>item.label==='ret'),false);assert.equal(options.some(item=>item.label==='return'),true);assert.equal(options[0].label,'return');cleanup();
 });
+test('exam policy disables manual completion without changing the personal preference or draft',async()=>{
+  const view=start('ret','PYTHON',{allowSuggestions:false}), area=view.getByRole('textbox');
+  fireEvent.click(view.getByText('편집기 설정'));
+  const toggle=()=>view.getByRole('checkbox',{name:'문법 추천'});
+  assert.equal(toggle().disabled,true);
+  assert.equal(toggle().checked,false);
+  act(()=>selectEditor(area,3));press(area,' ',{ctrlKey:true,code:'Space'});await act(tick);
+  assert.equal(currentCompletions(editorView(area).state).length,0);
+  view.rerender(React.createElement(Harness,{initial:'ret',language:'PYTHON',allowSuggestions:true}));
+  assert.equal(toggle().checked,true);
+  assert.equal(toggle().disabled,false);
+  assert.equal(editorValue(area),'ret');
+  act(()=>startCompletion(editorView(area)));await act(tick);
+  assert.ok(currentCompletions(editorView(area).state).some(option=>option.label==='return'));
+  cleanup();
+});
 test('bracket extension can be toggled and disabled/required/copy contracts remain explicit',()=>{
   const view=start('','JAVASCRIPT');const area=view.getByRole('textbox');act(()=>inputEditorText(area,'('));assert.equal(editorValue(area),'()');
   act(()=>inputEditorText(area,')'));assert.equal(editorValue(area),'()');

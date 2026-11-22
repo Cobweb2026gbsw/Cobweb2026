@@ -4,6 +4,7 @@ import com.drewdrew0414.domain.submission.Language;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,13 +52,38 @@ final class LearningReportScores {
             Map.entry("그래프·트리", List.of("그래프", "트리")),
             Map.entry("그래프 탐색", List.of("그래프")),
             Map.entry("너비 우선 탐색", List.of("그래프")),
-            Map.entry("그리디·탐색·복합 구현", List.of("그리디", "탐색", "구현"))
+            Map.entry("그리디·탐색·복합 구현", List.of("그리디", "탐색", "구현")),
+            Map.entry("최단 경로와 그래프", List.of("그래프")),
+            Map.entry("고급 자료구조", List.of("자료구조")),
+            Map.entry("문자열 알고리즘", List.of("문자열")),
+            Map.entry("동적 계획법 심화", List.of("동적 계획법")),
+            Map.entry("수학과 기하", List.of("수학", "기하")),
+            Map.entry("그래프와 트리", List.of("그래프", "트리")),
+            Map.entry("네트워크 유량과 매칭", List.of("유량", "매칭")),
+            Map.entry("고급 문자열", List.of("문자열")),
+            Map.entry("구간 자료구조와 오프라인 쿼리", List.of("자료구조")),
+            Map.entry("수학과 DP 최적화", List.of("수학", "동적 계획법")),
+            Map.entry("동적 그래프와 트리", List.of("그래프", "트리")),
+            Map.entry("매칭과 절단", List.of("매칭", "그래프")),
+            Map.entry("다항식과 합성곱", List.of("수학")),
+            Map.entry("고급 문자열 자료구조", List.of("문자열", "자료구조")),
+            Map.entry("그래프+DP+자료구조", List.of("그래프", "동적 계획법", "자료구조")),
+            Map.entry("복합 최적화", List.of("최적화"))
     );
 
     private LearningReportScores() {}
 
     static List<String> normalizedTopics(List<String> tags) {
         return tags.stream().flatMap(tag -> TOPICS.getOrDefault(tag, List.of()).stream()).distinct().sorted().toList();
+    }
+
+    // 완료 시 삭제하는 내부 facts 대신, 학습자가 확인할 수 있는 회차별 집계만 같이 보관합니다.
+    static LearningReportService.Evidence evidence(Facts facts) {
+        var errors = new TreeMap<>(facts.ordinaryErrorCounts());
+        errors.putAll(facts.limitErrorCounts());
+        var mostFrequent = errors.isEmpty() ? null : Collections.max(errors.entrySet(), Map.Entry.comparingByValue());
+        return new LearningReportService.Evidence(facts.firstPassCount(), facts.observedSubmissionCount(),
+                mostFrequent == null ? null : mostFrequent.getKey(), mostFrequent == null ? 0 : mostFrequent.getValue());
     }
 
     static Facts evaluate(List<ProblemEvidence> problems, int activeDays) {

@@ -33,4 +33,8 @@ public class SignupRequest {
     @NotBlank(message = "비밀번호를 입력해주세요.")
     @Size(min = 8, message = "비밀번호는 8자 이상이어야합니다.")
     private String password;
+
+    @NotBlank(message = "이용약관에 동의해 주세요.")
+    @Size(max = 32)
+    private String acceptedTermsVersion;
 }

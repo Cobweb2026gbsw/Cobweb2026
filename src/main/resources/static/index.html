@@ -44,7 +44,8 @@
 <form id="email-verify"><label>이메일<input name="email" type="email" required></label><label>인증 코드<input name="code" required minlength="8" maxlength="8"></label><button>인증 확인</button></form>
 <form id="signup"><label>아이디<input name="username" required maxlength="16"></label><label>인증한 이메일<input name="email" type="email" required></label>
 <label>확인한 인증 코드<input name="verificationCode" required pattern="[0-9]{8}" minlength="8" maxlength="8" inputmode="numeric" autocomplete="one-time-code"></label>
-<label>비밀번호<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><button>가입하기</button></form></div>
+<label>비밀번호<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label><input type="checkbox" name="acceptedTermsVersion" value="2026-11-20" required> 이용약관에 동의합니다 (필수)</label>
+<a href="/terms" target="_blank" rel="noopener noreferrer">이용약관 전문 보기 (새 창)</a><button>가입하기</button></form></div>
 <div><h2>비밀번호 재설정</h2><form id="reset-request"><label>가입 이메일<input name="email" type="email" required></label><button>코드 받기</button></form>
 <form id="reset-verify"><label>이메일<input name="email" type="email" required></label><label>코드<input name="code" required></label><button>코드 확인</button></form>
 <form id="reset-confirm"><label>새 비밀번호<input name="newPassword" type="password" minlength="8" required></label><button>비밀번호 변경</button></form></div>
@@ -88,5 +89,5 @@
 <label>사유 <input name="cause" maxlength="2000" placeholder="반려·보관 사유"></label><button>처리</button></form>
 <form id="visibility-form"><h3>공개 범위 변경</h3><label>공개 범위 <select name="visibility"><option value="PUBLIC">공개</option><option value="PRIVATE">비공개</option></select></label>
 <label>변경 사유 <input name="cause" maxlength="2000" placeholder="필요한 경우 입력"></label><button>적용</button></form></div></div></section>
-</main><footer>Cobweb · 알고리즘 문제 풀이</footer>
+</main><footer>Cobweb · 알고리즘 문제 풀이 · <a href="/terms">이용약관</a></footer>
 </body></html>

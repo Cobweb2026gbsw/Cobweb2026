@@ -1,0 +1,19 @@
+.cw-page.ops-navigation { padding: 12px clamp(16px, 4vw, 64px); min-height: auto; border-bottom: 1px solid var(--line); }
+.ops-navigation .cw-wrap { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.ops-navigation a { color: var(--muted); padding: 7px 9px; text-decoration: none; border-radius: 6px; }
+.ops-navigation a.active, .ops-navigation a:hover { color: var(--accent-text); background: var(--hover); }
+.ops-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin: 0 0 24px; }
+.ops-metrics .ops-metric { min-width: 0; margin: 0; padding: 20px; display: grid; gap: 12px; text-align: left; }
+.ops-metric { color: var(--text); text-decoration: none; font: inherit; }
+button.ops-metric, a.ops-metric { cursor: pointer; }
+button.ops-metric:hover, a.ops-metric:hover { border-color: var(--accent-text); }
+.ops-metric span, .ops-metric dt { font-size: .88rem; color: var(--muted); }
+.ops-metric strong, .ops-metric dd { font-size: clamp(1.3rem, 2vw, 2rem); font-weight: 700; margin: 0; font-variant-numeric: tabular-nums; }
+.ops-page .ops-detail { padding: clamp(16px, 3vw, 28px); }
+.ops-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 16px; }
+.ops-tools h2 { margin-right: auto; }
+.ops-tools label { display: grid; gap: 5px; font-size: .86rem; }
+.ops-table { overflow-x: auto; }
+.ops-table table { border-collapse: collapse; width: 100%; }
+.ops-table :is(th,td) { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ops-table a { color: var(--accent-text); }

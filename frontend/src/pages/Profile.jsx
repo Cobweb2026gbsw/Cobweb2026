@@ -22,6 +22,7 @@ export default function Profile({ dark, isMe = false }) {
   const rank = profile ? profile.rank_type + " " + profile.rank_int : "";
   const github = safeGithub(profile?.github_url);
   const solved = profile?.solvedProblems || [];
+  const topLanguages = profile?.topLanguages ?? [];
   return <main className={"cw-page pf-page " + (dark ? "dark" : "light")}><div className="cw-wrap">
     {error && <p className="pr-banner" role="alert">{error}</p>}
     {!profile && !error && <p role="status">프로필을 불러오고 있습니다…</p>}
@@ -29,7 +30,15 @@ export default function Profile({ dark, isMe = false }) {
       <header className="cw-card pf-hero"><span className="pf-avatar" aria-hidden="true">{profile.username.slice(0, 1).toUpperCase()}</span>
         <div className="pf-info"><p className="cw-eyebrow">{isMe ? "MY PROFILE" : "PROFILE"}</p><h1 className="cw-title">{profile.username}</h1>
           <p className="pf-bio">{profile.bio || "작성된 소개가 없습니다."}</p><div className="pf-links"><span className="cw-badge blue">{rank}</span>
-            {github && <a href={github} target="_blank" rel="noopener noreferrer"><Icon name="code" /> GitHub</a>}</div></div>
+            {github && <a href={github} target="_blank" rel="noopener noreferrer"><Icon name="code" /> GitHub</a>}</div>
+          <section className="pf-languages" aria-labelledby="pf-languages-title">
+            <h2 id="pf-languages-title">자주 쓴 언어</h2>
+            {topLanguages.length > 0 ? <ol>
+              {topLanguages.map(({language, label, solved_count}) =>
+                <li key={language}>{label} <small>{solved_count.toLocaleString("ko-KR")}문제</small></li>)}
+            </ol> : <p>공개 문제를 풀면 사용한 언어가 표시됩니다.</p>}
+          </section>
+        </div>
         {isMe && <Link to="/me/edit" className="cw-btn"><Icon name="save" /> 프로필 수정</Link>}
       </header>
       <section className="pf-stats" aria-label="활동 요약">{[

@@ -1,0 +1,18 @@
+.moderation-page .cw-wrap {max-width: 1060px;}
+.moderation-page h2, .moderation-page h3 {margin: 0; font-size: 1.18rem;}
+.moderation-page .cw-wrap > h2 {margin: 1.6rem 0 .7rem;}
+.moderation-page p {overflow-wrap: anywhere;}
+.ops-form,.ops-list {padding: clamp(1rem, 2.5vw, 2rem);}
+.ops-form,.ops-item,.ops-form label,.ops-item label {display:grid;gap:.65rem;}
+.ops-form button,.ops-item button,.ops-item a {justify-self:start;}
+.ops-fields,.ops-heading {display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;}
+.ops-fields label {flex:1;min-width:min(160px,100%);}
+.ops-heading {align-items:center;justify-content:space-between;}
+.ops-heading span,.ops-item small {color:var(--muted);}
+.ops-item {padding:1rem 0;}
+.ops-item + .ops-item {border-top:1px solid var(--line);}
+.ops-item p {margin:0;}
+.ops-text {white-space:pre-wrap;}
+.ops-response {padding:.75rem 1rem;border-left:3px solid var(--accent);background:var(--field);}
+.ops-list .cw-pager {margin-top:1rem;}
+.moderation-page .ops-open {margin:.75rem 0;}

@@ -31,7 +31,7 @@ test.afterEach(()=>cleanup());
 test.after(()=>dom.window.close());
 
 test('only the home page omits the footer while other route families keep exactly one',async()=>{
-  for(const [url,page] of [['/','Main'],['/?preview=1','Main'],['/app.html','Main'],['/login','Login'],['/signup','Signup'],['/password-reset','PasswordReset'],['/oauth/callback','OAuthCallBack'],['/problems/1000','ProblemDetail'],['/not-a-page','ComingSoon']]){
+  for(const [url,page] of [['/','Main'],['/?preview=1','Main'],['/app.html','Main'],['/login','Login'],['/signup','Signup'],['/signup/social?provider=google','SocialSignup'],['/terms','Terms'],['/password-reset','PasswordReset'],['/oauth/callback','OAuthCallBack'],['/problems/1000','ProblemDetail'],['/not-a-page','ComingSoon']]){
     const view=render(tree(url));assert.equal((await view.findByRole('heading')).textContent,page,url);
     const expected=page==='Main'?0:1;
     assert.equal(view.queryAllByRole('contentinfo').length,expected,url);
@@ -44,7 +44,7 @@ test('footer links point only to existing routes and use the current year and ac
   const view=render(tree('/login'));
   const footer=view.getByRole('contentinfo');assert.equal(footer.classList.contains('dark'),true);
   const links=[...view.getByRole('navigation',{name:'푸터 메뉴'}).querySelectorAll('a')];
-  assert.deepEqual(links.map(link=>link.getAttribute('href')),['/problems','/groups','/forum','/notices']);
+  assert.deepEqual(links.map(link=>link.getAttribute('href')),['/problems','/groups','/forum','/notices','/terms']);
   assert.match(footer.textContent,new RegExp(`CobWeb · ${new Date().getFullYear()}`));
   assert.equal(footer.querySelectorAll('a[href^="http"]').length,0);
   view.rerender(tree('/login',false));assert.equal(view.getByRole('contentinfo').classList.contains('light'),true);
@@ -62,7 +62,7 @@ test('authentication loading, anonymous redirect and denied admin pages keep one
 
 test('authenticated and administrator pages keep the same footer without changing authorization',async()=>{
   globalThis.__footerAuth={...anonymous(),user:{username:'operator'},permissions:{canManage:true,canCreate:true}};
-  for(const [url,page] of [['/dashboard','Dashboard'],['/groups/7','GroupDetail'],['/admin','ProblemReview'],['/admin/review','ProblemReview'],['/admin/community','ForumList'],['/admin/community/1','ForumPost']]){
+  for(const [url,page] of [['/dashboard','Dashboard'],['/groups/7','GroupDetail'],['/admin','AdminOperations'],['/admin/judging','AdminJudging'],['/admin/issues','AdminModeration'],['/admin/report-usage','AdminReportUsage'],['/admin/releases','AdminModeration'],['/admin/restrictions','AdminModeration'],['/issues','MyIssues'],['/admin/review','ProblemReview'],['/admin/community','ForumList'],['/admin/community/1','ForumPost']]){
     const view=render(tree(url));assert.equal((await view.findByRole('heading')).textContent,page,url);
     assert.equal(view.getAllByRole('contentinfo').length,1,url);cleanup();
   }

@@ -23,7 +23,7 @@ export default function Header({dark,setDark}){
         {NAV.map(([to,label])=><NavLink key={to} to={to} className={({isActive})=>isActive?'active':''}>{label}</NavLink>)}
         {user&&<NavLink to="/dashboard">내 활동</NavLink>}
         {user&&(permissions.canCreate||permissions.canManage)&&<NavLink to="/problems/new">문제 제작</NavLink>}
-        {permissions.canManage&&<><NavLink to="/admin/review">문제 관리</NavLink><NavLink to="/admin/community">글 관리</NavLink></>}
+        {permissions.canManage&&<NavLink to="/admin">운영 관리</NavLink>}
       </nav>
     </div>
     <form id="header-search" className={`cw-header-search${searchOpen?' is-open':''}`} role="search" onSubmit={event=>{event.preventDefault();navigate(problemSearchTarget(q));setSearchOpen(false);}} onKeyDown={event=>{if(event.key==='Escape'&&searchOpen){setSearchOpen(false);searchButton.current?.focus();}}}>

@@ -22,7 +22,7 @@ function loadPreferences(){
 const settingsLabels={suggestions:'문법 추천',brackets:'괄호 자동 닫기',indentation:'자동 들여쓰기',highlight:'문법 강조'};
 
 // 소스는 controlled value와 현재 EditorView에만 두며, 저장소에는 표시 설정만 둡니다.
-export default function CodeEditor({value='',onChange,language='',fileName='',rows=18,id,disabled=false,readOnly=false,required=false,allowCopy=true,'aria-label':ariaLabel='풀이 코드',...rest}){
+export default function CodeEditor({value='',onChange,language='',fileName='',rows=18,id,disabled=false,readOnly=false,required=false,allowCopy=true,allowSuggestions=true,'aria-label':ariaLabel='풀이 코드',...rest}){
   const host=useRef(null),viewRef=useRef(null),changeRef=useRef(onChange),syncing=useRef(false),releaseTab=useRef(false),imeKey=useRef(false);
   const preferencesRef=useRef(null),settingsCompartment=useRef(new Compartment()),editableCompartment=useRef(new Compartment());
   const [preferences,setPreferences]=useState(loadPreferences),[cursor,setCursor]=useState({ln:1,col:1}),[validation,setValidation]=useState('');
@@ -38,11 +38,13 @@ export default function CodeEditor({value='',onChange,language='',fileName='',ro
     return [EditorState.readOnly.of(blocked),EditorView.editable.of(!blocked),EditorView.contentAttributes.of(attributes)];
   }
   function settings(config){
+    const suggestions=allowSuggestions && config.suggestions;
     return [
       config.highlight?editorHighlight:[],
       config.brackets?[closeBrackets(),keymap.of(closeBracketsKeymap),bracketMatching()]:[],
-      config.suggestions?autocompletion({override:[completionSource(language)],activateOnTyping:true,maxRenderedOptions:30,defaultKeymap:false,icons:true}):[],
-      Prec.high(keymap.of([{key:'Enter',run:editor=>!imeKey.current&&((config.suggestions&&acceptCompletion(editor))||(config.indentation?insertNewlineAndIndent:insertNewline)(editor))}])),
+      suggestions?autocompletion({override:[completionSource(language)],activateOnTyping:true,maxRenderedOptions:30,defaultKeymap:false,icons:true}):[],
+      Prec.high(keymap.of([{key:'Enter',run:editor=>!imeKey.current&&((suggestions&&acceptCompletion(editor))||(config.indentation?insertNewlineAndIndent:insertNewline)(editor))}])),
+      suggestions?keymap.of(completionKeymap.filter(binding=>!['Enter','Tab','Shift-Tab'].includes(binding.key))):[],
       config.indentation?indentOnInput():[]
     ];
   }
@@ -62,7 +64,6 @@ export default function CodeEditor({value='',onChange,language='',fileName='',ro
       keymap.of([
         {key:'Tab',run:editor=>{if(imeKey.current)return false;if(releaseTab.current){releaseTab.current=false;return false;}if(editor.state.readOnly)return false;if(!editor.state.selection.main.empty)return indentMore(editor);editor.dispatch(editor.state.replaceSelection('    '),{scrollIntoView:true,userEvent:'input'});return true;}},
         {key:'Shift-Tab',run:editor=>{if(imeKey.current)return false;if(releaseTab.current){releaseTab.current=false;return false;}return indentLess(editor);}},
-        ...completionKeymap.filter(binding=>!['Enter','Tab','Shift-Tab'].includes(binding.key)),
         ...defaultKeymap.filter(binding=>!['Enter','Shift-Enter','Tab','Shift-Tab'].includes(binding.key)),
         ...historyKeymap
       ]),
@@ -79,7 +80,7 @@ export default function CodeEditor({value='',onChange,language='',fileName='',ro
   useLayoutEffect(()=>{
     const view=viewRef.current;if(!view)return;
     view.dispatch({effects:[settingsCompartment.current.reconfigure(settings(preferences)),editableCompartment.current.reconfigure(accessibility())]});
-  },[preferences,disabled,readOnly,required,id,ariaLabel]);
+  },[preferences,disabled,readOnly,required,id,ariaLabel,allowSuggestions]);
   // 글자 크기만 바꿀 때 문서·커서·undo를 유지하고 줄 높이와 스크롤을 다시 계산합니다.
   useLayoutEffect(()=>{viewRef.current?.requestMeasure();},[preferences.fontSize,language]);
   useLayoutEffect(()=>{
@@ -116,7 +117,7 @@ export default function CodeEditor({value='',onChange,language='',fileName='',ro
     <div className="pd-editor-bar"><span className="cw-mono">{fileName||language}</span><div className="cw-editor-actions">
       <label className="cw-editor-font-size">글자 크기<select value={preferences.fontSize} disabled={disabled} onChange={event=>savePreferences({...preferences,fontSize:safeFontSize(Number(event.target.value))})}>{FONT_SIZES.map(size=><option key={size} value={size}>{size}px</option>)}</select></label>
       {allowCopy&&<button type="button" className="pd-icon-btn" aria-label="코드 복사" disabled={disabled} onClick={copy}><Icon name="copy"/></button>}
-      <details className="cw-editor-settings"><summary>편집기 설정</summary><div className="cw-editor-options" role="group" aria-label="코드 편집기 설정">{Object.entries(settingsLabels).map(([key,label])=><label key={key}><input type="checkbox" checked={preferences[key]} disabled={disabled} onChange={()=>toggle(key)}/>{label}</label>)}<small>언어 키워드·문법 틀·현재 코드의 이름을 Ctrl+Space로 추천합니다.</small></div></details>
+      <details className="cw-editor-settings"><summary>편집기 설정</summary><div className="cw-editor-options" role="group" aria-label="코드 편집기 설정">{Object.entries(settingsLabels).map(([key,label])=><label key={key}><input type="checkbox" checked={key==='suggestions'?allowSuggestions&&preferences[key]:preferences[key]} disabled={disabled||(key==='suggestions'&&!allowSuggestions)} onChange={()=>toggle(key)}/>{label}</label>)}<small>{allowSuggestions?'언어 키워드·문법 틀·현재 코드의 이름을 Ctrl+Space로 추천합니다.':'이 시험에서는 자동완성을 사용할 수 없습니다.'}</small></div></details>
     </div></div>
     <div className="cw-editor-host" ref={host} style={{height:Math.min(520,Math.max(180,rows*22+32))}}/>
     {validation&&<p className="cw-editor-validation" role="alert">{validation}</p>}

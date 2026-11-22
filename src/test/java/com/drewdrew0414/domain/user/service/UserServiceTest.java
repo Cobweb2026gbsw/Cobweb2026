@@ -106,6 +106,7 @@ class UserServiceTest {
 
     private SignupRequest signupRequest() {
         SignupRequest request = new SignupRequest();
+        ReflectionTestUtils.setField(request, "acceptedTermsVersion", com.drewdrew0414.domain.user.service.ServiceTerms.VERSION);
         ReflectionTestUtils.setField(request, "username", "fresh-member");
         ReflectionTestUtils.setField(request, "email", EMAIL);
         ReflectionTestUtils.setField(request, "verificationCode", CODE);

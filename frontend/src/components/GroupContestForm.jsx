@@ -4,7 +4,8 @@ import {contestPayload, localDatetime} from '../lib/groupContracts';
 
 const OPTIONS = [
   ['replayAllowed', '종료 후 참여자 다시 보기 허용'],
-  ['captureProtection', '복사·인쇄 억제와 캡처 키 신호'],
+  ['autocompleteAllowed', '코드 자동완성 허용'],
+  ['captureProtection', '캡처 단축키 감지 시 새로고침 · 인쇄 차단'],
   ['windowSwitchProtection', '전체 화면 권고와 창 전환 신호'],
 ];
 
@@ -15,7 +16,8 @@ export default function GroupContestForm({gid, current = null, onSaved, hideHead
     endsAt: current?.endsAt ? localDatetime(current.endsAt) : '',
     problemNumbers: (current?.problems || []).map(item => item.problemNumber).join(', '),
     replayAllowed: Boolean(current?.replayAllowed),
-    captureProtection: Boolean(current?.captureProtection),
+    autocompleteAllowed: current?.autocompleteAllowed ?? true,
+    captureProtection: current?.captureProtection ?? true,
     windowSwitchProtection: Boolean(current?.windowSwitchProtection),
   }));
   const [feedback, setFeedback] = useState(null), [busy, setBusy] = useState(false);
@@ -79,7 +81,7 @@ export default function GroupContestForm({gid, current = null, onSaved, hideHead
     {OPTIONS.map(([key, label]) => <label className="gp-check" key={key}>
       <input type="checkbox" checked={fields[key]} onChange={change(key)} />{label}
     </label>)}
-    <p className="gp-muted">운영체제 스크린샷이나 다른 기기 사용은 완전히 차단할 수 없습니다. 신호만으로 자동 실격하지 않습니다.</p>
+    <p className="gp-muted">응시 중 복사와 붙여넣기는 항상 차단합니다. 캡처 감지는 브라우저에 전달되는 단축키에만 적용됩니다.</p>
     {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'gp-error' : 'gp-muted'}>{feedback.message}</p>}
     <button className="cw-btn primary" disabled={busy}>{current ? '변경 저장' : '코테 생성'}</button>
   </form>;

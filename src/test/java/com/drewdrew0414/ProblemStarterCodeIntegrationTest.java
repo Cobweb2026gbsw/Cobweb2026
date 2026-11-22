@@ -106,7 +106,7 @@ class ProblemStarterCodeIntegrationTest {
         assertEquals(STARTER,json.readTree(http("GET","/api/problems/"+number,null,member).body())
             .get("data").get("starterCodes").get(0).get("sourceCode").asText());
         long cid=contests.create(gid,new ContestRequests.Write("Starter contest "+unique(),
-            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(number),false,false,false),owner);
+            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(number),false,false,false, true),owner);
         String endpoint="/api/groups/"+gid+"/contests/"+cid+"/problems/"+number;
         assertEquals(403,http("GET",endpoint,null,member).statusCode());
         assertEquals(404,http("GET","/api/problems/"+number,null,member).statusCode());

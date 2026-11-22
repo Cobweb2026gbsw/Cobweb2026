@@ -215,3 +215,8 @@
 .SignupPage.light .SignupBox a span { color: var(--light-accent); }
 .SignupPage.light .SignupBox .signup-logo { color: var(--light-accent); }
 .SignupPage.light .SignupBox button:focus-visible { outline-color: var(--light-accent); }
+
+.SignupBox .signup-agreement { margin: 20px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 14px; }
+.SignupBox .signup-agreement label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.SignupBox .signup-agreement input { width: 18px; height: 18px; margin: 0; padding: 0; }
+.SignupBox .signup-agreement a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }

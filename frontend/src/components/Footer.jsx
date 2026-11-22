@@ -1,7 +1,7 @@
 import {Link} from 'react-router-dom';
 import './Footer.css';
 
-const LINKS=[['/problems','문제'],['/groups','그룹'],['/forum','커뮤니티'],['/notices','공지']];
+const LINKS=[['/problems','문제'],['/groups','그룹'],['/forum','커뮤니티'],['/notices','공지'],['/terms','이용약관']];
 
 /** 실제 서비스에 있는 경로만 안내하며 계정·관리자 권한과 무관하게 한 번 표시합니다. */
 export default function Footer({dark}) {

@@ -31,6 +31,9 @@ class FeatureIntegrationTest {
     @Autowired SubmissionService submissions;
     @Autowired GroupService groups;
     @Autowired ContestService contests;
+    @Autowired ContestCommunicationService communications;
+    @Autowired ContestScorecardService scorecards;
+    @Autowired ContestCopyService copies;
     @Autowired CommunityService community;
     @Autowired JwtTokenProvider jwt;
     @Autowired ObjectMapper json;
@@ -69,7 +72,7 @@ class FeatureIntegrationTest {
     }
     private long contest(long gid,int number,boolean replay,boolean protection) {
         return contests.create(gid,new ContestRequests.Write("코테 "+unique(),Instant.now().plusSeconds(3600),
-            Instant.now().plusSeconds(7200),List.of(number),replay,protection,protection),owner);
+            Instant.now().plusSeconds(7200),List.of(number),replay,protection,protection, true),owner);
     }
     private void activate(long cid) {
         db.update("UPDATE group_contests SET starts_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 minute'),ends_at=((clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 hour') WHERE id=?",cid);
@@ -179,6 +182,20 @@ class FeatureIntegrationTest {
         assertFalse(groups.can(gid,member,GroupPermission.VIEW_CONTEST_RESULTS));
         assertEquals(6,groups.roles(gid,owner).size());
     }
+    @Test void examAutocompletePolicyPersistsAcrossOlderEditors() {
+        long gid=group(owner);
+        groups.join(gid,member);
+        int number=publishGroup(gid);
+        Instant start=Instant.now().plusSeconds(3600), end=start.plusSeconds(3600);
+        var legacyRequest=new ContestRequests.Write("시험",start,end,List.of(number),false,true,false,null);
+        long cid=contests.create(gid,legacyRequest,owner);
+        assertEquals(true,contests.detail(gid,cid,member).get("autocompleteAllowed"));
+        contests.update(gid,cid,new ContestRequests.Write("시험",start,end,List.of(number),false,true,false,false),owner);
+        assertEquals(false,contests.detail(gid,cid,member).get("autocompleteAllowed"));
+        contests.update(gid,cid,legacyRequest,owner);
+        assertEquals(false,contests.detail(gid,cid,member).get("autocompleteAllowed"));
+        assertNotNull(contests.detail(gid,cid,member).get("serverNow"));
+    }
     @Test void examUsesServerTimeSeparateStatisticsReplayGateAndFrozenQuestions() throws Exception {
         long gid=group(owner); groups.join(gid,member); groups.join(gid,outsider);
         int n=publishGroup(gid); long cid=contest(gid,n,false,true);
@@ -205,18 +222,120 @@ class FeatureIntegrationTest {
         assertEquals(0,db.queryForObject("SELECT submission_count FROM problems WHERE id=?",Integer.class,pid));
         assertEquals(0,db.queryForObject("SELECT accepted_count FROM problems WHERE id=?",Integer.class,pid));
         assertTrue(submissions.mine(member).isEmpty());
+        assertEquals(0L,db.queryForObject("SELECT rank_points FROM users WHERE id=?",Long.class,member.getUserId()));
+        String detailRoute="/api/groups/"+gid+"/contests/"+cid+"/submissions/"+sid;
+        assertEquals(404,http("GET","/api/submissions/"+sid,null,member).statusCode());
+        assertEquals(200,http("GET",detailRoute,null,member).statusCode());
+        assertEquals(403,http("GET",detailRoute,null,outsider).statusCode());
+        status(404,()->submissions.contestDetail(gid,cid+1,sid,member));
+        status(404,()->submissions.contestDetail(gid+1,cid,sid,member));
         assertEquals(1,((Number)contests.results(gid,cid,owner).getFirst().get("solvedCount")).intValue());
         status(403,()->contests.results(gid,cid,member));
-        assertEquals("print(input())",submissions.detail(sid,member).get("sourceCode"));
+        assertEquals("print(input())",submissions.contestDetail(gid,cid,sid,member).get("sourceCode"));
         end(cid);
         status(403,()->submissions.submitContest(cid,n,"print(input())",Language.PYTHON,member));
-        status(403,()->submissions.detail(sid,member));
+        status(403,()->submissions.contestDetail(gid,cid,sid,member));
         assertEquals(404,http("GET","/api/submissions/"+sid+"/source",null,member).statusCode());
         db.update("UPDATE group_contests SET replay_allowed=TRUE WHERE id=?",cid);
         assertEquals(200,http("GET","/api/groups/"+gid+"/contests/"+cid+"/problems/"+n,null,member).statusCode());
         assertEquals(403,http("GET","/api/groups/"+gid+"/contests/"+cid+"/problems/"+n,null,outsider).statusCode());
-        assertEquals("print(input())",submissions.detail(sid,member).get("sourceCode"));
+        assertEquals("print(input())",submissions.contestDetail(gid,cid,sid,member).get("sourceCode"));
     }
+    @Test void contestQuestionsStayPrivateAndOnlyTheStaffReplyCanBeBroadcast() throws Exception {
+        long gid=group(owner); groups.join(gid,member); groups.join(gid,outsider);
+        int n=publishGroup(gid); long cid=contest(gid,n,false,false);
+        status(403,()->communications.ask(gid,cid,n,"비공개 질문",member));
+        activate(cid);
+        String path="/api/groups/"+gid+"/contests/"+cid;
+        assertEquals(400,http("POST",path+"/questions",Map.of("body"," "),member).statusCode());
+        status(404,()->communications.ask(gid,cid,n+1,"다른 문제",member));
+        long question=communications.ask(gid,cid,n,"비공개 질문",member);
+        assertEquals(1,communications.messages(gid,cid,null,owner).questions().size());
+        assertTrue(communications.messages(gid,cid,null,outsider).questions().isEmpty());
+        status(403,()->communications.answer(gid,cid,question,"답",true,member));
+        communications.answer(gid,cid,question,"인덱스는 0부터입니다.",true,owner);
+        status(409,()->communications.answer(gid,cid,question,"다른 답",true,owner));
+        assertEquals("인덱스는 0부터입니다.",communications.messages(gid,cid,null,member).questions().getFirst().answer());
+        var foreign=http("GET",path+"/communications",null,outsider);
+        assertEquals(200,foreign.statusCode()); assertTrue(foreign.body().contains("인덱스는 0부터입니다."));
+        assertFalse(foreign.body().contains("비공개 질문"));assertFalse(foreign.body().contains(member.getUsername()));
+        long other=contest(gid,n,false,false); activate(other);
+        status(404,()->communications.answer(gid,other,question,"다른 시험",false,owner));
+        assertTrue(communications.messages(gid,other,null,owner).announcements().isEmpty());
+        end(cid); status(403,()->communications.messages(gid,cid,null,member));
+        status(409,()->communications.announce(gid,cid,"이미 종료",owner));
+    }
+
+    @Test void scorecardIncludesUnattemptedProblemsAndOnlyCountsThisContestsSubmissions() throws Exception {
+        long gid=group(owner); groups.join(gid,member); int one=publishGroup(gid), two=publishGroup(gid);
+        Instant start=Instant.now().plusSeconds(3600);
+        long cid=contests.create(gid,new ContestRequests.Write("성적표",start,start.plusSeconds(3600),
+            List.of(two,one),true,false,false,false),owner);
+        activate(cid);
+        long first=submissions.submitContest(cid,two,"print(1)",Language.PYTHON,member);
+        long second=submissions.submitContest(cid,two,"print(2)",Language.PYTHON,member);
+        db.update("UPDATE submissions SET status='WRONG_ANSWER' WHERE id=?",first);
+        db.update("UPDATE submissions SET status='ACCEPTED' WHERE id=?",second);
+        var cells=scorecards.page(gid,cid,null,0,owner);
+        assertEquals(List.of(two,one),cells.stream().map(ContestScorecardService.Cell::problemNumber).toList());
+        assertEquals(2,cells.getFirst().attempts()); assertEquals("ACCEPTED",cells.getFirst().verdict());
+        assertNotNull(Instant.parse(cells.getFirst().firstAcceptedAt()));
+        assertEquals("UNATTEMPTED",cells.getLast().verdict()); assertNull(cells.getLast().firstAcceptedAt());
+        assertEquals(cells,scorecards.page(gid,cid,member.getUserId(),0,owner));
+        assertTrue(scorecards.page(gid,cid,null,member.getUserId(),owner).isEmpty());
+        assertEquals(403,http("GET","/api/groups/"+gid+"/contests/"+cid+"/scorecard?afterUser=0",null,member).statusCode());
+        long other=contest(gid,two,false,false);
+        assertTrue(scorecards.page(gid,other,null,0,owner).isEmpty());
+        status(404,()->scorecards.page(gid,Long.MAX_VALUE,null,0,owner));
+    }
+
+    @Test void contestCopyReusesOnlyApprovedProblemsAndLeavesAllParticipantDataBehind() {
+        long gid=group(owner),dest=group(owner);groups.join(gid,member);
+        int one=publishGroup(gid),two=publishGroup(gid);
+        Instant start=Instant.now().plusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.MILLIS), end=start.plusSeconds(3600);
+        long cid=contests.create(gid,new ContestRequests.Write("복제 시험",start,end,List.of(two,one),true,true,false,false),owner);
+        activate(cid);submissions.submitContest(cid,two,"print(1)",Language.PYTHON,member);
+        communications.ask(gid,cid,two,"원본 개인 질문",member);
+        communications.announce(gid,cid,"원본 공지",owner);
+        var key=UUID.randomUUID();
+        long same=copies.copy(gid,cid,gid,start,end,key,owner);
+        assertEquals(same,copies.copy(gid,cid,gid,start,end,key,owner));
+        status(409,()->copies.copy(gid,cid,gid,start,end.plusSeconds(40),key,owner));
+        var detail=contests.detail(gid,same,owner);
+        assertEquals(false,detail.get("autocompleteAllowed"));assertEquals(true,detail.get("captureProtection"));
+        assertEquals(contests.problems(gid,cid,owner),contests.problems(gid,same,owner));
+        assertTrue(contests.results(gid,same,owner).isEmpty());
+        assertTrue(communications.messages(gid,same,null,owner).questions().isEmpty());
+        assertTrue(communications.messages(gid,same,null,owner).announcements().isEmpty());
+        status(403,()->copies.copy(gid,cid,dest,start,end,UUID.randomUUID(),member));
+        long cross=copies.copy(gid,cid,dest,start,end,UUID.randomUUID(),owner);
+        var copied=contests.problems(dest,cross,owner);
+        assertEquals(contests.problems(gid,cid,owner).stream().map(p->p.get("problemTitle")).toList(),
+                copied.stream().map(p->p.get("problemTitle")).toList());
+        var copiedNumber=(Integer)copied.getFirst().get("problemNumber");
+        assertNotEquals(two,copiedNumber);
+        assertEquals(problems.edit(two,owner).get("referenceSolutions"),problems.edit(copiedNumber,owner).get("referenceSolutions"));
+        assertEquals(problems.edit(two,owner).get("tests"),problems.edit(copiedNumber,owner).get("tests"));
+        long again=copies.copy(gid,cid,dest,start,end,UUID.randomUUID(),owner);
+        assertEquals(copied,contests.problems(dest,again,owner));
+        // 운영 중 정답 데이터가 교정되어 기존 복제본과 달라진 경우 잘못된 판정을 재사용하지 않습니다.
+        db.update("UPDATE problem_test_cases SET expected_output='교정' WHERE problem_id=(SELECT id FROM problems WHERE problem_number=?)",two);
+        status(409,()->copies.copy(gid,cid,dest,start,end,UUID.randomUUID(),owner));
+    }
+
+    @Test void duplicateProblemTitleRollsBackTheWholeCrossGroupCopy() {
+        long src=group(owner),dest=group(owner);
+        int first=publishGroup(src),second=publishGroup(src);
+        String title=(String)problems.edit(second,owner).get("title");
+        problems.create(draft(title,dest,"GROUP"),owner);
+        Instant start=Instant.now().plusSeconds(3600),end=start.plusSeconds(3600);
+        long cid=contests.create(src,new ContestRequests.Write("다른 반",start,end,List.of(first,second),false,false,false,true),owner);
+        status(409,()->copies.copy(src,cid,dest,start,end,UUID.randomUUID(),owner));
+        assertEquals(0,db.queryForObject("SELECT count(*) FROM group_contests WHERE group_id=?",Integer.class,dest));
+        assertEquals(0,db.queryForObject("SELECT count(*) FROM problems WHERE group_id=? AND copied_from_problem_id IS NOT NULL",Integer.class,dest));
+        assertEquals(1,db.queryForObject("SELECT count(*) FROM problems WHERE group_id=?",Integer.class,dest));
+    }
+
     @Test void examEventsAreOptInDeduplicatedAndRateLimited() {
         long gid=group(owner); groups.join(gid,member); int n=publishGroup(gid);
         long cid=contest(gid,n,false,false); activate(cid);

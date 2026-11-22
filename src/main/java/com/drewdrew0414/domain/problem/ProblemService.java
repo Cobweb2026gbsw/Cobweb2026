@@ -499,7 +499,7 @@ public class ProblemService {
         }
         try {
             db.update("""
-                UPDATE problems SET problem_title=?,description=?,input_description=?,output_description=?,
+                UPDATE problems SET publication_revision=publication_revision+1,problem_title=?,description=?,input_description=?,output_description=?,
                  constraints_text=?,rank_type=?,rank_int=?,time_limit_ms=?,memory_limit_mb=?,execution_mode=?,
                  function_abi_compatible=?,source_name=?,source_url=?,requested_visibility=?,
                  author_public=COALESCE(?,author_public),function_signature=CAST(? AS jsonb)
@@ -760,7 +760,7 @@ public class ProblemService {
         }
         if (!Set.of("DRAFT","REJECTED").contains(p.get("status")))
             throw new ApiException(HttpStatus.CONFLICT);
-        requireReady(p);
+        requireReadyForPublication(p);
         change(p,"PENDING_REVIEW","검수 요청",user.getUserId());
     }
     @Transactional
@@ -773,7 +773,7 @@ public class ProblemService {
             throw new ApiException(HttpStatus.FORBIDDEN);
         if (!"ARCHIVED".equals(r.status()) && !"PENDING_REVIEW".equals(p.get("status")))
             throw new ApiException(HttpStatus.CONFLICT);
-        if ("PUBLISHED".equals(r.status())) requireReady(p);
+        if ("PUBLISHED".equals(r.status())) requireReadyForPublication(p);
         change(p,r.status(),r.cause(),user.getUserId());
     }
     @Transactional
@@ -794,10 +794,10 @@ public class ProblemService {
            Objects.equals(p.get("status"),targetStatus) &&
            Objects.equals(p.get("requested_visibility"),requested)) return;
         if("PUBLIC".equals(request.visibility())) {
-            requireReady(p);
+            requireReadyForPublication(p);
         }
         db.update("""
-            UPDATE problems SET visibility=?,status=?,requested_visibility=?,
+            UPDATE problems SET publication_revision=publication_revision+1,visibility=?,status=?,requested_visibility=?,
                 published_at=CASE WHEN ?='PUBLISHED' THEN (clock_timestamp() AT TIME ZONE 'UTC') ELSE published_at END WHERE id=?
             """,targetVisibility,targetStatus,requested,targetStatus,p.get("id"));
         String cause="공개 범위 "+request.visibility()+(request.cause()==null || request.cause().isBlank()
@@ -805,7 +805,7 @@ public class ProblemService {
         db.update("INSERT INTO problem_status_history(problem_id,status,cause,checker_id) VALUES(?,?,?,?)",
             p.get("id"),targetStatus,cause,user.getUserId());
     }
-    private void requireReady(Map<String,Object> p) {
+    public void requireReadyForPublication(Map<String,Object> p) {
         if(db.queryForObject("""
             SELECT COUNT(*) FROM problem_test_cases WHERE problem_id=? AND is_active=TRUE
             """,Long.class,p.get("id"))==0)
@@ -822,7 +822,7 @@ public class ProblemService {
     private void change(Map<String,Object> p,String state,String cause,long uid) {
         String publishedVisibility=p.get("group_id")!=null?"GROUP":(String)p.get("requested_visibility");
         db.update("""
-            UPDATE problems SET status=?,visibility=CASE WHEN ?='PUBLISHED' THEN ? ELSE visibility END,
+            UPDATE problems SET publication_revision=publication_revision+1,status=?,visibility=CASE WHEN ?='PUBLISHED' THEN ? ELSE visibility END,
                 published_at=CASE WHEN ?='PUBLISHED' THEN (clock_timestamp() AT TIME ZONE 'UTC') ELSE published_at END WHERE id=?
             """,state,state,publishedVisibility,state,p.get("id"));
         db.update("INSERT INTO problem_status_history(problem_id,status,cause,checker_id) VALUES(?,?,?,?)",p.get("id"),state,cause,uid);

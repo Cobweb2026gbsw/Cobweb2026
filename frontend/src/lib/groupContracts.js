@@ -21,6 +21,7 @@ export function localDatetime(value) {
 }
 export function contestPayload(fields, current = null) {
   const options = Object.fromEntries(['replayAllowed', 'captureProtection', 'windowSwitchProtection'].map(key => [key, Boolean(fields[key])]));
+  options.autocompleteAllowed = fields.autocompleteAllowed ?? current?.autocompleteAllowed ?? true;
   // 시작 후에는 ISO 문자열과 문제 순서를 그대로 보내 마이크로초·짧은 시험을 보존합니다.
   if (current && current.status !== 'UPCOMING') return {
     title: current.title, startsAt: current.startsAt, endsAt: current.endsAt,

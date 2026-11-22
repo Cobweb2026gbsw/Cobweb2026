@@ -65,20 +65,22 @@ class SubmissionDiagnosticIntegrationTest {
         com.drewdrew0414.PostgresTestSupport.rejected(db,()->db.update(
             "UPDATE submissions SET diagnostic_json=jsonb_build_object('message',CAST(? AS text)) WHERE id=?","x".repeat(8193),claim.get("id")));
     }
-    @Test void endedContestAndRevokedParticipationCannotReadSafeDiagnosticThroughOrdinaryDetail() {
+    @Test void contestDiagnosticRequiresScopedRouteAndCurrentReplayPermission() {
         var fixture=fixture();long contest=contest(fixture);
         long id=submissions.submitContest(contest,fixture.number(),"raise ValueError('source-only')\n",Language.PYTHON,fixture.user());
         db.update("UPDATE submissions SET status='RUNNING',judge_token=? WHERE id=?",UUID.randomUUID().toString(),id);
         var claim=db.queryForMap("SELECT * FROM submissions WHERE id=?",id);
         var diagnostic=JudgeDiagnostic.runtime(Language.PYTHON,"raise ValueError('source-only')\n","ValueError: private-input",false);
         finish(claim,"RUNTIME_ERROR",diagnostic);
-        assertEquals(diagnostic.publicValue(),submissions.detail(id,fixture.user()).get("diagnostic"));
+        long group=db.queryForObject("SELECT group_id FROM group_contests WHERE id=?",Long.class,contest);
+        assertEquals(404,assertThrows(ResponseStatusException.class,()->submissions.detail(id,fixture.user())).getStatusCode().value());
+        assertEquals(diagnostic.publicValue(),submissions.contestDetail(group,contest,id,fixture.user()).get("diagnostic"));
         db.update("UPDATE group_contests SET ends_at=((clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second'),replay_allowed=FALSE WHERE id=?",contest);
-        assertEquals(403,assertThrows(ResponseStatusException.class,()->submissions.detail(id,fixture.user())).getStatusCode().value());
+        assertEquals(403,assertThrows(ResponseStatusException.class,()->submissions.contestDetail(group,contest,id,fixture.user())).getStatusCode().value());
         db.update("UPDATE group_contests SET replay_allowed=TRUE WHERE id=?",contest);
-        assertEquals(diagnostic.publicValue(),submissions.detail(id,fixture.user()).get("diagnostic"));
+        assertEquals(diagnostic.publicValue(),submissions.contestDetail(group,contest,id,fixture.user()).get("diagnostic"));
         db.update("UPDATE group_roles SET can_take_contests=FALSE WHERE group_id=(SELECT group_id FROM group_contests WHERE id=?)",contest);
-        assertEquals(403,assertThrows(ResponseStatusException.class,()->submissions.detail(id,fixture.user())).getStatusCode().value());
+        assertEquals(403,assertThrows(ResponseStatusException.class,()->submissions.contestDetail(group,contest,id,fixture.user())).getStatusCode().value());
     }
     private void finish(Map<String,Object> claim,String status,JudgeDiagnostic diagnostic) {
         Long caseId="COMPILATION_ERROR".equals(status)?null:db.queryForObject("SELECT id FROM problem_test_cases WHERE problem_id=?",Long.class,claim.get("problem_id"));

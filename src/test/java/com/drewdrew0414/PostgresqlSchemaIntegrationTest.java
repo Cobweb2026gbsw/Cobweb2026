@@ -20,8 +20,11 @@ class PostgresqlSchemaIntegrationTest {
     @Test void onlyExpectedPostgresMigrationsArePackagedAndBaselineIncludesTheOptionalSeed() throws Exception {
         var resolver=new PathMatchingResourcePatternResolver();
         var migrations=resolver.getResources("classpath*:db/migration/*.sql");
-        assertEquals(List.of("V1__postgresql_schema.sql","V2__learning_reports.sql","V3__rank_points.sql"),
-                Arrays.stream(migrations).map(org.springframework.core.io.Resource::getFilename).sorted().toList(),
+        assertEquals(List.of("V1__postgresql_schema.sql","V2__learning_reports.sql","V3__rank_points.sql",
+                        "V4__contest_autocomplete.sql","V5__signup_terms_consent.sql","V6__terms_publication.sql",
+                        "V7__admin_judging.sql","V8__contest_operations.sql","V9__admin_moderation.sql","V10__learning_report_operations.sql"),
+                Arrays.stream(migrations).map(org.springframework.core.io.Resource::getFilename)
+                        .sorted(java.util.Comparator.comparingInt(name -> Integer.parseInt(name.substring(1,name.indexOf("__"))))).toList(),
                 "stale copied migrations must not be packaged");
         assertEquals(0,resolver.getResources("classpath*:demo/*.sql").length);
         for(var migration:migrations) {
@@ -46,18 +49,29 @@ class PostgresqlSchemaIntegrationTest {
         }
     }
 
-    @Test void postgres18HasAllThreeMigrationsAndAll39ApplicationTables() {
+    @Test void bootstrapIncludesNewMigrationsWithTheirFlywayChecksums() throws Exception {
+        String installer=java.nio.file.Files.readString(java.nio.file.Path.of("deploy/postgres/neon-bootstrap.sql"));
+        for (String script:List.of("V4__contest_autocomplete.sql","V5__signup_terms_consent.sql","V6__terms_publication.sql",
+                        "V7__admin_judging.sql","V8__contest_operations.sql","V9__admin_moderation.sql","V10__learning_report_operations.sql")) {
+            var resource=new org.springframework.core.io.ClassPathResource("db/migration/"+script);
+            assertTrue(installer.contains("-- BEGIN "+script+"\n"+resource.getContentAsString(StandardCharsets.UTF_8)+"-- END "+script));
+            int checksum=db.queryForObject("SELECT checksum FROM flyway_schema_history WHERE script=? AND success",Integer.class,script);
+            assertTrue(installer.contains("'"+script+"', "+checksum+", current_user"));
+        }
+    }
+
+    @Test void postgres18HasAllMigrationsAndAll51ApplicationTables() {
         assertTrue(Integer.parseInt(db.queryForObject("SHOW server_version_num",String.class))>=180000);
         assertTrue(db.queryForObject("SELECT current_database()",String.class).endsWith("_test"));
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='1' AND success",Integer.class));
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='2' AND success",Integer.class));
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='3' AND success",Integer.class));
-        assertEquals(3,db.queryForObject("SELECT COUNT(*) FROM flyway_schema_history",Integer.class));
-        assertEquals(39,db.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE' AND table_name<>'flyway_schema_history'",Integer.class));
+        assertEquals(10,db.queryForObject("SELECT COUNT(*) FROM flyway_schema_history",Integer.class));
+        assertEquals(51,db.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE' AND table_name<>'flyway_schema_history'",Integer.class));
     }
 
     @Test void jsonbBooleanPrecisionAndDatabaseGuardsAreNativePostgresTypes() {
-        assertEquals(7,db.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND data_type='jsonb'",Integer.class));
+        assertEquals(12,db.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND data_type='jsonb'",Integer.class));
         assertEquals("text",db.queryForObject("SELECT data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='learning_reports' AND column_name='carry_forward_summary'",String.class));
         assertEquals("boolean",db.queryForObject("SELECT data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='problems' AND column_name='author_public'",String.class));
         assertEquals(11,db.queryForObject("SELECT COUNT(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=current_schema() AND NOT t.tgisinternal",Integer.class));

@@ -65,6 +65,7 @@ class SystemGroupIntegrationTest {
         db.update("INSERT INTO email_verifications(email,code_hash,purpose,is_verified,expires_at) VALUES(?,?,'JOIN',TRUE,?)",
             email,hashes.hash(email,VerificationPurpose.JOIN,code),LocalDateTime.now().plusMinutes(5));
         var request=new SignupRequest();
+        ReflectionTestUtils.setField(request, "acceptedTermsVersion", com.drewdrew0414.domain.user.service.ServiceTerms.VERSION);
         ReflectionTestUtils.setField(request,"username",username);
         ReflectionTestUtils.setField(request,"email",email);
         ReflectionTestUtils.setField(request,"password","system-group-test-only-password");

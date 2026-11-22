@@ -40,6 +40,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 // 인증 상태 변경 시 JDBC가 별도로 관리하는 프로필·랭킹 열을 다시 쓰지 않습니다.
@@ -133,6 +134,12 @@ public class User {
     @Column(name = "access_token_version", nullable = false)
     private long accessTokenVersion = 0;
 
+    @Column(name = "accepted_terms_version", length = 32, updatable = false)
+    private String acceptedTermsVersion;
+
+    @Column(name = "terms_accepted_at", updatable = false)
+    private LocalDateTime termsAcceptedAt;
+
     @Builder
     // 회원가입처럼 새로 만들 때 필요한 값만 받는 생성자에 빌더를 붙임
     // id, role, status 등은 여기서 안 받고 기본값 그대로 둠
@@ -151,6 +158,12 @@ public class User {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedPasswordAt = LocalDateTime.now();
+    }
+
+    /** 가입 트랜잭션에서만 호출하며, 기존 계정의 동의를 임의로 채우지 않습니다. */
+    public void recordSignupConsent(String version) {
+        acceptedTermsVersion = version;
+        termsAcceptedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public void changePassword(String encodedPassword) {

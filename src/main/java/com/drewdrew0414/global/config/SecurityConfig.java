@@ -72,12 +72,12 @@ class SecurityConfig implements WebMvcConfigurer {
                         .requestMatchers(new OpenAiWebRequestMatcher()).denyAll()
                         .requestMatchers(HttpMethod.GET, SpaController.PUBLIC_ROUTES).permitAll()
                         .requestMatchers(HttpMethod.GET, "/ui/index.html", "/ui/assets/**", "/react-bridge.js", "/legacy").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/ready", "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/ready", "/api/terms/current", "/api/languages", "/api/problems", "/api/problems/*", "/api/ranking", "/api/profiles", "/api/profiles/*").permitAll()
                         .requestMatchers(HttpMethod.GET,"/api/groups","/api/community/notices","/api/community/posts",
                             "/api/community/posts/*","/api/community/posts/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET,"/app.html","/create","/admin","/groups","/community","/notices",
                             "/app.js","/groups.js","/community.js","/app.css","/groups.css","/community.css",
-                            "/code-editor.js","/markdown.js","/vendor/marked.umd.js").permitAll()
+                            "/code-editor.js","/contest-input-guard.mjs","/markdown.js","/vendor/marked.umd.js").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         // 로그아웃은 현재 사용자 ID의 refresh token을 삭제하므로 반드시 access token으로 본인을 확인
                         .requestMatchers("/api/auth/**").permitAll()

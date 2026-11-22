@@ -1,6 +1,7 @@
 package com.drewdrew0414.domain.user.controller;
 
 import com.drewdrew0414.domain.problem.ProblemService;
+import com.drewdrew0414.domain.submission.Language;
 import com.drewdrew0414.domain.user.exception.DuplicateUsernameException;
 import com.drewdrew0414.global.security.CustomUserDetails;
 import com.drewdrew0414.global.common.ApiResponse;
@@ -13,6 +14,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import com.drewdrew0414.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
+import java.util.Map;
 
 /** 공개 프로필은 허용된 열만 반환합니다. 이메일·비밀번호·로그인 로그는 공개하지 않습니다. */
 @RestController @RequestMapping("/api") @RequiredArgsConstructor
@@ -46,8 +48,22 @@ public class ProfileController {
         var p=rows.getFirst(); Object uid=p.remove("id");
         p.put("solvedProblems",db.queryForList("""
             SELECT p.problem_number,p.problem_title FROM user_solved_problems s JOIN problems p ON p.id=s.problem_id
-            WHERE s.user_id=? AND p.status='PUBLISHED' AND p.visibility='PUBLIC' ORDER BY s.solved_at DESC LIMIT 100
+            WHERE s.user_id=? AND p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
+            ORDER BY s.solved_at DESC LIMIT 100
             """,uid));
+        p.put("topLanguages", db.query("""
+            SELECT s.language, COUNT(DISTINCT s.problem_id) AS solved_count
+            FROM submissions s JOIN problems p ON p.id=s.problem_id
+            WHERE s.user_id=? AND s.status='ACCEPTED' AND s.contest_id IS NULL
+              AND p.status='PUBLISHED' AND p.visibility='PUBLIC' AND p.group_id IS NULL
+            GROUP BY s.language
+            ORDER BY solved_count DESC, s.language COLLATE "C" ASC
+            LIMIT 3
+            """, (rs, rowNum) -> {
+                String language = rs.getString("language");
+                return Map.of("language", language, "label", Language.displayName(language),
+                        "solved_count", rs.getLong("solved_count"));
+            }, uid));
         return p;
     }
     @GetMapping("/me") public Object me(@AuthenticationPrincipal CustomUserDetails user) {

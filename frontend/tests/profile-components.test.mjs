@@ -20,7 +20,7 @@ const module = {exports: {}};
 new Function('require', 'module', 'exports', bundle.outputFiles[0].text)(require, module, module.exports);
 const {Profile, ProfileEdit, Ranking, AuthProvider, beginSession} = module.exports;
 const response = (data, status = 200) => new Response(JSON.stringify({success: status < 400, data}), {status});
-const profile = username => ({username, bio: '', github_url: '', rank_type: 'INITIATE', rank_int: 5, rank_points: 30, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: []});
+const profile = username => ({username, bio: '', github_url: '', rank_type: 'INITIATE', rank_int: 5, rank_points: 30, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: [], topLanguages: []});
 
 function mount(Page, path, pattern) {
   beginSession(null);
@@ -54,6 +54,24 @@ test('legacy single-segment Profile screen uses the safe query API alias', async
   };
   const view = mount(Profile, '/users/plain-user', '/users/:nickname');
   await view.findByRole('heading', {name: 'plain-user', exact: true});
+  assert.ok(view.getByText('공개 문제를 풀면 사용한 언어가 표시됩니다.'));
+  cleanup();
+});
+
+test('public profile shows language labels and solved counts in ranked order', async () => {
+  globalThis.fetch = async path => {
+    if (path === '/api/auth/reissue') return response(null, 401);
+    assert.equal(path, '/api/profiles?username=coder');
+    return response({...profile('coder'), topLanguages: [
+      {language: 'CPP', label: 'C++', solved_count: 12},
+      {language: 'PYTHON', label: 'Python', solved_count: 8},
+      {language: 'CSHARP', label: 'C#', solved_count: 2},
+    ]});
+  };
+  const view = mount(Profile, profileHref('coder'), '/users');
+  const section = await view.findByRole('region', {name: '자주 쓴 언어'});
+  assert.deepEqual([...section.querySelectorAll('ol > li')].map(row => row.textContent),
+    ['C++ 12문제', 'Python 8문제', 'C# 2문제']);
   cleanup();
 });
 
@@ -72,7 +90,7 @@ test('profile edit saves the chosen login name and displays it on my profile', a
       username = edit.username;
       return response(null);
     }
-    return response({...profile(username), id:'73'});
+    return response({...profile(username), id:'73', topLanguages: [{language:'JAVA', label:'Java', solved_count:1}]});
   };
   const view = render(React.createElement(MemoryRouter, {initialEntries:['/me/edit']},
     React.createElement(AuthProvider, null, React.createElement(Routes, null,
@@ -84,6 +102,7 @@ test('profile edit saves the chosen login name and displays it on my profile', a
   fireEvent.change(input, {target:{value:'새이름'}});
   fireEvent.click(view.getByRole('button', {name:'저장',exact:true}));
   await view.findByRole('heading', {name:'새이름',exact:true});
+  assert.equal(view.getByRole('listitem').textContent, 'Java 1문제');
   assert.deepEqual(writes, [{username:'새이름',bio:'',githubUrl:''}]);
   cleanup();
 });

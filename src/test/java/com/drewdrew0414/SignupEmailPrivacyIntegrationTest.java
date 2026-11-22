@@ -1,6 +1,7 @@
 package com.drewdrew0414;
 
 import com.drewdrew0414.domain.user.entity.VerificationPurpose;
+import com.drewdrew0414.domain.user.service.ServiceTerms;
 import com.drewdrew0414.global.security.EmailCodeHash;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +52,7 @@ class SignupEmailPrivacyIntegrationTest {
         saveVerifiedCode(newEmail, newCode);
         assertEquals(200, signup(username(), newEmail, newCode).statusCode());
         assertEquals(1, db.queryForObject(
-                "SELECT COUNT(*) FROM users WHERE email=?", Integer.class, newEmail));
+                "SELECT COUNT(*) FROM users WHERE email=? AND accepted_terms_version=? AND terms_accepted_at IS NOT NULL", Integer.class, newEmail, ServiceTerms.VERSION));
         assertEquals(0, db.queryForObject(
                 "SELECT COUNT(*) FROM email_verifications WHERE email=? AND purpose='JOIN'",
                 Integer.class, newEmail));
@@ -70,7 +71,7 @@ class SignupEmailPrivacyIntegrationTest {
                 .POST(HttpRequest.BodyPublishers.ofString("{\"username\":\"" + username +
                         "\",\"email\":\"" + email +
                         "\",\"verificationCode\":\"" + code +
-                        "\",\"password\":\"new-password\"}"))
+                        "\",\"acceptedTermsVersion\":\"" + ServiceTerms.VERSION + "\",\"password\":\"new-password\"}"))
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }

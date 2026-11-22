@@ -56,7 +56,9 @@ async function show(id){
     if(id==='ranking'){const data=await api('/api/ranking');if(!currentView(id,view,session))return;
       rows('#rank-list',data,(p,i)=>[(i+1)+'. '+p.username,p.rank_type+' '+p.rank_int+' · '+p.rank_points+'점 · '+p.solved_count+'문제']);}
     if(id==='profile'){const p=await api('/api/me');if(!currentView(id,view,session))return;
-      $('#profile-info').textContent=p.username+' · '+p.rank_type+' '+p.rank_int+' · '+p.rank_points+'점\n해결 '+p.solved_count+' / 제출 '+p.submit_count;
+      const topLanguages=(p.topLanguages||[]).map(item=>item.label+' '+item.solved_count.toLocaleString('ko-KR')+'문제');
+      $('#profile-info').textContent=p.username+' · '+p.rank_type+' '+p.rank_int+' · '+p.rank_points+'점\n해결 '+p.solved_count+' / 제출 '+p.submit_count+
+        '\n자주 쓴 언어 · '+(topLanguages.join(' · ')||'공개 문제를 풀면 사용한 언어가 표시됩니다.');
       $('#account').textContent=p.username;$('#profile-form [name=username]').value=p.username;
       $('#profile-form [name=bio]').value=p.bio;$('#profile-form [name=githubUrl]').value=p.github_url;}
     if(id==='author'){if(!editorLoaded)resetEditor();await refreshGroupDestinations().catch(()=>{});

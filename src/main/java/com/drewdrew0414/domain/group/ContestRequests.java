@@ -11,7 +11,8 @@ public final class ContestRequests {
     public record Write(@NotBlank @Size(max=200) String title,
                         @NotNull Instant startsAt,@NotNull Instant endsAt,
                         @NotEmpty @Size(max=50) List<@NotNull @Positive Integer> problemNumbers,
-                        boolean replayAllowed,boolean captureProtection,boolean windowSwitchProtection) {}
+                        boolean replayAllowed,boolean captureProtection,boolean windowSwitchProtection,
+                        Boolean autocompleteAllowed) {}
     public enum EventType {
         WINDOW_BLUR,VISIBILITY_HIDDEN,FULLSCREEN_EXIT,COPY_BLOCKED,PRINT_BLOCKED,CAPTURE_KEY;
         boolean windowSwitch() {

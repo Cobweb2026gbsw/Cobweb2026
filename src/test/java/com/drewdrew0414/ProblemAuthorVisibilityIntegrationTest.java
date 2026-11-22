@@ -99,7 +99,7 @@ class ProblemAuthorVisibilityIntegrationTest {
         assertPrivate(data(http("GET","/api/problems/"+hidden,null,other)),author.getUsername());
         assertPublic(data(http("GET","/api/problems/"+visible,null,other)),author.getUsername());
         long cid=contests.create(gid,new ContestRequests.Write("Author contest "+unique(),
-            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(hidden,visible),false,false,false),author);
+            Instant.now().plusSeconds(3600),Instant.now().plusSeconds(7200),List.of(hidden,visible),false,false,false, true),author);
         String path="/api/groups/"+gid+"/contests/"+cid+"/problems/";
         assertEquals(403,http("GET",path+visible,null,other).statusCode());
         assertEquals(401,http("GET",path+visible,null,null).statusCode());

@@ -113,6 +113,27 @@ test("preserve saved history when generation is delayed", async () => {
   assert.deepEqual(calls, [[API, "GET"]]);
 });
 
+test("show observed counts and practice links for the latest report while older reports remain readable", async () => {
+  const older = report(3, "이전 요약");
+  const recent = {...report(4, "최근 요약"), schemaVersion: 2,
+    radar: {...older.radar, firstPassAccuracy: 80},
+    evidence: {firstPassCount: 4, observedSubmissionCount: 5, mostFrequentError: "TIME_LIMIT_EXCEEDED", errorCount: 2}};
+  globalThis.reportApi = async () => ({...empty, reports: [recent, older], recommendations: [
+    {problemNumber: 1105, title: "최소공배수", rankType: "SKILLED", rankInt: 5, sharedTopic: "수학"},
+  ]});
+  const view = render(page());
+  await view.findByText("최근 요약");
+  const facts = view.container.querySelector(".lr-evidence").textContent;
+  assert.match(facts, /5문제 중 4문제/);
+  assert.match(facts, /60% → 80% · 직전 회차보다 20%p 높아요/);
+  assert.match(facts, /시간 초과 2회/);
+  assert.equal(view.getByRole("link", {name: /1105 최소공배수.*수학/}).getAttribute("href"), "/problems/1105");
+  fireEvent.change(view.getByRole("combobox", {name: "리포트 회차"}), {target: {value: "3"}});
+  assert.ok(view.getByText("이전 요약"));
+  assert.equal(view.container.querySelector(".lr-evidence"), null);
+  assert.equal(view.queryByRole("heading", {name: "다음 연습 문제"}), null);
+});
+
 test("poll beyond the reservation lease and show a recheck message at the time limit", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const calls = [];

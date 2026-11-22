@@ -124,6 +124,12 @@ class LearningReportIntegrationTest {
         }
         var firstReport = awaitReports(learner, 1).path("reports").get(0);
         assertEquals(80, firstReport.path("radar").path("firstPassAccuracy").asInt());
+        assertEquals(2, firstReport.path("schemaVersion").asInt());
+        var evidence = firstReport.path("evidence");
+        assertEquals(5, evidence.path("observedSubmissionCount").asInt());
+        assertEquals(4, evidence.path("firstPassCount").asInt());
+        assertEquals("WRONG_ANSWER", evidence.path("mostFrequentError").asText());
+        assertEquals(1, evidence.path("errorCount").asInt());
         assertEquals("running", post(learner));
         var result = awaitReports(learner, 2);
         assertEquals("idle", post(learner));
@@ -162,6 +168,112 @@ class LearningReportIntegrationTest {
         verify(gateway, times(2)).generate(anyString(), nullable(String.class));
     }
 
+    @Test void legacyReportRecommendsOnlyRelatedUnsolvedPublicPracticeAndRechecksVisibility() throws Exception {
+        LocalDateTime now = LocalDate.now(KOREA).atStartOfDay();
+        solve(true, now);
+        long source = problems.getFirst();
+        String topic = "배열 연습 " + UUID.randomUUID().toString().substring(0, 8);
+        long tag = db.queryForObject("INSERT INTO tags(name) VALUES (?) RETURNING id", Long.class, topic);
+        try {
+            db.update("INSERT INTO problem_tags(problem_id, tag_id) VALUES (?, ?)", source, tag);
+            db.update("""
+                    INSERT INTO learning_reports(user_id, report_number, status, report_json, carry_forward_summary, completed_at)
+                    VALUES (?, 1, 'READY', '{"schemaVersion":1,"reportNumber":1,"problemIds":[1],"userSummary":"기존 요약"}'::jsonb,
+                            '기존 내부 요약', clock_timestamp())
+                    """, learner.id());
+            db.update("INSERT INTO learning_report_problems(user_id, report_number, problem_id, position) VALUES (?, 1, ?, 1)",
+                    learner.id(), source);
+            for (int i = 0; i < 5; i++) {
+                long id = createProblem(i < 4);
+                db.update("INSERT INTO problem_tags(problem_id, tag_id) VALUES (?, ?)", id, tag);
+            }
+            long group = db.queryForObject("SELECT id FROM study_groups WHERE system_key='COBWEB_DEFAULT'", Long.class);
+            db.update("UPDATE problems SET group_id=? WHERE id=?", group, problems.get(4));
+            var data = get(learner);
+            assertEquals("기존 요약", data.path("reports").get(0).path("userSummary").asText());
+            var recommendations = data.path("recommendations");
+            assertEquals(3, recommendations.size());
+            for (int i = 0; i < 3; i++) {
+                assertEquals(db.queryForObject("SELECT problem_number FROM problems WHERE id=?", Integer.class, problems.get(i+1)),
+                        recommendations.get(i).path("problemNumber").asInt());
+                assertEquals(topic, recommendations.get(i).path("sharedTopic").asText());
+            }
+            assertEquals(0, get(outsider).path("recommendations").size());
+            db.update("UPDATE problems SET status='ARCHIVED' WHERE id=?", problems.get(1));
+            db.update("INSERT INTO user_solved_problems(user_id,problem_id) VALUES (?,?)", learner.id(), problems.get(2));
+            assertEquals(1, get(learner).path("recommendations").size());
+            db.update("UPDATE problems SET visibility='PRIVATE' WHERE id=?", source);
+            assertEquals(0, get(learner).path("recommendations").size());
+            verify(gateway, never()).generate(anyString(), nullable(String.class));
+        } finally {
+            db.update("DELETE FROM tags WHERE id=?", tag);
+        }
+    }
+
+    @Test void operatorCanPauseOnlyNewGenerationsAndInspectDailyOutcomes() throws Exception {
+        String usage = "/api/admin/report-usage";
+        assertEquals(401, send("GET", usage, null).statusCode());
+        assertEquals(403, send("GET", usage, learner).statusCode());
+        assertEquals(403, patchPause(learner, true).statusCode());
+        db.update("UPDATE users SET role='OPERATOR' WHERE id=?", owner.id());
+        var admin = new Account(owner.id(), owner.name(), jwt.generateAccessToken(owner.id(), owner.name(), "OPERATOR", 0));
+        var before = responseData(send("GET", usage, admin));
+        for (int i = 0; i < 10; i++) solve(true, LocalDate.now(KOREA).atTime(10, i));
+        when(gateway.generate(anyString(), nullable(String.class)))
+                .thenReturn(new LearningReportGateway.Summary(SUMMARY, CARRY))
+                .thenThrow(new IllegalStateException("synthetic failure"));
+        assertEquals("running", post(learner));
+        awaitReports(learner, 1);
+        try {
+            responseData(patchPause(admin, true));
+            assertEquals("paused", post(learner));
+            assertEquals(1, get(learner).path("reports").size());
+            var paused = responseData(send("GET", usage, admin));
+            assertTrue(paused.path("paused").asBoolean());
+            assertEquals(before.path("succeeded").asInt() + 1, paused.path("succeeded").asInt());
+            assertEquals(before.path("attempts").asInt() + 1, paused.path("attempts").asInt());
+        } finally {
+            responseData(patchPause(admin, false));
+        }
+        assertEquals("running", post(learner));
+        awaitState(learner, "retry_later");
+        var after = responseData(send("GET", usage, admin));
+        assertEquals(before.path("failed").asInt() + 1, after.path("failed").asInt());
+        assertEquals(before.path("remaining").asInt() - 2, after.path("remaining").asInt());
+        verify(gateway, times(2)).generate(anyString(), nullable(String.class));
+    }
+
+    private HttpResponse<String> patchPause(Account actor, boolean value) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/admin/report-usage"))
+                .header("Content-Type","application/json").header("Authorization","Bearer " + actor.token())
+                .method("PATCH", HttpRequest.BodyPublishers.ofString("{\"paused\":" + value + "}")).build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test void operationsQueuesExcludeOldErrorsAndRequirePlatformStaff() throws Exception {
+        String overview = "/api/admin/operations";
+        assertEquals(401, send("GET", overview, null).statusCode());
+        assertEquals(403, send("GET", overview + "/submissions", learner).statusCode());
+        db.update("UPDATE users SET role='OPERATOR' WHERE id=?", owner.id());
+        var admin = new Account(owner.id(), owner.name(), jwt.generateAccessToken(owner.id(), owner.name(), "OPERATOR", 0));
+        int previous = responseData(send("GET",overview,admin)).path("systemErrors").asInt();
+        long problem = createProblem(true);
+        String insert = """
+                INSERT INTO submissions(user_id,problem_id,language,source_code,status,judged_at)
+                VALUES (?,?,'DART',?,'SYSTEM_ERROR',(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - make_interval(hours => ?))
+                RETURNING id
+                """;
+        long recent = db.queryForObject(insert, Long.class, learner.id(), problem, PRIVATE_MARKER, 1);
+        long old = db.queryForObject(insert, Long.class, learner.id(), problem, PRIVATE_MARKER, 25);
+        var summary = responseData(send("GET",overview,admin));
+        assertEquals(previous + 1, summary.path("systemErrors").asInt());
+        var rows = responseData(send("GET",overview + "/submissions?status=SYSTEM_ERROR&language=DART",admin)).path("items");
+        assertTrue(rows.valueStream().anyMatch(row -> row.path("id").asLong() == recent));
+        assertFalse(rows.valueStream().anyMatch(row -> row.path("id").asLong() == old));
+        assertFalse(rows.toString().contains(PRIVATE_MARKER));
+        assertEquals(400, send("GET",overview + "/submissions?status=ACCEPTED",admin).statusCode());
+    }
+
     private Account account() {
         String name = "lr" + UUID.randomUUID().toString().replace("-", "").substring(0, 14);
         Long id = db.queryForObject("INSERT INTO users(username, password, role) VALUES (?, 'unused', 'USER') RETURNING id",
@@ -169,7 +281,7 @@ class LearningReportIntegrationTest {
         return new Account(id, name, jwt.generateAccessToken(id, name, "USER", 0));
     }
 
-    private void solve(boolean visible, LocalDateTime koreanTime) {
+    private long createProblem(boolean visible) {
         int number = db.queryForObject("SELECT GREATEST(COALESCE(MAX(problem_number), 0), 800000) + 1 FROM problems", Integer.class);
         Long problem = db.queryForObject("""
                 INSERT INTO problems(problem_number, problem_title, description, input_description, output_description,
@@ -177,6 +289,11 @@ class LearningReportIntegrationTest {
                 VALUES (?, ?, ?, 'input', 'output', 'INITIATE', 3, 'PUBLISHED', ?, ?) RETURNING id
                 """, Long.class, number, "report test " + number, PRIVATE_MARKER, visible ? "PUBLIC" : "PRIVATE", owner.id());
         problems.add(problem);
+        return problem;
+    }
+
+    private void solve(boolean visible, LocalDateTime koreanTime) {
+        long problem = createProblem(visible);
         LocalDateTime utcTime = koreanTime.atZone(KOREA).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         db.update("""
                 INSERT INTO submissions(user_id, problem_id, language, source_code, status, score, submitted_at, judged_at)

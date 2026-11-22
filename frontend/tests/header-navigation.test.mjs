@@ -39,8 +39,8 @@ for(const dark of [true,false]){
   test(`administrator links remain available in the same navigation (${dark?'dark':'light'})`,()=>{
     globalThis.__headerAuth={...globalThis.__headerAuth,user:{username:'admin'},permissions:{canCreate:true,canManage:true}};
     const view=mount(dark),nav=within(view.getByRole('navigation',{name:'주 메뉴'}));
-    assert.equal(nav.getAllByRole('link').length,9);
-    for(const [name,path] of [['내 활동','/dashboard'],['문제 제작','/problems/new'],['문제 관리','/admin/review'],['글 관리','/admin/community']]){
+    assert.equal(nav.getAllByRole('link').length,8);
+    for(const [name,path] of [['내 활동','/dashboard'],['문제 제작','/problems/new'],['운영 관리','/admin']]){
       assert.equal(nav.getByRole('link',{name}).getAttribute('href'),path);
     }
     assert.equal(view.queryByRole('button',{name:'메뉴',exact:true}),null);

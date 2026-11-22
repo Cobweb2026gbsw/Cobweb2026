@@ -1,0 +1,11 @@
+.aj-form,.aj-layout>.cw-card { padding:clamp(16px,3vw,28px); }
+.aj-form>.cw-btn,.aj-layout .cw-actions { margin-top:16px; }
+.aj-layout { display:grid; grid-template-columns:minmax(230px,1fr) minmax(0,2fr); gap:18px; margin-top:20px; align-items:start; }
+.aj-history { display:block; width:100%; text-align:start; margin-bottom:8px; }
+.aj-layout pre { overflow:auto; max-height:200px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.aj-layout details { margin:8px 0; }
+.aj-layout summary { cursor:pointer; }
+.aj-scroll { overflow:auto; max-height:26rem; }
+.aj-scroll table { border-collapse:collapse; min-width:100%; }
+.aj-scroll th,.aj-scroll td { padding:6px 12px; text-align:start; border-bottom:1px solid var(--line); }
+@media(max-width:760px){.aj-layout{grid-template-columns:minmax(0,1fr);}}

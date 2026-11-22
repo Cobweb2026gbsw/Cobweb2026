@@ -17,6 +17,12 @@ public class ContestSubmissionController {
     private final SubmissionService submissions;
     private final JdbcTemplate db;
 
+    @GetMapping("/{id}")
+    public Object detail(@PathVariable long groupId, @PathVariable long contestId, @PathVariable long id,
+                         @AuthenticationPrincipal CustomUserDetails user) {
+        return ApiResponse.success(submissions.contestDetail(groupId,contestId,id,user));
+    }
+
     @PostMapping
     public Object submit(@PathVariable long groupId,@PathVariable long contestId,
                          @Valid @RequestBody SubmissionController.Request request,

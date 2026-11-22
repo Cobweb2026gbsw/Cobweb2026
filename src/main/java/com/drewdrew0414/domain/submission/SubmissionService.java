@@ -138,6 +138,12 @@ public class SubmissionService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND));
     }
     public Map<String,Object> detail(long id,CustomUserDetails user) {
+        return readDetail(id,null,null,user);
+    }
+    public Map<String,Object> contestDetail(long groupId,long contestId,long id,CustomUserDetails user) {
+        return readDetail(id,groupId,contestId,user);
+    }
+    private Map<String,Object> readDetail(long id,Long groupId,Long contestId,CustomUserDetails user) {
         long uid=ProblemService.requireUser(user);
         var rows=db.queryForList("""
             SELECT s.id,s.user_id,s.contest_id,s.language,s.status,s.score,s.execution_time_ms,
@@ -148,7 +154,9 @@ public class SubmissionService {
             """,id);
         if(rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND);
         var result=rows.getFirst();
-        if(result.get("contest_id")!=null) {
+        if(!Objects.equals(contestId,result.get("contest_id")) || !Objects.equals(groupId,result.get("contestGroupId")))
+            throw new ApiException(HttpStatus.NOT_FOUND);
+        if(contestId!=null) {
             contests.requireSubmissionRead(((Number)result.get("contest_id")).longValue(),
                 ((Number)result.get("user_id")).longValue(),user);
             result.put("sourceCode",db.queryForObject("SELECT source_code FROM submissions WHERE id=?",String.class,id));
@@ -343,6 +351,12 @@ public class SubmissionService {
     }
     @Transactional
     public void finish(Map<String,Object> s,List<JudgeResult> results) {
+        // 시험은 접수·캐시 재사용·재채점 확정과 같은 순서로 잠급니다. 실제 DB 소속을 기준으로
+        // 같은 시험의 순위가 미리보기 확정 도중 다른 문제의 채점으로 바뀌지 않게 합니다.
+        db.queryForList("""
+            SELECT c.id FROM submissions item JOIN group_contests c ON c.id=item.contest_id
+            WHERE item.id=? FOR UPDATE OF c
+            """,s.get("id"));
         // 사용자 → 문제 → 제출 순서로 잠가 제출 접수와 결과 반영의 교착 위험을 줄입니다.
         db.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE",s.get("user_id"));
         db.queryForList("SELECT id FROM problems WHERE id=? FOR UPDATE",s.get("problem_id"));

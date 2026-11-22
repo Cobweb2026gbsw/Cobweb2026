@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import TermsConsent, { TERMS_VERSION } from '../components/TermsConsent';
 import ThemeToggle from "../components/ThemeToggle";
 import { api, isStale } from "../lib/api";
 import { advanceOnEnter, useProgressiveFields } from '../lib/useProgressiveFields.js';
@@ -11,6 +12,7 @@ const STEP_HELP = ['아이디를 입력해 주세요.', '인증번호를 받을 
 
 export default function Signup({ dark, setDark }) {
   const navigate = useNavigate();
+  const [accepted, setAccepted] = useState(false);
   const [form, setForm] = useState({ username: "", email: "", code: "", password: "", confirm: "" });
   const [verified, setVerified] = useState(false), [busy, setBusy] = useState("");
   const [sentTo,setSentTo]=useState('');
@@ -59,12 +61,14 @@ export default function Signup({ dark, setDark }) {
     finally { if (request === sequence.current) setBusy(""); }
   };
   const submit = async () => {
-    if (busy || !valid('username') || !formRef.current.reportValidity() || !valid('password')) return;
+    if (busy || !valid('username') || !valid('password')) return;
     if (!verified) { setError("이메일 인증을 먼저 확인해 주세요."); return; }
     if (form.password !== form.confirm) { setError("비밀번호 확인이 일치하지 않습니다."); inputs.current.confirm?.focus(); return; }
+    if (!accepted) { setError("회원가입하려면 이용약관에 동의해 주세요."); formRef.current.querySelector('[type="checkbox"]')?.focus(); return; }
+    if (!formRef.current.reportValidity()) return;
     const request = ++sequence.current; setBusy("signup"); setError("");
     try {
-      await api("/api/auth/signup", "POST", { username: form.username.trim(), email: form.email.trim(), verificationCode: form.code, password: form.password }, { retry: false });
+      await api("/api/auth/signup", "POST", { username: form.username.trim(), email: form.email.trim(), verificationCode: form.code, password: form.password, acceptedTermsVersion: TERMS_VERSION }, { retry: false });
       if (request === sequence.current) { setForm({ username: "", email: "", code: "", password: "", confirm: "" }); navigate("/login", { replace: true }); }
     } catch (failure) { if (request === sequence.current && !isStale(failure)) setError(failure.message); }
     finally { if (request === sequence.current) setBusy(""); }
@@ -113,8 +117,9 @@ export default function Signup({ dark, setDark }) {
       {step >= 4 && <div className="auth-field auth-field--revealed">
         <label htmlFor="signup-confirm">비밀번호 확인</label><input {...fieldProps('confirm')} id="signup-confirm" required type="password" minLength={8} autoComplete="new-password" aria-invalid={Boolean(form.confirm&&form.password!==form.confirm)} aria-describedby="signup-submit-help" />
       </div>}
+      {step >= 4 && <TermsConsent checked={accepted} onChange={setAccepted} disabled={!!busy} />}
       {error && <p className="auth-error" role="alert">{error}</p>}{notice && <p className="auth-notice" role="status">{notice}</p>}
-      {step >= 4 && <p id="signup-submit-help" className="signup-help" role="status">{form.confirm&&form.password!==form.confirm?'비밀번호와 비밀번호 확인을 같게 입력해 주세요.':'Enter 또는 회원가입을 누르면 가입이 완료됩니다.'}</p>}
+      {step >= 4 && <p id="signup-submit-help" className="signup-help" role="status">{form.confirm&&form.password!==form.confirm?'비밀번호와 비밀번호 확인을 같게 입력해 주세요.':'약관에 동의하고 회원가입을 눌러 주세요.'}</p>}
       <button type="submit" aria-describedby={step >= 4 ? 'signup-submit-help' : undefined} disabled={!!busy}>{busy === 'send' ? '발송 중…' : busy === 'verify' ? '확인 중…' : busy === 'signup' ? '가입 중…' : ['다음', '인증번호 발송', '인증번호 확인', '다음', '회원가입'][step]}</button>
       <Link to="/login"><p>계정이 있으신가요? <span>로그인</span></p></Link><p className="signup-logo"><Link to="/">CobWeb</Link></p>
     </form>

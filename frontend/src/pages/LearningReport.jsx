@@ -24,6 +24,13 @@ const DATE_LABEL = new Intl.DateTimeFormat("ko-KR", {
 });
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const LEVELS = ["0개", "1개", "2~3개", "4~5개", "6개 이상"];
+const ERROR_PRACTICE = {
+  WRONG_ANSWER: ["오답", "최솟값·최댓값을 입력했을 때의 기대 결과를 적고 코드 테스트로 확인해 보세요."],
+  COMPILATION_ERROR: ["컴파일 오류", "제출 전 같은 언어로 예제를 실행하고 첫 번째 컴파일 메시지부터 확인해 보세요."],
+  RUNTIME_ERROR: ["실행 오류", "허용되는 가장 작은 입력으로 실행해 배열 접근과 나눗셈 조건을 확인해 보세요."],
+  TIME_LIMIT_EXCEEDED: ["시간 초과", "최대 입력 크기에서 반복문이 몇 번 실행될지 먼저 계산해 보세요."],
+  MEMORY_LIMIT_EXCEEDED: ["메모리 초과", "가장 큰 입력에서 동시에 저장할 배열의 크기와 원소 수를 적어 보세요."],
+};
 const AXES = [
   { key: "firstPassAccuracy", label: "첫 제출 정확도", short: "정확도", detail: "첫 제출에 정답을 받은 비율" },
   { key: "errorRecovery", label: "오류 회복", short: "오류 회복", detail: "오답이나 실행 오류 이후 정답을 받기까지의 시도" },
@@ -35,6 +42,7 @@ const AXES = [
 const STATUS_MESSAGES = {
   running: "새 리포트를 만들고 있어요.",
   unavailable: "지금은 새 리포트를 만들 수 없어요.",
+  paused: "새 리포트 생성이 일시 중지됐어요. 기존 리포트는 계속 볼 수 있어요.",
   retry_later: "리포트 생성이 지연됐어요. 잠시 후 다시 들어와 확인해 주세요.",
   checking_delayed: "리포트 상태를 확인하는 데 시간이 걸리고 있어요. 잠시 후 페이지를 다시 열어 확인해 주세요.",
 };
@@ -232,11 +240,16 @@ function RadarChart({ values, active }) {
   </div>;
 }
 
-function ReportCard({ report }) {
+function ReportCard({ report, previous }) {
   const [active, setActive] = useState(0);
   const values = AXES.map(({ key }) => report.radar?.[key] ?? null);
   const focusId = useId();
   const titleId = useId();
+  const currentRate = report.radar?.firstPassAccuracy;
+  const previousRate = previous?.radar?.firstPassAccuracy;
+  const comparable = isScore(currentRate) && isScore(previousRate);
+  const evidence = report.evidence;
+  const practice = ERROR_PRACTICE[evidence?.mostFrequentError];
   return <section className="cw-card lr-report-card" aria-labelledby={titleId}>
     <header className="lr-card-head">
       <div><h3 className="cw-card-title" id={titleId}>{report.reportNumber}회차 리포트</h3>
@@ -259,6 +272,28 @@ function ReportCard({ report }) {
     <div className="lr-summary">
       <h4>AI 요약</h4><p>{report.userSummary}</p>
     </div>
+    {(evidence?.observedSubmissionCount > 0 || practice || comparable) && <section className="lr-evidence">
+      <h4>이번 회차의 풀이 기록</h4>
+      {evidence?.observedSubmissionCount > 0 && <p>첫 제출 결과를 확인할 수 있는 {evidence.observedSubmissionCount}문제 중 <strong>{evidence.firstPassCount}문제</strong>를 한 번에 맞혔어요.</p>}
+      {comparable && <p>첫 제출 정답률 <strong>{previousRate}% → {currentRate}%</strong>
+        {' · '}{currentRate === previousRate ? '직전 회차와 같아요.' :
+          `직전 회차보다 ${Math.abs(currentRate - previousRate)}%p ${currentRate > previousRate ? '높아요.' : '낮아요.'}`}</p>}
+      {practice && <p><strong>{practice[0]} {evidence.errorCount}회</strong> · 첫 정답을 받기 전 자주 나온 채점 결과예요. {practice[1]}</p>}
+    </section>}
+  </section>;
+}
+
+function RecommendedPractice({ items }) {
+  const titleId = useId();
+  return <section className="cw-card lr-practice" aria-labelledby={titleId}>
+    <h2 className="cw-card-title" id={titleId}>다음 연습 문제</h2>
+    {items.length ? <>
+      <p>최근 회차에서 연습한 주제와 겹치는 미해결 문제예요.</p>
+      <ul>{items.map(item => <li key={item.problemNumber}><Link to={'/problems/' + item.problemNumber}>
+        <span className="lr-practice-title"><span className="cw-mono">{item.problemNumber}</span> {item.title}</span>
+        <span className="lr-practice-meta">{item.sharedTopic} · {item.rankType} {item.rankInt}</span>
+      </Link></li>)}</ul>
+    </> : <p>이번 회차와 주제가 겹치는 미해결 공개 문제가 없습니다. <Link className="cw-text-link" to="/problems">전체 문제 보기</Link></p>}
   </section>;
 }
 
@@ -300,13 +335,16 @@ function LearningReportSession() {
           <progress value={nextProgress} max={BATCH_SIZE} aria-label="다음 회차까지 푼 문제" /></div>
       </div>
       {(error || stateMessage) && <p className="lr-notice" role={error ? "alert" : "status"}>{error || stateMessage}</p>}
-      {report ? <ReportCard key={report.reportNumber} report={report} /> :
+      {report ? <ReportCard key={report.reportNumber} report={report}
+        previous={reports.find(item => item.reportNumber === report.reportNumber - 1)} /> :
         <div className="cw-card lr-empty">
           <Icon name="gauge" /><h3>첫 리포트를 기다리고 있어요</h3>
-          <p>{data.availableBatches === 0 ? `${data.remainingToNextReport}문제를 더 맞히면 이 페이지에서 리포트를 볼 수 있어요.` : "첫 번째 학습 리포트가 완성되면 여기에 표시돼요."}</p>
+          <p>{data.availableBatches === 0 ? `공개 연습 문제 ${data.remainingToNextReport}개를 더 맞히면 첫 제출 정답률과 풀이 피드백을 확인할 수 있어요.` : "첫 번째 학습 리포트가 완성되면 여기에 표시돼요."}</p>
           {data.availableBatches === 0 && <Link className="cw-btn sm" to="/problems">문제 풀기</Link>}
         </div>}
     </section>
+    {report && report.reportNumber === reports[0].reportNumber && Array.isArray(data.recommendations) &&
+      <RecommendedPractice items={data.recommendations} />}
   </>;
 }
 

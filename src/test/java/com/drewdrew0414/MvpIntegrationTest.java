@@ -559,13 +559,19 @@ class MvpIntegrationTest {
             email,emailCodeHash.hash(email,com.drewdrew0414.domain.user.entity.VerificationPurpose.JOIN,"83920174"),
             java.time.LocalDateTime.now().plusMinutes(5));
         emailVerification.verifyCode(email,"83920174",com.drewdrew0414.domain.user.entity.VerificationPurpose.JOIN);
-        var body=new HashMap<String,Object>(Map.of("username",name,"email",email,"password","new-password"));
+        var body=new HashMap<String,Object>(Map.of("username",name,"email",email,"password","new-password",
+            "acceptedTermsVersion",com.drewdrew0414.domain.user.service.ServiceTerms.VERSION));
         // 다른 익명 브라우저는 이메일 주소만 알 뿐 인증 코드를 갖고 있지 않습니다.
         assertEquals(400,signup(body).statusCode(),"이메일의 전역 verified 플래그만으로 타인 요청이 가입에 성공했습니다.");
         body.put("verificationCode","00000000");
         assertEquals(400,signup(body).statusCode());
         assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM users WHERE email=?",Integer.class,email));
         body.put("verificationCode","83920174");
+        body.remove("acceptedTermsVersion");
+        assertEquals(400, signup(body).statusCode());
+        body.put("acceptedTermsVersion", "obsolete");
+        assertEquals(400, signup(body).statusCode());
+        body.put("acceptedTermsVersion", com.drewdrew0414.domain.user.service.ServiceTerms.VERSION);
         var legitimate=signup(body);
         assertEquals(200,legitimate.statusCode(),legitimate.body());
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM users WHERE email=?",Integer.class,email));

@@ -6,7 +6,7 @@ import {RANKS} from '../src/lib/problemModel.js';
 const PROFILE = {
   id: '9999999999999999999', username: '분석용 계정',
   bio: '로컬 화면 분석용 계정입니다.', rank_type: 'INITIATE', rank_int: 5,
-  rank_points: 0, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: [],
+  rank_points: 0, next_rank_points: 100, solved_count: 0, submit_count: 0, solvedProblems: [], topLanguages: [],
 };
 const TOKEN = `${Buffer.from('{"alg":"ANALYSIS"}').toString('base64url')}.${Buffer.from(JSON.stringify({sub: PROFILE.id})).toString('base64url')}.local-preview-only`;
 const LANGUAGES = [
@@ -96,6 +96,7 @@ export function createAnalysisMiddleware(problems = loadAnalysisProblems()) {
     if (request.method === 'POST' && path === '/api/auth/logout') return send(200,null);
     if (request.method !== 'GET') return send(409,null,'로컬 분석 모드에서는 코드를 실행·제출하거나 서버에 저장하지 않습니다. 실제 채점은 백엔드와 채점 워커를 실행한 뒤 이용해 주세요.');
     if (path === '/api/languages') return send(200,LANGUAGES);
+    if (path === '/api/terms/current') return send(200,{version:'2026-11-20',effectiveDate:null,operator:'cobweb 개발팀',contactEmail:'cobweb2026.gbsw@gmail.com'});
     if (path === '/api/problems/permissions') return send(200,{canCreate:false,canManage:false});
     if (path === '/api/problems') return send(200,problemPage(problems,url.searchParams));
     if (path === '/api/problems/chapter') {

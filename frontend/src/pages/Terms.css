@@ -1,0 +1,9 @@
+.terms-page .cw-wrap { max-width: 860px; }
+.terms-document { padding: clamp(20px,4vw,44px); }
+.terms-document .markdown-body { line-height: 1.8; overflow-wrap: anywhere; }
+.terms-document h2:not(:first-child) { margin-top: 2.2em; }
+.terms-details { display: flex; flex-wrap: wrap; gap: 14px 32px; margin: 0 0 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.terms-details dt { color: var(--muted); font-size: .85rem; }
+.terms-details dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.terms-details a { color: var(--accent-text); text-underline-offset: 3px; }
+.terms-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

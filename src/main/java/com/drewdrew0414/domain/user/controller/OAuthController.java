@@ -5,6 +5,7 @@ import com.drewdrew0414.domain.user.dto.response.TokenResponse;
 import com.drewdrew0414.domain.user.entity.Provider;
 import com.drewdrew0414.domain.user.exception.OAuthEmailConflictException;
 import com.drewdrew0414.domain.user.exception.UnsupportedOAuthProviderException;
+import com.drewdrew0414.domain.user.exception.OAuthTermsRequiredException;
 import com.drewdrew0414.domain.user.service.OAuthService;
 import com.drewdrew0414.global.common.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,6 +17,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -55,6 +59,17 @@ public class OAuthController {
         response.sendRedirect(oAuthService.buildAuthorizeUrl(parseProvider(provider), request, response));
     }
 
+    public record SignupConsent(String acceptedTermsVersion) {}
+
+    /** JSON POST로 받은 가입 동의를 이 브라우저의 다음 OAuth state에 묶습니다. */
+    @PostMapping(value = "/{provider}/signup-start", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<OAuthAuthorizeUrlResponse> signupStart(@PathVariable String provider,
+            @RequestBody SignupConsent consent, HttpServletRequest request, HttpServletResponse response) {
+        noStore(response);
+        String url = oAuthService.signupAuthorizeUrl(parseProvider(provider), consent.acceptedTermsVersion(), request, response);
+        return ApiResponse.success(new OAuthAuthorizeUrlResponse(url));
+    }
+
     @GetMapping("/{provider}/callback")
     // 제공자 로그인 동의 후 브라우저가 자동으로 이동해오는 리다이렉트 대상.
     // JSON을 반환하는 대신 프론트엔드 페이지로 다시 리다이렉트해야 하므로 반환 타입이 void
@@ -68,6 +83,9 @@ public class OAuthController {
         TokenResponse tokenResponse;
         try {
             tokenResponse = oAuthService.loginOrSignup(p, code, state, savedState, httpResponse);
+        } catch (OAuthTermsRequiredException needsConsent) {
+            httpResponse.sendRedirect("/signup/social?provider=" + p.name().toLowerCase(java.util.Locale.ROOT));
+            return;
         } catch (OAuthEmailConflictException conflict) {
             httpResponse.sendRedirect("/login?oauthError=account-conflict");
             return;

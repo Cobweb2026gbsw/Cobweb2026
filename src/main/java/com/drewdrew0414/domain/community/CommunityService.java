@@ -29,6 +29,17 @@ public class CommunityService {
         return uid;
     }
 
+    private void requireWritingAllowed(long uid,String feature) {
+        // 호출자는 사용자 행을 잠근 상태입니다. 운영자의 제한 부여와 동시에 작성할 때도 순서를 보장합니다.
+        var active=db.queryForList("""
+            SELECT reason, to_char(expires_at AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS until
+            FROM community_restrictions WHERE user_id=? AND feature=? AND revoked_at IS NULL
+              AND expires_at>clock_timestamp() ORDER BY expires_at DESC LIMIT 1
+            """,uid,feature);
+        if(!active.isEmpty()) throw new ApiException(HttpStatus.FORBIDDEN,
+            "작성 제한 중입니다. "+active.getFirst().get("until")+" (한국 시간)까지 · "+active.getFirst().get("reason"));
+    }
+
     public Map<String,Object> posts(int page,String search,String category,boolean includeDeleted,
                                     CustomUserDetails user) {
         return posts(page,search,category,includeDeleted,user,null);
@@ -210,6 +221,7 @@ public class CommunityService {
         ProblemService.requireUser(user);
         if(request==null) throw new ApiException(HttpStatus.BAD_REQUEST);
         long uid=lockUser(user);
+        requireWritingAllowed(user.getUserId(),"POST");
         var content=validatePost(request.title(),request.body(),request.category(),request.problemNumber(),
             null,user);
         long id=db.queryForObject("""
@@ -225,6 +237,7 @@ public class CommunityService {
         ProblemService.requireUser(user);
         if(request==null) throw new ApiException(HttpStatus.BAD_REQUEST);
         lockUser(user);
+        requireWritingAllowed(user.getUserId(),"POST");
         var old=postForUpdate(id);
         requireManage(old,user);
         if("NOTICE".equals(old.get("category")) && !ProblemService.operator(user))
@@ -287,6 +300,7 @@ public class CommunityService {
         ProblemService.requireUser(user);
         if(request==null) throw new ApiException(HttpStatus.BAD_REQUEST);
         long uid=lockUser(user);
+        requireWritingAllowed(user.getUserId(),"COMMENT");
         String body=validateBody(request.body(),5000);
         var post=postForUpdate(postId);
         if(deleted(post.get("is_deleted"))) throw new ApiException(HttpStatus.CONFLICT,"삭제된 글에는 댓글을 달 수 없습니다.");
@@ -310,6 +324,7 @@ public class CommunityService {
         ProblemService.requireUser(user);
         if(request==null) throw new ApiException(HttpStatus.BAD_REQUEST);
         lockUser(user);
+        requireWritingAllowed(user.getUserId(),"COMMENT");
         var old=lockedCommentWithPost(id);
         requireManage(old,user);
         requireVersion(old,request.version());
