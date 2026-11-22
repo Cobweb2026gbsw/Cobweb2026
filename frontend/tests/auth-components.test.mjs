@@ -11,14 +11,19 @@ Object.defineProperty(globalThis, 'navigator', {value: dom.window.navigator, con
 for (const name of ['window', 'document', 'HTMLElement', 'Event', 'MutationObserver']) globalThis[name] = dom.window[name];
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react'), {render, fireEvent, waitFor, act, cleanup} = require('@testing-library/react');
-const {MemoryRouter} = require('react-router-dom');
+const {MemoryRouter,useLocation} = require('react-router-dom');
 const bundle = await build({
-  stdin: {contents: "export {default as Login} from './src/pages/Login.jsx'; export {AuthProvider,useAuth} from './src/context/AuthContext.jsx'; export {api,beginSession,getAccessToken} from './src/lib/api.js';", resolveDir: process.cwd(), sourcefile: 'auth-test.jsx'},
+  stdin: {contents: "export {default as Login} from './src/pages/Login.jsx'; export {default as AppRoutes} from './src/AppRoutes.jsx'; export {AuthProvider,useAuth} from './src/context/AuthContext.jsx'; export {api,beginSession,getAccessToken} from './src/lib/api.js';", resolveDir: process.cwd(), sourcefile: 'auth-test.jsx'},
   bundle: true, write: false, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', loader: {'.css': 'empty'},
+  plugins: [{name:'unrelated-pages', setup(builder) {
+    builder.onResolve({filter:/^\.\/pages\/[A-Za-z]+$/}, ({path}) =>
+      path === './pages/Login' ? undefined : {path, namespace:'page-placeholder'});
+    builder.onLoad({filter:/.*/, namespace:'page-placeholder'}, () => ({contents:'export default function Page() { return null; }'}));
+  }}],
 });
 const module = {exports: {}};
 new Function('require', 'module', 'exports', bundle.outputFiles[0].text)(require, module, module.exports);
-const {AuthProvider, useAuth, Login, api, beginSession, getAccessToken} = module.exports;
+const {AuthProvider, useAuth, Login, AppRoutes, api, beginSession, getAccessToken} = module.exports;
 const deferred = () => {let resolve; const promise = new Promise(done => {resolve = done;}); return {promise, resolve};};
 const response = (data, status = 200) => new Response(JSON.stringify({success: status < 400, data}), {status});
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -102,6 +107,40 @@ test('a different refresh subject clears rendered identity and explains why logi
   assert.equal(getAccessToken(), null);
   assert.deepEqual(mutations, [`Bearer ${tokenA}`]);
   assert.match(view.getByRole('alert').textContent, /다시 로그인/);
+  cleanup();
+});
+
+test('the real login route keeps a failed attempt visible and resumes the protected link after retry', async () => {
+  let attempts = 0;
+  globalThis.fetch = async path => {
+    if (path === '/api/auth/reissue') return response(null, 401);
+    if (path === '/api/auth/login') return ++attempts === 1 ? response(null, 401) : response({accessToken:tokenB});
+    if (path === '/api/me') return response({username:'account-b'});
+    if (path === '/api/problems/permissions') return response({canManage:false,canCreate:false});
+    throw new Error(path);
+  };
+  function CurrentLocation() {
+    const {pathname, search, hash} = useLocation();
+    return React.createElement('output', {'data-testid':'location'}, pathname + search + hash);
+  }
+  beginSession(null);
+  const target = '/dashboard?view=recent#activity';
+  const view = render(React.createElement(MemoryRouter, {initialEntries:[target]},
+    React.createElement(AuthProvider, null, React.createElement(CurrentLocation),
+      React.createElement(AppRoutes, {dark:true,setDark(){}}))));
+  const username = await view.findByLabelText('아이디');
+  fireEvent.change(username, {target:{value:'account-b'}});
+  fireEvent.keyDown(username, {key:'Enter'});
+  const password = view.getByLabelText('비밀번호');
+  assert.equal(document.activeElement, password);
+  fireEvent.change(password, {target:{value:'sample-password'}});
+  fireEvent.submit(password.form);
+  await view.findByRole('alert');
+  assert.equal(view.getByLabelText('비밀번호').value, 'sample-password');
+  assert.equal(view.getByLabelText('아이디').value, 'account-b');
+  fireEvent.click(view.getByRole('button', {name:'로그인',exact:true}));
+  await waitFor(() => assert.equal(view.getByTestId('location').textContent, target));
+  assert.equal(attempts, 2);
   cleanup();
 });
 

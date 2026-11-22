@@ -7,7 +7,7 @@ export function submissionListUrl(value){
 export function submissionResultUrl(id,from){
   return `/submissions/${id}?`+new URLSearchParams({from:submissionListUrl(from)});
 }
-export function submissionProblemLink(submission,fallback){
+export function submissionProblemLink(submission,fallback,origin){
   if(!submission)return null;
   if(submission.contest_id!=null){
     return positiveId(submission.contest_id)&&positiveId(submission.contestGroupId)
@@ -15,5 +15,13 @@ export function submissionProblemLink(submission,fallback){
   }
   const number=submission.problemNumber??fallback;
   if(!validProblemNumber(number))return null;
-  return {to:positiveId(submission.groupId)?`/groups/${submission.groupId}/problems/${Number(number)}`:`/problems/${Number(number)}`,label:'문제로 돌아가기'};
+  const path = positiveId(submission.groupId)
+    ? `/groups/${submission.groupId}/problems/${Number(number)}`
+    : `/problems/${Number(number)}`;
+  const label = '문제로 돌아가기';
+  if (origin?.pathname === path && typeof origin.search === 'string' &&
+      (origin.search === '' || origin.search.startsWith('?'))) {
+    return {to: path + origin.search, state: origin.state, label};
+  }
+  return {to: path, label};
 }

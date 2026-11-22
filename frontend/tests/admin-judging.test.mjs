@@ -57,3 +57,16 @@ test('reference review presents both expected and actual output; ordinary accoun
  const other=mount('/admin/judging');
  assert.ok(other.getByRole('alert'));assert.equal(calls.length,0);
 });
+test('opening a completed job does not fetch its history again',async()=>{
+ const reads=[];
+ globalThis.judgeApi=async path=>{
+   reads.push(path);
+   return path.endsWith('/4?page=0')
+     ? {id:4,problemNumber:1024,state:'READY',kind:'REFERENCE',jobs:[],total:0,completed:0}
+     : [{id:4,problemNumber:1024,state:'READY',kind:'REFERENCE'}];
+ };
+ const v=mount('/admin/judging');
+ fireEvent.click(await v.findByRole('button',{name:/^#4/}));
+ await v.findByRole('heading',{name:/^#4/});
+ assert.deepEqual(reads,['/api/admin/judging?page=0','/api/admin/judging/4?page=0']);
+});

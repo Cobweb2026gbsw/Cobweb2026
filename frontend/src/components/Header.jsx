@@ -11,11 +11,12 @@ export default function Header({dark,setDark}){
   const {user,logout,permissions,sessionNotice}=useAuth(),navigate=useNavigate();
   const [q,setQ]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [searchOpen,setSearchOpen]=useState(false),searchInput=useRef(null),searchButton=useRef(null),location=useLocation();
+  const returnState = location.pathname === '/' ? undefined : {from: location.pathname + location.search + location.hash};
   useEffect(()=>{if(searchOpen)searchInput.current?.focus();},[searchOpen]);
   useEffect(()=>setSearchOpen(false),[location.pathname,location.search]);
   const problemSection=/^\/(problems|steps|ranking|submissions)(\/|$)/.test(location.pathname);
   const exit=async()=>{setBusy(true);setError('');const pending=logout(),session=getSessionEpoch();try{await pending;}catch(failure){if(!failure.stale&&session===getSessionEpoch())setError(failure.message);}finally{if(session===getSessionEpoch()){setBusy(false);navigate('/');}}};
-  return <>{sessionNotice&&<div className="cw-session-notice" role="alert">{sessionNotice} <Link to="/login">다시 로그인</Link></div>}<header className={`cw-header ${dark?'dark':'light'}`}>
+  return <>{sessionNotice&&<div className="cw-session-notice" role="alert">{sessionNotice} <Link to="/login" state={returnState}>다시 로그인</Link></div>}<header className={`cw-header ${dark?'dark':'light'}`}>
     {error&&<span className="cw-header-error" role="alert">{error}</span>}
     <div className="cw-header-left"><Link to="/" className="cw-header-logo">CobWeb</Link>
       <nav id="main-nav" aria-label="주 메뉴">
@@ -30,7 +31,7 @@ export default function Header({dark,setDark}){
       <input ref={searchInput} value={q} maxLength={200} onChange={event=>setQ(event.target.value)} placeholder="제목, 주제 또는 문제 번호" aria-label="문제 검색"/><button aria-label="검색"><Icon name="search"/></button></form>
     <div className="cw-header-right"><button className="cw-header-btn" onClick={()=>setDark(!dark)} aria-label="테마 전환">{dark?'Light':'Dark'}</button>
       {user?<><Link className="cw-header-btn" to="/me">{user.nickname||user.username}</Link><button className="cw-header-btn primary" onClick={exit} disabled={busy}>로그아웃</button></>:
-      <><Link className="cw-header-btn" to="/login">로그인</Link><Link className="cw-header-btn primary" to="/signup">가입</Link></>}
+      <><Link className="cw-header-btn" to="/login" state={returnState}>로그인</Link><Link className="cw-header-btn primary" to="/signup" state={returnState}>가입</Link></>}
     </div>
   </header>{problemSection&&<nav className={`cw-problem-nav ${dark?'dark':'light'}`} aria-label="문제 메뉴">{[['/problems','전체 문제'],['/steps','난이도별 문제'],['/submissions','내 제출'],['/ranking','랭킹']].map(([to,label])=><NavLink key={to} to={to} end={to==='/problems'}>{label}</NavLink>)}</nav>}</>;
 }

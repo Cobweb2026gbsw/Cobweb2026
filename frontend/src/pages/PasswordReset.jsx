@@ -1,11 +1,15 @@
+import {loginReturnPath} from '../lib/loginReturn.js';
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "../components/ThemeToggle";
 import { api, isStale } from "../lib/api";
 import "./PasswordReset.css";
 
 export default function PasswordReset({ dark, setDark }) {
   const navigate = useNavigate();
+  const {state} = useLocation();
+  const from = loginReturnPath(state?.from);
+  const returnState = from ? {from} : null;
   const [email, setEmail] = useState(""), [code, setCode] = useState("");
   const [password, setPassword] = useState(""), [confirm, setConfirm] = useState("");
   const [resetToken, setResetToken] = useState(null), [busy, setBusy] = useState("");
@@ -34,7 +38,7 @@ export default function PasswordReset({ dark, setDark }) {
     const request = ++sequence.current; setBusy("confirm"); setError("");
     try {
       await api("/api/auth/password-reset/confirm", "POST", { resetToken, newPassword: password }, { retry: false });
-      if (request === sequence.current) { setResetToken(null); setPassword(""); setConfirm(""); navigate("/login", { replace: true }); }
+      if (request === sequence.current) { setResetToken(null); setPassword(""); setConfirm(""); navigate("/login", { replace: true, state: returnState }); }
     } catch (failure) { if (request === sequence.current && !isStale(failure)) setError(failure.message); }
     finally { if (request === sequence.current) setBusy(""); }
   };
@@ -46,7 +50,7 @@ export default function PasswordReset({ dark, setDark }) {
       <label htmlFor="reset-confirm">새 비밀번호 확인</label><input id="reset-confirm" required type="password" minLength={8} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} />
       {error && <p className="auth-error" role="alert">{error}</p>}{notice && <p className="auth-notice" role="status">{notice}</p>}
       <button type="submit" disabled={!!busy || !resetToken}>{busy === "confirm" ? "변경 중…" : "비밀번호 변경"}</button>
-      <Link to="/login"><p>로그인으로 돌아가기</p></Link><p className="reset-logo">CobWeb</p>
+      <Link to="/login" state={returnState}><p>로그인으로 돌아가기</p></Link><p className="reset-logo">CobWeb</p>
     </form>
   </div>;
 }

@@ -109,7 +109,7 @@ function ContestList({dark}) {
     {loading && <p role="status">코딩 테스트를 불러오는 중입니다.</p>}
     {!loading && !error && !list.length && <p className="cw-card ct-empty">{CONTEST_STATUS[tab].label} 상태의 시험이 없습니다.</p>}
     {list.length > 0 && <div className="ct-list">{list.map(item =>
-      <Link className="cw-card ct-card" key={`${item.gid}:${item.id}`} to={`/groups/${item.gid}/contests/${item.id}`}>
+      <Link className="cw-card ct-card" key={`${item.gid}:${item.id}`} to={`/groups/${item.gid}/contests/${item.id}`} state={{contestListStatus:tab}}>
         <div className="ct-card-top"><span className={'cw-badge ' + CONTEST_STATUS[item.status].tone}>{CONTEST_STATUS[item.status].label}</span>
           <span className="ct-id">{item.groupName} · #{item.id}</span></div>
         <h2>{item.title}</h2>

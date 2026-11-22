@@ -345,6 +345,7 @@ scenario('revoked result permission discards late staff answer response', async 
   const view = mount(Page, '/groups/7/contests/3', '/groups/:gid/contests/:cid'); await view.findByRole('button', {name:'시험 운영'}); fireEvent.click(view.getByRole('button', {name:'시험 운영'})); await view.findByText('bob');
   fireEvent.click(view.getByRole('button', {name:'제출 보기'})); await waitFor(() => assert.equal(typeof release, 'function'));
   current = {...contest, canManage:false, canViewResults:false}; fireEvent.click(view.getByRole('button', {name:'새로고침'})); await waitFor(() => absent(view.queryByRole('button', {name:'시험 운영'})));
+  assert.equal(view.getByRole('button', {name:'문제와 내 제출'}).getAttribute('aria-pressed'), 'true');
   await act(async () => {release({submissions:[{id:42,problemNumber:1002,language:'DART',status:'ACCEPTED',sourceCode:'must-never-render'}]}); await tick();}); assert.doesNotMatch(view.container.textContent, /must-never-render/); cleanup();
 });
 
@@ -593,23 +594,33 @@ scenario('contest question keeps editor mounted and pins only the staff announce
 
 scenario('contest copy posts a fresh schedule and stable retry key without sending participant records',async()=>{
   reset();const {default:Page}=await load('GroupContest');
-  const copies=[];
+  const copies=[]; let membershipReads=0;
   globalThis.__groupApi=async(path,method='GET',body)=>{
-    if(path.endsWith('/copies')){copies.push(body);throw new Error('잠시 후 다시 시도');}
-    if(path==='/api/groups/mine')return [{id:20,groupName:'다른 반',permissions:allFlags}];
+    if(path.endsWith('/copies')){
+      copies.push(body);
+      if(copies.length===1)throw new Error('잠시 후 다시 시도');
+      return 4;
+    }
+    if(path==='/api/groups/20')return group;
+    if(path==='/api/groups/20/contests/4')return {...contest,title:'복제한 코테',status:'UPCOMING'};
+    if(path==='/api/groups/mine'){membershipReads++; return [{id:20,groupName:'다른 반',permissions:allFlags}];}
     return standardContestApi(path,method);
   };
   const v=mount(Page,'/groups/7/contests/3','/groups/:gid/contests/:cid');
   fireEvent.click(await v.findByRole('button',{name:'시험 운영'}));
+  assert.equal(membershipReads, 0);
   fireEvent.click(v.getByText('대회 복제'));
   await v.findByRole('option',{name:'다른 반'});
+  assert.equal(membershipReads, 1);
   fireEvent.change(v.getByLabelText('대상 그룹'),{target:{value:'20'}});
   fireEvent.change(v.getByLabelText('새 시작 시각'),{target:{value:'2030-05-01T10:00'}});
   fireEvent.change(v.getByLabelText('새 종료 시각'),{target:{value:'2030-05-01T11:00'}});
   fireEvent.click(v.getByRole('button',{name:'새 일정으로 복제'}));
   await v.findByText('잠시 후 다시 시도');
   fireEvent.click(v.getByRole('button',{name:'새 일정으로 복제'}));
-  await waitFor(()=>assert.equal(copies.length,2));
+  await v.findByRole('heading',{name:'복제한 코테'});
+  assert.equal(v.getByRole('link',{name:/그룹으로/}).getAttribute('href'),'/groups/20?from=%2Fgroups%3Ftab%3Dmine#group-contests');
+  assert.equal(copies.length,2);
   assert.deepEqual(copies[0],copies[1]);assert.equal(copies[0].targetGroupId,20);
   assert.deepEqual(Object.keys(copies[0]).sort(),['endsAt','requestId','startsAt','targetGroupId']);
 });
@@ -631,4 +642,50 @@ scenario('authorized staff opens the per-problem scorecard and downloads CSV wit
     await waitFor(()=>assert.equal(clicked,'contest-3-scorecard.csv'));
     assert.match(await exported.text(),/"' =SUM\(1,1\)"/);
   }finally{URL.createObjectURL=original;dom.window.HTMLAnchorElement.prototype.click=click;}
+});
+
+scenario('leaving the fullscreen prompt returns to the original schedule filter', async () => {
+  reset();
+  const {default: Exam} = await load('GroupContest');
+  globalThis.__groupApi = async (path, method) => path === '/api/groups/7/contests/3'
+    ? {...contest, windowSwitchProtection:true} : standardContestApi(path, method);
+  const source = {pathname:'/groups/7/contests/3', state:{contestListStatus:'UPCOMING'}};
+  const v = mount(Exam, source, '/groups/:gid/contests/:cid');
+  const dialog = await v.findByRole('dialog',{name:'전체 화면 안내'});
+  const exit = within(dialog).getByRole('link',{name:'시험 화면 나가기'});
+  assert.equal(exit.getAttribute('href'),'/contests?status=UPCOMING');
+  fireEvent.click(exit);
+  await v.findByText('destination-route');
+});
+
+scenario('contest issue round trips restore the question, staff tab and original schedule filter', async () => {
+  reset();
+  const {default: Schedule} = await load('Contests');
+  const {default: Exam} = await load('GroupContest');
+  const {default: Issue} = await load('MyIssues');
+  const {default: Inbox} = await load('AdminModeration');
+  globalThis.__groupApi = async (path, method) => {
+    if (path === '/api/groups/mine') return [{id:7,groupName:'반'}];
+    if (path === '/api/groups/7/contests') return [{...contest,status:'ENDED'}];
+    if (path.startsWith('/api/issues?') || path.startsWith('/api/admin/moderation/issues?')) return [];
+    return standardContestApi(path, method);
+  };
+  const route = (path, Component, props={}) => React.createElement(Route, {path,element:React.createElement(Component,{dark:true,...props})});
+  const view = render(React.createElement(MemoryRouter, {initialEntries:['/contests?status=ENDED']},
+    React.createElement(Routes,null,route('/contests',Schedule),route('/groups/:gid/contests/:cid',Exam),
+      route('/issues',Issue),route('/issues/manage',Inbox,{mode:'issues'}))));
+  fireEvent.click(await view.findByRole('link',{name:/실제 코테/}));
+  fireEvent.click(await view.findByRole('button',{name:'1. 그룹 코테 문제'}));
+  fireEvent.click(await view.findByRole('link',{name:'시험 문제 오류 신고'}));
+  const back = await view.findByRole('link',{name:'시험으로'});
+  assert.equal(back.getAttribute('href'),'/groups/7/contests/3?problem=1002');
+  fireEvent.click(back);
+  await view.findByText('진짜 시험 본문');
+  fireEvent.click(view.getByRole('button',{name:'시험 운영'}));
+  fireEvent.click(await view.findByRole('link',{name:'시험 신고·이의제기 관리'}));
+  fireEvent.click(await view.findByRole('link',{name:'시험으로'}));
+  await view.findByRole('heading',{name:'시험 운영'});
+  assert.equal(view.getByRole('link',{name:/시험 목록으로/}).getAttribute('href'),'/contests?status=ENDED');
+  fireEvent.click(view.getByRole('link',{name:/시험 목록으로/}));
+  assert.equal((await view.findByRole('button',{name:/종료/})).getAttribute('aria-pressed'),'true');
 });

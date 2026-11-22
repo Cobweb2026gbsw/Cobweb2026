@@ -1,10 +1,37 @@
 import {useState} from 'react';
-import {Link,useSearchParams} from 'react-router-dom';
+import {Link,useLocation,useSearchParams} from 'react-router-dom';
 import {useAuth} from '../context/AuthContext';
 import {api} from '../lib/api';
 import {BackToContest,categoryLabel,contestScope,IssueDetails,Queue,useOperation} from '../components/ModerationTools';
+import {validProblemNumber} from '../lib/problemNavigation';
 import './common.css';
 import './Moderation.css';
+
+function IssueReturn({params, scope}) {
+  const {state} = useLocation();
+  if (scope.has('contestId')) return <BackToContest scope={scope}/>;
+
+  const submission = params.get('submission');
+  const problem = params.get('problem');
+  let to = '/dashboard', label = '내 활동으로', returnState;
+  if (submission && /^[1-9]\d*$/.test(submission)) {
+    const path = '/submissions/' + submission;
+    const origin = state?.submissionReturn;
+    const matches = typeof origin === 'string' && origin.split('?')[0] === path;
+    to = matches ? origin : path;
+    label = '제출 상세로';
+    returnState = matches ? state.submissionState : undefined;
+  } else if (validProblemNumber(problem)) {
+    const path = '/problems/' + Number(problem);
+    const origin = state?.problemReturn;
+    const sourcePath = typeof origin === 'string' ? origin.split('?')[0] : '';
+    const matches = sourcePath === path || (/^\/groups\/[1-9]\d*\/problems\/[1-9]\d*$/.test(sourcePath) && sourcePath.endsWith(path));
+    to = matches ? origin : path;
+    label = '문제로 돌아가기';
+    returnState = matches ? state.problemState : undefined;
+  }
+  return <Link className="cw-btn" to={to} state={returnState}>{label}</Link>;
+}
 
 function Issues({dark,params}){
   const scope=contestScope(params),url='/api/issues?'+scope;
@@ -18,7 +45,7 @@ function Issues({dark,params}){
       id=>{setBody('');setPage(0);setRefresh(n=>n+1);return '#'+id+'번으로 접수되었습니다.';});
   }
   return <main className={'cw-page moderation-page '+(dark?'dark':'light')}><div className="cw-wrap">
-    <header className="cw-head"><h1>{scope.has('contestId')?'시험 문제 신고·이의제기':'문제 신고·채점 이의제기'}</h1><BackToContest scope={scope}/></header>
+    <header className="cw-head"><h1>{scope.has('contestId')?'시험 문제 신고·이의제기':'문제 신고·채점 이의제기'}</h1><IssueReturn params={params} scope={scope}/></header>
     {loading?<p>불러오는 중…</p>:!user?<Link className="cw-btn" to="/login">로그인</Link>:<>
       <form className="cw-card ops-form" onSubmit={send}><h2>새 접수</h2><div className="ops-fields">
         <label>분류<select className="cw-select" value={category} onChange={e=>setCategory(e.target.value)}>{Object.entries(categoryLabel).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>

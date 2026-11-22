@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url), React = require('react');
 const {render,fireEvent,waitFor,act,cleanup} = require('@testing-library/react');
 const {MemoryRouter,Routes,Route,useLocation} = require('react-router-dom');
 const bundle = await build({
-  stdin:{contents:"export {default as Login} from './src/pages/Login.jsx';export {default as Signup} from './src/pages/Signup.jsx';export {default as SocialSignup} from './src/pages/SocialSignup.jsx';export {default as Terms} from './src/pages/Terms.jsx';",resolveDir:process.cwd(),loader:'jsx'},
+  stdin:{contents:"export {default as Login} from './src/pages/Login.jsx';export {default as Signup} from './src/pages/Signup.jsx';export {default as PasswordReset} from './src/pages/PasswordReset.jsx';export {default as Callback} from './src/pages/OAuthCallBack.jsx';export {rememberOAuthReturn} from './src/lib/loginReturn.js';export {default as SocialSignup} from './src/pages/SocialSignup.jsx';export {default as Terms} from './src/pages/Terms.jsx';",resolveDir:process.cwd(),loader:'jsx'},
   bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty','.md':'text'},
   plugins:[{name:'auth-contract',setup(builder){
     builder.onResolve({filter:/service-terms\.md\?raw$/},()=>({path:fileURLToPath(new URL('../src/content/service-terms.md',import.meta.url))}));
@@ -26,13 +26,16 @@ const bundle = await build({
 });
 const module = {exports:{}};
 new Function('require','module','exports',bundle.outputFiles[0].text)(require,module,module.exports);
-const {Login,Signup,SocialSignup,Terms} = module.exports;
+const {Login,Signup,SocialSignup,Terms,PasswordReset,Callback,rememberOAuthReturn} = module.exports;
 function CurrentPath(){return React.createElement('output',{'data-testid':'path'},useLocation().pathname);}
 function mount(path){return render(React.createElement(MemoryRouter,{initialEntries:[path]},
   React.createElement(CurrentPath),React.createElement(Routes,null,
     React.createElement(Route,{path:'/login',element:React.createElement(Login,{dark:false,setDark(){}})}),
     React.createElement(Route,{path:'/signup',element:React.createElement(Signup,{dark:true,setDark(){}})}),
     React.createElement(Route,{path:'/signup/social',element:React.createElement(SocialSignup,{dark:true,setDark(){}})}),
+    React.createElement(Route,{path:'/password-reset',element:React.createElement(PasswordReset,{dark:true,setDark(){}})}),
+    React.createElement(Route,{path:'/oauth/callback',element:React.createElement(Callback,{dark:true,setDark(){}})}),
+    React.createElement(Route,{path:'/issues',element:React.createElement('p',null,'문의 화면')}),
     React.createElement(Route,{path:'/terms',element:React.createElement(Terms,{dark:true})}),
     React.createElement(Route,{path:'/dashboard',element:React.createElement('p',null,'대시보드')}))));}
 const type = (view,label,value) => fireEvent.change(view.getByLabelText(label),{target:{value}});
@@ -186,4 +189,28 @@ test('editing a verified email hides dependent fields and requires verification 
   assert.equal(view.queryByLabelText('비밀번호 (8자 이상)'),null);assert.equal(view.queryByLabelText('비밀번호 확인'),null);assert.equal(view.queryByLabelText('인증번호'),null);
   enter(view,'이메일');await view.findByLabelText('인증번호');assert.equal(view.getByLabelText('인증번호').value,'');
   assert.equal(calls.filter(call=>call[0]==='/api/auth/signup').length,0);
+});
+
+test('signup and password reset return to login with the original protected destination', async () => {
+  for (const [out, back] of [['회원가입', /계정이 있으신가요/], ['비밀번호 찾기', '로그인으로 돌아가기']]) {
+    const view = mount({pathname:'/login', state:{from:'/issues?problem=1007'}});
+    fireEvent.click(view.getByRole('link', {name:out}));
+    fireEvent.click(view.getByRole('link', {name:back}));
+    type(view, '아이디', 'alice');
+    enter(view, '아이디');
+    type(view, '비밀번호', 'example-password');
+    enter(view, '비밀번호');
+    await view.findByText('문의 화면');
+    cleanup();
+  }
+});
+
+test('same-tab OAuth callback restores the destination once and rejects external return addresses', async () => {
+  globalThis.__progressiveAuth.user = {id:1};
+  for (const [from, expected] of [['/issues?problem=1007', '문의 화면'], [null, '대시보드'], ['//example.invalid', '대시보드']]) {
+    if (from) rememberOAuthReturn(from);
+    const view = mount('/oauth/callback');
+    await view.findByText(expected);
+    cleanup();
+  }
 });

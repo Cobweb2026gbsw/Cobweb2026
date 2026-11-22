@@ -1,6 +1,6 @@
 import {Link,useSearchParams} from 'react-router-dom';
 import {RANKS} from '../lib/problemModel';
-import {RANK_NAMES,rankProblemsUrl} from '../lib/problemNavigation';
+import {RANK_NAMES,rankProblemsUrl,problemUrl} from '../lib/problemNavigation';
 import useApiData from '../lib/useApiData';
 import Icon from '../components/Icon';
 import './common.css';
@@ -33,7 +33,7 @@ export default function Steps({dark}){
           loading ? <p role="status">문제를 불러오는 중입니다…</p> : <>
             <h2>{name} <small>{data?.length??0}문제</small></h2>
             {data?.length ? <ul className="st-problems">{data.map(p=><li key={p.problem_number}>
-              <Link to={'/problems/'+p.problem_number} state={{chapterReturn:selected}}>
+              <Link to={problemUrl(p.problem_number, '/steps?chapter=' + selected)}>
                 <span className="cw-mono">{p.problem_number}</span><span>{p.problem_title}</span><span>{p.reward_points}점</span>
               </Link></li>)}</ul> : <p>현재 공개된 문제가 없습니다.</p>}
           </>}

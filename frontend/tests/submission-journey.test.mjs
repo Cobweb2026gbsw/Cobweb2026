@@ -13,7 +13,7 @@ const require=createRequire(import.meta.url),React=require('react'),{render,fire
 const result=await build({stdin:{contents:"export {default as List} from './pages/MySubmissions.jsx';export {default as Result} from './pages/SubmissionResult.jsx';",resolveDir:fileURLToPath(new URL('../src/',import.meta.url)),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'journey-contract',setup(builder){
   builder.onResolve({filter:/(?:^|\/)api(?:\.js)?$/},()=>({path:'api',namespace:'contract'}));
   builder.onResolve({filter:/\/context\/AuthContext(?:\.jsx)?$/},()=>({path:'auth',namespace:'contract'}));
-  builder.onLoad({filter:/.*/,namespace:'contract'},args=>({contents:args.path==='api'?'export const api=(...args)=>globalThis.__journeyApi(...args);export const getSessionEpoch=()=>0;export const isStale=e=>!!e.stale;':'export const useAuth=()=>({epoch:0,user:{id:1}});'}));
+  builder.onLoad({filter:/.*/,namespace:'contract'},args=>({contents:args.path==='api'?'export const api=(...args)=>globalThis.__journeyApi(...args);export const getSessionEpoch=()=>0;export const isStale=e=>!!e.stale;':'export const useAuth=()=>({epoch:0,user:{id:1},permissions:{canManage:!!globalThis.__queueAccess}});'}));
 }}]});
 const module={exports:{}};new Function('require','module','exports',result.outputFiles[0].text)(require,module,module.exports);const {List,Result}=module.exports;
 const rows=Array.from({length:35},(_,i)=>({id:i+1,problem_number:1000+i,problem_title:'연습 문제 '+i,language:'PYTHON',status:'WRONG_ANSWER',score:0,submitted_at:'2026-11-17T00:00:00Z'}));
@@ -25,7 +25,7 @@ function history(path,all=rows) {
   const totalPages=Math.ceil(matches.length/15),page=Math.min(Number(query.get('page')),Math.max(0,totalPages-1));
   return {items:matches.slice(15*page,15*(page+1)),page,totalPages,matches:matches.length,total:all.length,accepted:0,pending:0,languages:['PYTHON']};
 }
-test.beforeEach(()=>{globalThis.__journeyApi=async path=>path.startsWith('/api/submissions/history?')?history(path):{id:16,problemNumber:1015,status:'WRONG_ANSWER',cases:[]};});
+test.beforeEach(()=>{globalThis.__queueAccess=false;globalThis.__journeyApi=async path=>path.startsWith('/api/submissions/history?')?history(path):{id:16,problemNumber:1015,status:'WRONG_ANSWER',cases:[]};});
 test.afterEach(()=>cleanup());test.after(()=>dom.window.close());
 
 test('submission filters and page survive detail navigation and list remounts',async()=>{
@@ -122,4 +122,23 @@ test('filtered CSV includes both batches when the history exceeds 500 records',a
   assert.equal(lines.length,502);
   assert.deepEqual(lines.slice(1).map(line=>Number(line.match(/^"(\d+)"/)[1])),historyRows.map(row=>row.id));
   assert.match(lines[1],/"따옴표 ""예시"", 문제"/);
+});
+
+test('operator submission links restore queue filters only when the current account may manage',async()=>{
+  const from = '/admin?status=SYSTEM_ERROR&language=PYTHON&page=2';
+  globalThis.__queueAccess = true;
+  let view = render(tree({pathname:'/submissions/16',state:{adminQueueReturn:from}}));
+  assert.equal((await view.findByRole('link',{name:'채점 운영 현황'})).getAttribute('href'),from);
+  cleanup();
+  globalThis.__queueAccess = false;
+  view = render(tree({pathname:'/submissions/16',state:{adminQueueReturn:from}}));
+  assert.equal((await view.findByRole('link',{name:'내 제출'})).getAttribute('href'),'/submissions');
+  assert.equal(view.queryByRole('link',{name:'채점 운영 현황'}),null);
+});
+
+test('submission detail returns to the problem with the original chapter, and ignores mismatched origins', async()=>{
+  const origin = {pathname:'/problems/1015', search:'?from=%2Fsteps%3Fchapter%3D4-1', state:null};
+  const view = render(tree({pathname:'/submissions/16',state:{problemOrigin:origin}}));
+  assert.equal((await view.findByRole('link',{name:'문제로 돌아가기'})).getAttribute('href'),origin.pathname+origin.search);
+  assert.deepEqual(submissionProblemLink({problemNumber:1000},null,origin),{to:'/problems/1000',label:'문제로 돌아가기'});
 });

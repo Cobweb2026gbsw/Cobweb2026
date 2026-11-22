@@ -1,3 +1,4 @@
+import {oauthReturnPath} from '../lib/loginReturn.js';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
@@ -8,6 +9,7 @@ import './Signup.css';
 
 export default function SocialSignup({ dark, setDark }) {
   const [params] = useSearchParams();
+  const [from] = useState(oauthReturnPath);
   const provider = params.get('provider');
   const name = provider === 'google' ? 'Google' : provider === 'github' ? 'GitHub' : null;
   const [accepted, setAccepted] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -37,7 +39,7 @@ export default function SocialSignup({ dark, setDark }) {
         {error && <p className="auth-error" role="alert">{error}</p>}
         <button type="submit" disabled={!accepted || busy}>{name} 계정으로 계속</button>
       </> : <p role="alert">지원하지 않는 소셜 가입 경로입니다.</p>}
-      <Link to="/login"><p>로그인으로 돌아가기</p></Link>
+      <Link to="/login" state={from ? {from} : null}><p>로그인으로 돌아가기</p></Link>
     </form>
   </main>;
 }

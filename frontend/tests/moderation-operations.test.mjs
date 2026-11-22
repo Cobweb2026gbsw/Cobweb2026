@@ -10,8 +10,8 @@ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configu
 globalThis.IS_REACT_ACT_ENVIRONMENT=true;
 const require=createRequire(import.meta.url), React=require('react');
 const {render,fireEvent,waitFor,cleanup}=require('@testing-library/react');
-const {MemoryRouter}=require('react-router-dom');
-const bundle=await build({stdin:{contents:"export {default as Mine} from './src/pages/MyIssues';export {default as Admin} from './src/pages/AdminModeration';",resolveDir:process.cwd(),loader:'jsx'},
+const {MemoryRouter, Routes, Route, useLocation}=require('react-router-dom');
+const bundle=await build({stdin:{contents:"export {default as Mine} from './src/pages/MyIssues';export {default as Admin} from './src/pages/AdminModeration'; export {default as Operations} from './src/pages/AdminOperations'; export {default as Judging} from './src/pages/AdminJudging'; export {default as Review} from './src/pages/ProblemReview';",resolveDir:process.cwd(),loader:'jsx'},
   bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty'},
   plugins:[{name:'operations-fixtures',setup(b){
     b.onResolve({filter:/\/(api|AuthContext)$/},args=>({path:args.path.endsWith('/api')?'api':'auth',namespace:'fixture'}));
@@ -20,7 +20,7 @@ const bundle=await build({stdin:{contents:"export {default as Mine} from './src/
   }}]});
 const mod={exports:{}};
 new Function('require','module','exports',bundle.outputFiles[0].text)(require,mod,mod.exports);
-const {Mine,Admin}=mod.exports;
+const {Mine,Admin,Operations,Judging,Review}=mod.exports;
 const open=(path,Page,props={})=>render(React.createElement(MemoryRouter,{initialEntries:[path]},React.createElement(Page,{dark:true,...props})));
 const type=(view,label,value)=>fireEvent.change(view.getByLabelText(label),{target:{value}});
 let calls;
@@ -65,4 +65,80 @@ test('feature restriction records a bounded end time and a single feature',async
   fireEvent.click(v.getByRole('button',{name:'제한 등록'}));
   await v.findByText('제한을 등록했습니다.');
   assert.deepEqual(calls.find(c=>c[1]==='POST')[2],{username:'mira',feature:'COMMENT',reason:'도배',expiresAt:'2030-03-02T00:00:00.000Z'});
+});
+test('personal issue links return to the same submission or problem', async () => {
+  const cases = [
+    ['?problem=1001&submission=5', {submissionReturn:'/submissions/5?from=%2Fsubmissions%3Fpage%3D2'}, '제출 상세로', '/submissions/5?from=%2Fsubmissions%3Fpage%3D2'],
+    ['?problem=1001&submission=5', {submissionReturn:'/submissions/9'}, '제출 상세로', '/submissions/5'],
+    ['?problem=1001', {problemReturn:'/groups/2/problems/1001'}, '문제로 돌아가기', '/groups/2/problems/1001'],
+    ['?problem=1001', {problemReturn:'https://example.com/problems/1001'}, '문제로 돌아가기', '/problems/1001'],
+    ['', {}, '내 활동으로', '/dashboard'],
+  ];
+  for (const [search,state,label,url] of cases) {
+    const v = open({pathname:'/issues',search,state}, Mine);
+    assert.equal(v.getByRole('link',{name:label}).getAttribute('href'),url);
+    await v.findByText('등록된 항목이 없습니다.');
+    v.unmount();
+  }
+});
+test('filtered contest issue inbox survives a visit to rejudging', async () => {
+  const issue = {id:12,problemNumber:1001,status:'RESOLVED',response:'완료',category:'PROBLEM_ERROR',version:2};
+  globalThis.opsApi = async path => path.startsWith('/api/admin/moderation/issues') ? [issue] : [];
+  const path='/issues/manage?groupId=3&contestId=11&status=RESOLVED&page=2';
+  const v = render(React.createElement(MemoryRouter,{initialEntries:[path]},
+    React.createElement(Routes,null,
+      React.createElement(Route,{path:'/issues/manage',element:React.createElement(Admin,{mode:'issues'})}),
+      React.createElement(Route,{path:'/admin/judging',element:React.createElement(Judging)}))));
+  fireEvent.click(await v.findByRole('link',{name:'재채점 미리보기로'}));
+  const back=await v.findByRole('link',{name:'이의제기 목록으로'});
+  assert.equal(back.getAttribute('href'),path);
+  fireEvent.click(back);
+  await v.findByRole('link',{name:'재채점 미리보기로'});
+  assert.equal(v.getAllByLabelText('처리 상태')[0].value,'RESOLVED');
+  assert.ok(v.getByText('3'));
+});
+test('operations detail links retain filters and filters only refresh the queue', async () => {
+  globalThis.opsApi=async (path,method)=>{
+    calls.push([path,method]);
+    if(path==='/api/languages') return [{id:'PYTHON',label:'Python'}];
+    if(path==='/api/admin/operations') return {oldestSeconds:1,queued:2};
+    return {hasNext:true,items:[{id:15,problemNumber:1002,language:'PYTHON'}]};
+  };
+  function Receipt() {
+    const {state}=useLocation();
+    return React.createElement('output',null,state.adminQueueReturn);
+  }
+  const v=render(React.createElement(MemoryRouter,{initialEntries:['/admin']},
+    React.createElement(Routes,null,
+      React.createElement(Route,{path:'/admin',element:React.createElement(Operations)}),
+      React.createElement(Route,{path:'/submissions/:id',element:React.createElement(Receipt)}))));
+  await v.findByRole('option',{name:'Python'});
+  type(v,'채점 상태','RUNNING');
+  type(v,'언어','PYTHON');
+  await v.findByRole('link',{name:'#15'});
+  fireEvent.click(v.getByRole('button',{name:'다음'}));
+  fireEvent.click(await v.findByRole('link',{name:'#15'}));
+  await v.findByText('/admin?status=RUNNING&language=PYTHON&page=1');
+  assert.equal(calls.filter(([path])=>path==='/api/admin/operations').length,1);
+  assert.equal(calls.filter(([path])=>path==='/api/languages').length,1);
+});
+test('reference verification returns to the selected review, filters and page',async()=>{
+  globalThis.opsApi=async (path,method)=>{
+    calls.push([path,method]);
+    if(path.startsWith('/api/admin/problems?'))return [{problem_number:1001,problem_title:'문제',status:'PUBLISHED',visibility:'PUBLIC'}];
+    if(path==='/api/admin/problems/1001')return {number:1001,title:'문제 상세',status:'PUBLISHED',currentVisibility:'PUBLIC',languages:[],tests:[],referenceSolutions:[],examples:[]};
+    return [];
+  };
+  const v=render(React.createElement(MemoryRouter,{initialEntries:['/admin/review?page=1&search=abc&status=PUBLISHED']},
+    React.createElement(Routes,null,
+      React.createElement(Route,{path:'/admin/review',element:React.createElement(Review)}),
+      React.createElement(Route,{path:'/admin/judging',element:React.createElement(Judging)}))));
+  fireEvent.click(await v.findByRole('button',{name:/#1001/}));
+  fireEvent.click(await v.findByRole('link',{name:'정답 코드 전체 테스트'}));
+  fireEvent.click(await v.findByRole('link',{name:'문제 검수로'}));
+  await v.findByRole('heading',{name:'문제 상세'});
+  assert.equal(v.getByLabelText('제목 검색').value,'abc');
+  assert.equal(v.getByLabelText('상태').value,'PUBLISHED');
+  assert.ok(v.getByText('2'));
+  assert.equal(calls.filter(([path])=>path==='/api/admin/problems?page=1&search=abc&status=PUBLISHED&visibility=').length,2);
 });

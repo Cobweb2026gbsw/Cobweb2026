@@ -28,6 +28,8 @@ const route=(Page,url,pattern)=>React.createElement(MemoryRouter,{initialEntries
 test.beforeEach(()=>{globalThis.__diagnosticAuth={epoch:0,user:{id:1,username:'alice'},permissions:{}};window.localStorage.clear();});
 test.afterEach(()=>cleanup());test.after(()=>dom.window.close());
 
+const feedbackView = props => React.createElement(require('react-router-dom').MemoryRouter, null,
+  React.createElement(Feedback, props));
 test('compile and runtime causes include safe type and submitted-file line/column as plain text',()=>{
   const view=render(React.createElement(Diagnostic,{submission:submission()}));
   assert.ok(view.getByRole('region',{name:'컴파일 오류 원인'}));assert.ok(view.getByText('SyntaxError'));
@@ -64,16 +66,16 @@ test('all unrelated verdicts hide even a supplied old diagnostic',()=>{
 });
 
 test('inline feedback displays an actual compiler cause and discards it on next submission',async()=>{
-  globalThis.__diagnosticApi=async()=>submission();const view=render(React.createElement(Feedback,{id:42}));
+  globalThis.__diagnosticApi=async()=>submission();const view=render(feedbackView({id:42}));
   await view.findByRole('region',{name:'컴파일 오류 원인'});
-  globalThis.__diagnosticApi=async()=>({...submission('ACCEPTED'),id:43});view.rerender(React.createElement(Feedback,{id:43}));
+  globalThis.__diagnosticApi=async()=>({...submission('ACCEPTED'),id:43});view.rerender(feedbackView({id:43}));
   await view.findByText('정답입니다. 해결 완료로 기록되었습니다.');assert.equal(view.queryByRole('region',{name:'컴파일 오류 원인'})===null,true);
 });
 
 test('late diagnostic response cannot enter another account or submission',async()=>{
-  let release;globalThis.__diagnosticApi=()=>new Promise(resolve=>{release=resolve;});const view=render(React.createElement(Feedback,{id:42}));
+  let release;globalThis.__diagnosticApi=()=>new Promise(resolve=>{release=resolve;});const view=render(feedbackView({id:42}));
   await waitFor(()=>assert.equal(typeof release,'function'));
-  globalThis.__diagnosticAuth={epoch:1,user:{id:2,username:'bob'},permissions:{}};globalThis.__diagnosticApi=async()=>submission('WRONG_ANSWER');view.rerender(React.createElement(Feedback,{id:43}));
+  globalThis.__diagnosticAuth={epoch:1,user:{id:2,username:'bob'},permissions:{}};globalThis.__diagnosticApi=async()=>submission('WRONG_ANSWER');view.rerender(feedbackView({id:43}));
   await view.findByText('오답');await act(async()=>{release(submission());await tick();});assert.equal(view.queryByRole('region',{name:'컴파일 오류 원인'})===null,true);
 });
 
@@ -105,7 +107,7 @@ test('each failed verdict offers relevant next steps without treating pending or
   const cases=[['WRONG_ANSWER','출력과 경계값'],['TIME_LIMIT_EXCEEDED','반복 횟수'],['MEMORY_LIMIT_EXCEEDED','데이터 크기'],['COMPILATION_ERROR','실행되기 전'],['RUNTIME_ERROR','실행 도중'],['SYSTEM_ERROR','채점을 완료하지']];
   for(const [status,heading] of cases){
     globalThis.__diagnosticApi=async()=>submission(status);
-    const view=render(React.createElement(Feedback,{id:42}));
+    const view=render(feedbackView({id:42}));
     const guidance=await view.findByRole('region',{name:'판정 안내'});
     assert.match(guidance.textContent,new RegExp(heading));
     if(status==='SYSTEM_ERROR')assert.match(guidance.textContent,/코드의 오답으로 단정할 수 없습니다/);
@@ -113,7 +115,7 @@ test('each failed verdict offers relevant next steps without treating pending or
   }
   for(const status of ['QUEUED','RUNNING','ACCEPTED','FUTURE_STATUS']){
     globalThis.__diagnosticApi=async()=>submission(status);
-    const view=render(React.createElement(Feedback,{id:42}));
+    const view=render(feedbackView({id:42}));
     await waitFor(()=>assert.match(view.container.textContent,new RegExp(status)));
     assert.equal(view.queryByRole('region',{name:'판정 안내'}),null);cleanup();
   }

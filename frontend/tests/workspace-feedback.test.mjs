@@ -18,6 +18,8 @@ const module={exports:{}};new Function('require','module','exports',built.output
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const workspace=()=>React.createElement(Workspace,{statement:React.createElement('article',null,'설명')},React.createElement('section',null,React.createElement('input',{'aria-label':'초안',defaultValue:'preserved source'})));
 test.beforeEach(()=>{window.localStorage.clear();globalThis.__feedbackAuth={epoch:0};});test.afterEach(()=>cleanup());test.after(()=>dom.window.close());
+const feedbackView = props => React.createElement(require('react-router-dom').MemoryRouter, null,
+  React.createElement(Feedback, props));
 test('keyboard resize bounds persist without replacing the code side and reset is accessible',()=>{
   const view=render(workspace()),separator=view.getByRole('separator',{name:'문제 설명과 코드 영역 너비 조절'}),draft=view.getByRole('textbox',{name:'초안'});
   assert.equal(separator.getAttribute('aria-valuenow'),'50');fireEvent.keyDown(separator,{key:'ArrowRight'});assert.equal(separator.getAttribute('aria-valuenow'),'52');
@@ -34,16 +36,47 @@ test('pointer resize is bounded, cancelled safely, and double click restores def
 });
 test('feedback polls pending status in place and stops on the real terminal verdict',async()=>{
   let reads=0;const busy=[];globalThis.__feedbackApi=async()=>++reads===1?{status:'QUEUED',cases:[]}:{status:'ACCEPTED',score:100,execution_time_ms:7,reusedFromSubmissionId:11,cases:[{status:'ACCEPTED',execution_time_ms:7}]};
-  const view=render(React.createElement(Feedback,{id:22,onPendingChange:value=>busy.push(value)}));await view.findByText('대기 중');
+  const view=render(feedbackView({id:22,onPendingChange:value=>busy.push(value)}));await view.findByText('대기 중');
+  assert.equal(view.getByRole('link', {name:'상세 판정 보기'}).getAttribute('href'), '/submissions/22');
+  assert.equal(document.querySelector('.accepted-fireworks'),null);
   await waitFor(()=>view.getByText('정답입니다. 해결 완료로 기록되었습니다.'),{timeout:2500});assert.deepEqual(busy,[true,false]);assert.equal(reads,2);assert.ok(view.getByText('이미 제출한 코드입니다. 기존 판정을 불러왔습니다. (이전 제출 #11)'));assert.match(view.container.textContent,/1개 케이스 중 1개 통과/);
+  const fireworks = document.body.querySelector(':scope > .accepted-fireworks');
+  assert.ok(fireworks);
+  assert.equal(fireworks.getAttribute('aria-hidden'),'true');
+  await waitFor(()=>assert.equal(fireworks.isConnected,false),{timeout:2500});
+
 });
 test('feedback discards late responses when identity changes or the old submission unmounts',async()=>{
-  let resolveOld;globalThis.__feedbackApi=()=>new Promise(resolve=>{resolveOld=resolve;});const view=render(React.createElement(Feedback,{id:1}));await waitFor(()=>assert.equal(typeof resolveOld,'function'));
-  globalThis.__feedbackAuth={epoch:1};globalThis.__feedbackApi=async()=>({status:'WRONG_ANSWER',score:0,cases:[]});view.rerender(React.createElement(Feedback,{id:2}));await view.findByText('오답');
-  await act(async()=>{resolveOld({status:'ACCEPTED',cases:[]});await tick();});assert.equal(view.queryByText('정답입니다. 해결 완료로 기록되었습니다.'),null);assert.ok(view.getByRole('heading',{name:'제출 #2'}));
+  let resolveOld;globalThis.__feedbackApi=()=>new Promise(resolve=>{resolveOld=resolve;});const view=render(feedbackView({id:1}));await waitFor(()=>assert.equal(typeof resolveOld,'function'));
+  globalThis.__feedbackAuth={epoch:1};globalThis.__feedbackApi=async()=>({status:'WRONG_ANSWER',score:0,cases:[]});view.rerender(feedbackView({id:2}));await view.findByText('오답');
+  await act(async()=>{resolveOld({status:'ACCEPTED',cases:[]});await tick();});assert.equal(view.queryByText('정답입니다. 해결 완료로 기록되었습니다.'),null);assert.ok(view.getByRole('heading',{name:'제출 #2'}));assert.equal(document.querySelector('.accepted-fireworks'),null);
 });
 test('feedback errors stop the busy state and offer an explicit safe retry',async()=>{
-  const busy=[];let fail=true;globalThis.__feedbackApi=async()=>{if(fail)throw Error('조회 권한이 없습니다.');return {status:'SYSTEM_ERROR',score:0,cases:[]};};
-  const callback=value=>busy.push(value),view=render(React.createElement(Feedback,{id:9,onPendingChange:callback}));await view.findByRole('alert');assert.deepEqual(busy,[true,false]);
-  fail=false;fireEvent.click(view.getByRole('button',{name:'채점 결과 다시 불러오기'}));await view.findByText('시스템 오류');assert.deepEqual(busy,[true,false,true,false]);assert.doesNotMatch(view.container.textContent,/정답입니다/);
+  const busy = [];
+  const replies = [{status: 'QUEUED'}, new Error('조회 권한이 없습니다.'), {status: 'SYSTEM_ERROR', score: 0, cases: []}];
+  globalThis.__feedbackApi = async () => {
+    const reply = replies.shift();
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  const view = render(feedbackView({id: 9, onPendingChange: value => busy.push(value)}));
+  await view.findByText(/이 화면에서 자동 갱신/);
+  await view.findByRole('alert', {}, {timeout: 3000});
+  assert.equal(view.queryByText(/이 화면에서 자동 갱신/), null);
+  assert.deepEqual(busy, [true, false]);
+
+  fireEvent.click(view.getByRole('button', {name: '채점 결과 다시 불러오기'}));
+  await view.findByText('시스템 오류');
+  assert.deepEqual(busy, [true, false, true, false]);
+  assert.doesNotMatch(view.container.textContent, /정답입니다/);
+});
+
+test('an immediate accepted verdict respects the reduced-motion preference', async t => {
+  const previous = window.matchMedia;
+  window.matchMedia = query => ({matches: query === '(prefers-reduced-motion: reduce)'});
+  t.after(() => {window.matchMedia = previous;});
+  globalThis.__feedbackApi = async () => ({status: 'ACCEPTED', cases: []});
+  const view = render(feedbackView({id: 31}));
+  await view.findByText('정답입니다. 해결 완료로 기록되었습니다.');
+  assert.equal(document.querySelector('.accepted-fireworks'), null);
 });

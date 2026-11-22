@@ -111,7 +111,9 @@ test('accepted submissions follow the active chapter through its last problem an
       React.createElement(Route, {path:'/steps',element:React.createElement(Steps)}),
       React.createElement(Route, {path:'/problems/:id',element:React.createElement(Detail)}))));
   fireEvent.click(await view.findByRole('link',{name:/1449 복합 최적화 연습 4/}));
-  assert.equal((await view.findByRole('link',{name:'다음 문제',exact:true})).getAttribute('href'),'/problems/1450');
+  assert.equal((await view.findByRole('link',{name:'다음 문제',exact:true})).getAttribute('href'),'/problems/1450?from=%2Fsteps%3Fchapter%3D6-4');
+  const questions = new URL(view.getByRole('link',{name:/이 문제의 질문/}).href);
+  assert.equal(questions.searchParams.get('list'), '/steps?chapter=6-4');
   for (const number of [1449,1450]) {
     await view.findByRole('heading',{name:new RegExp('^'+number+'\\.')});
     const editor = await view.findByRole('textbox',{name:'풀이 코드'});
@@ -120,7 +122,7 @@ test('accepted submissions follow the active chapter through its last problem an
     await view.findByText('정답입니다. 해결 완료로 기록되었습니다.');
     const feedback = view.getByRole('region',{name:'채점 결과'});
     const action = feedback.querySelector('a');
-    assert.equal(action.getAttribute('href'),number === 1449 ? '/problems/1450' : '/steps?chapter=6-4');
+    assert.equal(action.getAttribute('href'),number === 1449 ? '/problems/1450?from=%2Fsteps%3Fchapter%3D6-4' : '/steps?chapter=6-4');
     assert.equal(action.textContent,number === 1449 ? '다음 문제 풀기' : '챕터 목록');
     fireEvent.click(action);
   }

@@ -126,3 +126,31 @@ test('a question opened from a problem preselects Q&A and returns to its filtere
   assert.equal(back.searchParams.get('from'),list);
   cleanup();
 });
+
+test('questions keep the selected chapter through search, writing, reading, and returning', async () => {
+  const returnTo = '/steps?chapter=6-4';
+  const number = 1450;
+  const list = '/forum?' + new URLSearchParams({problemNumber: number, list: returnTo});
+  const problem = '/problems/1450?' + new URLSearchParams({from: returnTo});
+  const question = {...post, category:'PROBLEM_QNA', problemNumber: number};
+  mock(() => ({items:[question], total:1}));
+  const view = await mount(await load('ForumList'), list, '/forum');
+  fireEvent.change(view.getByRole('textbox', {name:'커뮤니티 검색'}), {target:{value:'graph'}});
+  fireEvent.click(view.getByRole('button', {name:'검색'}));
+  const write = new URL((await view.findByRole('link', {name:'질문 작성'})).href);
+  const filtered = write.searchParams.get('from');
+  assert.equal(view.getByRole('link', {name:'문제로 돌아가기'}).getAttribute('href'), problem);
+  assert.equal(new URL(filtered, 'http://localhost').searchParams.get('q'), 'graph');
+  const article = new URL(view.getByText(question.title).closest('a').href);
+  cleanup();
+
+  const form = await mount(await load('ForumWrite'), write.pathname + write.search, '/forum/new');
+  assert.equal(form.getByRole('link', {name:'취소'}).getAttribute('href'), filtered);
+  cleanup();
+
+  mock(path => path.includes('/comments?') ? {items:[],total:0} : question);
+  const detail = await mount(await load('ForumPost'), article.pathname + article.search, '/forum/:id');
+  assert.equal((await detail.findByRole('link', {name:'문제 #1450'})).getAttribute('href'), problem);
+  assert.equal(detail.getByRole('link', {name:/목록으로/}).getAttribute('href'), filtered);
+  cleanup();
+});

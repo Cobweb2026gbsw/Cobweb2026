@@ -1,8 +1,9 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import GroupContestForm from '../components/GroupContestForm';
 import { ProtocolError } from '../lib/errors';
 import useApiData from '../lib/useApiData';
+import {contestParent} from '../lib/groupNavigation';
 import './common.css';
 import './Groups.css';
 
@@ -10,6 +11,7 @@ export default function GroupContestCreate({ dark }) {
   const { gid } = useParams();
   const { epoch } = useAuth();
   const navigate = useNavigate();
+  const {state} = useLocation();
   const validGroup = /^[1-9]\d{0,18}$/.test(gid ?? '');
   const groupPath = validGroup ? `/groups/${gid}` : '/groups';
   const { data, error, loading } = useApiData(validGroup ? `/api${groupPath}` : null);
@@ -19,7 +21,7 @@ export default function GroupContestCreate({ dark }) {
     if (!Number.isSafeInteger(id) || id <= 0) {
       throw new ProtocolError(undefined, { requestMayHaveCompleted: true });
     }
-    navigate(`${groupPath}/contests/${id}`, { replace: true });
+    navigate(`${groupPath}/contests/${id}`, { replace: true, state });
   }
 
   return <main className={`cw-page gp-page ${dark ? 'dark' : 'light'}`}><div className="cw-wrap">
@@ -29,7 +31,7 @@ export default function GroupContestCreate({ dark }) {
         <h1 className="cw-title">새 코테 만들기</h1>
         {data?.group?.groupName && <p className="cw-desc">{data.group.groupName}</p>}
       </div>
-      <Link to={groupPath} className="cw-btn"><span aria-hidden="true">← </span>{validGroup ? '그룹으로' : '그룹 목록'}</Link>
+      <Link to={validGroup ? contestParent(gid, state).to : groupPath} className="cw-btn"><span aria-hidden="true">← </span>{validGroup ? '그룹으로' : '그룹 목록'}</Link>
     </header>
     {!validGroup && <p className="gp-error" role="alert">그룹 주소를 확인해 주세요.</p>}
     {loading && <p role="status">그룹 정보를 불러오는 중입니다.</p>}

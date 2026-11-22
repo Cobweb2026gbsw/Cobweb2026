@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { useResource, useScope } from '../lib/useResource';
-import { validProblemNumber, problemUrl } from '../lib/problemNavigation';
+import { validProblemNumber, problemUrl, problemQuestionsUrl } from '../lib/problemNavigation';
 import { CATEGORIES, forumListDestination } from '../lib/community';
 import './common.css';
 import './Forum.css';
@@ -15,9 +15,10 @@ export default function ForumWrite({ dark }) {
   const location = useLocation();
   const linkedNumber = params.get('problemNumber');
   const question = !id && validProblemNumber(linkedNumber) && Number(linkedNumber) >= 1000;
-  const list = forumListDestination(params.get('from'), admin);
-  const postUrl = postId => (admin ? '/admin/community/' : '/forum/') + postId + '?' + new URLSearchParams({from:list});
   const backToProblem = question && !params.has('from');
+  const list = backToProblem ? problemQuestionsUrl(linkedNumber, params.get('list'))
+    : forumListDestination(params.get('from'), admin);
+  const postUrl = postId => (admin ? '/admin/community/' : '/forum/') + postId + '?' + new URLSearchParams({from:list});
   const cancel = id ? postUrl(id) : backToProblem ? problemUrl(linkedNumber, params.get('list')) : list;
   const [form, setForm] = useState({
     title: '', body: '', category: question ? 'PROBLEM_QNA' : params.get('category') === 'NOTICE' && permissions.canManage ? 'NOTICE' : 'GENERAL',

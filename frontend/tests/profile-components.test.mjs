@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 import {JSDOM} from 'jsdom';
-import {profileHref} from '../src/lib/profileRoutes.js';
+import {profileHref, rankingReturnPath} from '../src/lib/profileRoutes.js';
 
 const require = createRequire(import.meta.url);
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost:8080/'});
@@ -123,3 +123,57 @@ test('Ranking top cards and result rows preserve every public profile name in qu
 });
 
 test.after(async () => {cleanup(); await act(async () => {await new Promise(resolve => setImmediate(resolve));}); dom.window.close();});
+
+test('the profile return button restores the ranking page and locally filtered username', async () => {
+  const calls = [];
+  globalThis.fetch = async path => {
+    if (path === '/api/auth/reissue') return response(null, 401);
+    calls.push(path);
+    if (path === '/api/ranking?page=0') return response(Array.from({length:30}, (_,i)=>profile('user'+i)));
+    if (path === '/api/ranking?page=1') return response(['alice','bob'].map(profile));
+    assert.equal(path, '/api/profiles?username=alice');
+    return response(profile('alice'));
+  };
+  beginSession(null);
+  const view = render(React.createElement(MemoryRouter, {initialEntries:['/ranking']},
+    React.createElement(AuthProvider, null, React.createElement(Routes, null,
+      React.createElement(Route, {path:'/ranking', element:React.createElement(Ranking)}),
+      React.createElement(Route, {path:'/users', element:React.createElement(Profile)})))));
+  const next = view.getByRole('button', {name:'다음'});
+  await waitFor(()=>assert.equal(next.disabled, false));
+  fireEvent.click(next);
+  await view.findByText('alice');
+  fireEvent.change(view.getByRole('textbox'), {target:{value:'ali'}});
+  fireEvent.click(view.getByRole('link', {name:/alice/}));
+  const back = await view.findByRole('link', {name:'랭킹으로 돌아가기'});
+  assert.equal(back.getAttribute('href'), '/ranking?page=1&q=ali');
+  await view.findByRole('heading', {name:'alice'});
+  fireEvent.click(back);
+  await view.findByText('alice');
+  assert.equal(view.getByRole('textbox').value,'ali');
+  assert.ok(view.getByText('2 페이지'));
+  assert.equal(rankingReturnPath('//example.test/ranking'), null);
+  assert.equal(rankingReturnPath('/ranking/../terms'), null);
+  assert.equal(view.queryByText('bob'),null);
+  assert.equal(calls.filter(path=>path.endsWith('page=1')).length, 2);
+  cleanup();
+});
+
+test('ranking can go to the previous page after a failed request', async () => {
+  const calls = [];
+  globalThis.fetch = async path => {
+    if (path === '/api/auth/reissue') return response(null, 401);
+    calls.push(path);
+    return path.endsWith('page=1') ? response(null, 503) : response([profile('alice')]);
+  };
+  const view = mount(Ranking, '/ranking?page=1&q=ali', '/ranking');
+  await view.findByRole('alert');
+  const previous = view.getByRole('button', {name:'이전'});
+  assert.equal(previous.disabled, false);
+  fireEvent.click(previous);
+  await view.findByText('30점');
+  assert.ok(view.getByText('1 페이지'));
+  assert.equal(view.getByRole('textbox').value, 'ali');
+  assert.deepEqual(calls, ['/api/ranking?page=1', '/api/ranking?page=0']);
+  cleanup();
+});

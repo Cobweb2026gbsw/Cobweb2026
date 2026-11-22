@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, isStale } from "../lib/api";
-import { publicProfileApi } from "../lib/profileRoutes";
+import { publicProfileApi, rankingReturnPath } from "../lib/profileRoutes";
 import Icon from "../components/Icon";
 import "./common.css";
 import "./Profile.css";
@@ -11,6 +11,8 @@ function safeGithub(value) { try { const url = new URL(value); return url.protoc
 export default function Profile({ dark, isMe = false }) {
   const { nickname } = useParams(), [params] = useSearchParams(), { user, epoch } = useAuth();
   const username = nickname ?? params.get("username") ?? "";
+  const location = useLocation();
+  const rankingReturn = !isMe && rankingReturnPath(location.state?.rankingReturn);
   const [profile, setProfile] = useState(null), [error, setError] = useState(""), [shown, setShown] = useState(20);
   useEffect(() => {
     const control = new AbortController(); setProfile(null); setError(""); setShown(20);
@@ -24,6 +26,7 @@ export default function Profile({ dark, isMe = false }) {
   const solved = profile?.solvedProblems || [];
   const topLanguages = profile?.topLanguages ?? [];
   return <main className={"cw-page pf-page " + (dark ? "dark" : "light")}><div className="cw-wrap">
+    {rankingReturn && <div className="cw-actions"><Link className="cw-btn" to={rankingReturn}>랭킹으로 돌아가기</Link></div>}
     {error && <p className="pr-banner" role="alert">{error}</p>}
     {!profile && !error && <p role="status">프로필을 불러오고 있습니다…</p>}
     {profile && <>

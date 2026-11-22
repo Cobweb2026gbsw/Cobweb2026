@@ -1,3 +1,5 @@
+import {problemUrl} from './problemNavigation.js';
+
 export const CATEGORIES = {
   HARDWARE: { label: '하드웨어', tone: 'blue' }, SOFTWARE: { label: '소프트웨어', tone: 'mint' },
   NEWS: { label: '최신 정보', tone: 'yellow' }, PROBLEM_QNA: { label: '문제 질문', tone: 'blue' },
@@ -11,4 +13,9 @@ export function forumListDestination(value, admin = false) {
   const path = value.split('?')[0];
   const allowed = admin ? ['/admin/community'] : ['/forum', '/community', '/notices'];
   return allowed.includes(path) ? value : fallback;
+}
+
+export function forumProblemUrl(number, list) {
+  const params = new URL(forumListDestination(list), 'http://localhost').searchParams;
+  return problemUrl(number, params.get('problemNumber') === String(number) ? params.get('list') : null);
 }

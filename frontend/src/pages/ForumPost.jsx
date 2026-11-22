@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { useResource, useScope } from '../lib/useResource';
-import { CATEGORIES, displayDate, forumListDestination } from '../lib/community';
+import { CATEGORIES, displayDate, forumListDestination, forumProblemUrl } from '../lib/community';
 import { profileHref } from '../lib/profileRoutes';
 import CommentBody from '../components/CommentBody';
 import './common.css';
@@ -102,7 +102,7 @@ export default function ForumPost({dark,admin=false}){
     {resource.error&&<button className="cw-btn" onClick={resource.reload}>다시 시도</button>}
     {resource.loading?<p role="status">게시글 불러오는 중…</p>:post&&<>
       <article className="cw-card fm-article"><div className="fm-article-top"><span className={`cw-badge ${category?.tone||'gray'}`}>{category?.label||post.category}</span>{post.deleted&&<span className="cw-badge red">삭제됨</span>}
-        {post.problemNumber&&<Link className="cw-badge mint" to={'/problems/'+post.problemNumber}>문제 #{post.problemNumber}</Link>}</div>
+        {post.problemNumber&&<Link className="cw-badge mint" to={forumProblemUrl(post.problemNumber, list)}>문제 #{post.problemNumber}</Link>}</div>
         <h1>{post.title}</h1><p className="fm-meta"><AuthorName item={post}/><span>{displayDate(post.createdAt)}</span>{post.edited&&<span>수정됨 · {displayDate(post.updatedAt)}</span>}</p>
         <div className="fm-body">{post.body}</div><div className="fm-article-actions cw-actions">
           {post.canEdit&&<Link className="cw-btn sm" to={'/forum/'+id+'/edit?'+editParams}>게시글 수정</Link>}

@@ -145,32 +145,22 @@
 }
 
 .sr-metrics > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-
+  min-width: 0;
   padding: 14px 16px;
-
   background-color: var(--field);
   border-radius: 12px;
 }
 
-.sr-metrics .cw-icon {
-  color: var(--accent-text);
-}
-
-.sr-metrics small {
-  display: block;
-
+.sr-metrics dt {
   color: var(--muted);
   font-size: 11px;
 }
 
-.sr-metrics strong {
-  display: block;
-  margin-top: 4px;
-
+.sr-metrics dd {
+  margin: 4px 0 0;
   font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- 상태 안내 ---------- */

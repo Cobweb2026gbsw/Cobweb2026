@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, isStale, waitForSessionCookies } from "../lib/api";
 import {httpsLoginUrl, requiresHttpsLogin} from '../lib/loginTransport.js';
+import {loginReturnPath, oauthReturnPath, rememberOAuthReturn} from '../lib/loginReturn.js';
 import {navigateOAuth} from '../lib/oauthTransport.js';
 import ThemeToggle from "../components/ThemeToggle";
 import { advanceOnEnter, useProgressiveFields } from '../lib/useProgressiveFields.js';
@@ -32,8 +33,9 @@ export default function Login({ dark, setDark }) {
       .catch(() => {}); // 설정 조회가 실패해도 평문 로그인은 허용하지 않습니다.
     return () => controller.abort();
   }, [insecureLogin]);
-  const destination = typeof location.state?.from === "string" && location.state.from.startsWith("/") && !location.state.from.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(location.state.from)
-    ? location.state.from : "/dashboard";
+  const from = loginReturnPath(location.state?.from) || (oauthNotice ? oauthReturnPath() : null);
+  const returnState = from ? {from} : null;
+  const destination = from || "/dashboard";
   useEffect(() => { if (user && !authLoading) navigate(destination, { replace: true }); }, [user, authLoading, destination, navigate]);
   const next = () => {
     if (authLoading || busy) return;
@@ -63,7 +65,10 @@ export default function Login({ dark, setDark }) {
       const result = await api("/api/auth/oauth/" + provider + "/authorize-url");
       // 쿠키 호스트가 다른 경우 서버는 제공자 대신 canonical /start 주소를 줍니다.
       // fetch로 따라가지 않고 최상위 이동해야 그 호스트에서 HttpOnly state를 발급할 수 있습니다.
-      if (active.current) navigateOAuth(result?.authorizeUrl);
+      if (active.current) {
+        rememberOAuthReturn(from);
+        navigateOAuth(result?.authorizeUrl);
+      }
     } catch (failure) { if (active.current && !isStale(failure)) { setError(failure.message); setBusy(false); } }
   };
   return <div className={"LoginPage " + (dark ? "dark" : "light")}>
@@ -82,7 +87,7 @@ export default function Login({ dark, setDark }) {
         <small id="login-remember-help" className="login-remember-help">일반 로그인에 적용됩니다.</small>
       </div>}
       {insecureLogin && <p className="login-transport" role="status">IP 주소에서는 HTTPS 접속이 필요합니다. {secureLoginUrl ? <a href={secureLoginUrl}>HTTPS로 로그인하기</a> : '서버의 HTTPS 주소로 다시 접속해 주세요.'}</p>}
-      <p className="login-links"><Link to="/signup">회원가입</Link><Link to="/password-reset">비밀번호 찾기</Link></p>
+      <p className="login-links"><Link to="/signup" state={returnState}>회원가입</Link><Link to="/password-reset" state={returnState}>비밀번호 찾기</Link></p>
       {loginNotice && <p className="login-error" role="alert">{loginNotice}</p>}
       <button type="submit" disabled={busy || authLoading}>{busy ? "로그인 중…" : authLoading ? "로그인 상태 확인 중…" : step === 0 ? "다음" : "로그인"}</button>
       <div className="login-social" aria-label="소셜 로그인">{[["google", "Google"], ["github", "GitHub"], ["naver", "네이버"]].map(([id, label]) =>

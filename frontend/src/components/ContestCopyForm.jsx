@@ -1,6 +1,7 @@
 import {useRef,useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import {useLocation,useNavigate} from 'react-router-dom';
 import {api} from '../lib/api';
+import {ProtocolError} from '../lib/errors';
 import useApiData,{useMutationGuard} from '../lib/useApiData';
 
 function copyKey() {
@@ -12,10 +13,19 @@ function copyKey() {
   return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
 }
 
-export default function ContestCopyForm({base,gid,permissions}) {
+export default function ContestCopyPanel(props) {
+  const [visited, setVisited] = useState(false);
+  return <details onToggle={event => {if (event.currentTarget.open) setVisited(true);}}>
+    <summary>대회 복제</summary>
+    {visited && <ContestCopyForm {...props}/>}
+  </details>;
+}
+
+function ContestCopyForm({base,gid,permissions}) {
   const [target,setTarget]=useState(String(gid)),[start,setStart]=useState(''),[end,setEnd]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const request=useRef({}),flight=useRef(false),guard=useMutationGuard(base),navigate=useNavigate();
+  const {state:origin} = useLocation();
   const {data:groups,error:groupError}=useApiData('/api/groups/mine');
   const canExport=permissions.includes('EDIT_PROBLEMS');
   const eligible=(groups || []).filter(g=>String(g.id)!==String(gid) && canExport &&
@@ -33,7 +43,10 @@ export default function ContestCopyForm({base,gid,permissions}) {
       const signature=[chosen,start,end].join('|');
       if(request.current.signature!==signature)request.current={signature,key:copyKey()};
       const id=await api(base+'/copies','POST',{targetGroupId:Number(chosen),startsAt:from.toISOString(),endsAt:to.toISOString(),requestId:request.current.key});
-      if(current())navigate('/groups/'+chosen+'/contests/'+id);
+      if(!current())return;
+      if(!Number.isSafeInteger(id)||id<=0)throw new ProtocolError(undefined,{requestMayHaveCompleted:true});
+      const state=chosen===String(gid) ? origin : {groupList:'/groups?tab=mine'};
+      navigate('/groups/'+chosen+'/contests/'+id,{state});
     } catch(failure){if(current()&&!failure.stale)setError(failure.message);}
     finally{flight.current=false;if(current())setBusy(false);}
   }

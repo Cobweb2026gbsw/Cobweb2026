@@ -35,3 +35,21 @@ test('recent problem is scoped by account and survives unavailable storage',()=>
   window.localStorage.getItem=()=>{throw new Error('storage unavailable');};
   assert.equal(recentProblem('user:1'),null);delete globalThis.window;
 });
+
+test('resume and older history entries preserve a chapter without switching next-problem ordering', () => {
+  const from = '/steps?chapter=6-4';
+  const old = problemTrail({search:'', state:{chapterReturn:'6-4'}}, 1450);
+  assert.equal(old.origin, from);
+  const url = problemUrl(1450, from);
+  const current = problemTrail(new URL(url, 'http://localhost'), 1450);
+  assert.equal(current.from, from);
+  assert.equal(current.byChapter, true);
+  const storage = new Map();
+  globalThis.window = {localStorage: {setItem:(k,v)=>storage.set(k,v), getItem:k=>storage.get(k)}};
+  try {
+    rememberProblem('alice', 1450, current.origin);
+    assert.equal(recentProblem('alice').url, url);
+  } finally { delete globalThis.window; }
+  for (const invalid of ['/steps?chapter=6-5','/steps?chapter=6-4&from=/admin','//other.test/steps?chapter=4-1'])
+    assert.equal(problemUrl(1450, invalid), problemUrl(1450, '/problems'));
+});

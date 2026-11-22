@@ -35,3 +35,22 @@ export function groupPosition(owner, from) {
     return Number.isFinite(value) && value >= 0 ? value : 0;
   } catch {return 0;}
 }
+
+// Route state contains only list filters. Build every destination from the current group/contest.
+export function contestParent(gid, origin) {
+  const status = origin?.contestListStatus;
+  if (['ACTIVE', 'UPCOMING', 'ENDED'].includes(status)) {
+    return {label: '시험 목록으로', to: status === 'ACTIVE' ? '/contests' : '/contests?status=' + status};
+  }
+  const to = origin?.groupList
+    ? groupDetailUrl(gid, origin.groupList) + '#group-contests'
+    : '/groups/' + gid;
+  return {label: '그룹으로', to};
+}
+
+export function contestViewQuery(tab, problemNumber) {
+  const query = new URLSearchParams();
+  if (tab === 'staff') query.set('tab', tab);
+  if (/^[1-9]\d{0,9}$/.test(String(problemNumber))) query.set('problem', String(problemNumber));
+  return query.toString();
+}

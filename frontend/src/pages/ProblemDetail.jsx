@@ -8,7 +8,7 @@ import {FILE_NAMES,sourceBytes,starterCode} from '../lib/problemModel';
 import {preferredLanguage,rememberLanguage} from '../lib/editorLanguagePreference';
 import useProblemDrafts from '../lib/useProblemDrafts';
 import {draftOwner} from '../lib/problemDraftCache';
-import {problemTrail,problemUrl,rememberProblem,neighborDestination,neighborRequest} from '../lib/problemNavigation';
+import {problemTrail,problemUrl,problemQuestionsUrl,rememberProblem,neighborDestination,neighborRequest} from '../lib/problemNavigation';
 import CodeEditor from '../components/CodeEditor';
 import ProblemStatement from '../components/ProblemStatement';
 import ProblemAttribution from '../components/ProblemAttribution';
@@ -27,16 +27,16 @@ function DetailPage({dark}){
   const [submission,setSubmission]=useState(null),flight=useRef(false),guard=useMutationGuard(number,epoch);
   const drafts=useProblemDrafts({problem:problem.data,number,user,loading,epoch});
   const trail=problemTrail(location,number),owner=loading?'':draftOwner(user);
-  const chapter=trail.listOrigin==null;
-  const chapterReturn=/^(?:[45]-[1-5]|6-[1-4])$/.test(location.state?.chapterReturn) ? location.state.chapterReturn : null;
-  const back=gid?`/groups/${gid}`:chapterReturn?`/steps?chapter=${chapterReturn}`:trail.from;
-  const nextState=chapterReturn?{...trail.state,chapterReturn}:trail.state;
-  const questions=new URLSearchParams({problemNumber:number});
-  if(!chapter)questions.set('list',trail.listOrigin);
-  const neighbor=useApiData(!gid && problem.data?.canLinkInForum && !trail.next
-    ?neighborRequest(number,trail.from,chapter):null);
-  const nextLink=trail.next?problemUrl(trail.next,trail.from):neighborDestination(neighbor.data,trail.from,chapter);
-  useEffect(()=>{if(problem.data&&!gid)rememberProblem(owner,number,trail.listOrigin);},[problem.data,gid,owner,number,trail.listOrigin]);
+  const back = gid ? `/groups/${gid}` : trail.from;
+  const backLabel = gid ? '그룹으로' : trail.fromChapter ? '챕터 목록' : '문제 목록';
+  const problemReturn = gid ? location.pathname + location.search : problemUrl(number, trail.origin);
+  const neighbor = useApiData(!gid && problem.data?.canLinkInForum && !trail.next
+    ? neighborRequest(number, trail.from, trail.byChapter) : null);
+  const nextLink = trail.next ? problemUrl(trail.next, trail.from)
+    : neighborDestination(neighbor.data, trail.from, trail.byChapter);
+  useEffect(() => {
+    if (problem.data && !gid) rememberProblem(owner, number, trail.origin);
+  }, [problem.data, gid, owner, number, trail.origin]);
   useEffect(()=>{setCodes({});setLanguage('');setError('');setBusy(false);setSubmission(null);},[number,epoch]);
   useEffect(()=>{if(problem.data)setLanguage(old=>preferredLanguage(problem.data.languages||[],old));},[problem.data]);
   const allowed=(catalog.data||[]).filter(l=>problem.data?.languages?.includes(l.id));
@@ -78,13 +78,33 @@ function DetailPage({dark}){
   const p=problem.data;
   const submissionResult=<>
     {error&&<p className="cw-status-message error" role="alert">{error}</p>}
-    {submission&&<SubmissionFeedback id={submission.id} recovered={submission.recovered} onPendingChange={setBusy} nextAction={!gid&&<Link className="cw-btn primary" to={nextLink||back} state={nextState}>{nextLink?'다음 문제 풀기':chapterReturn?'챕터 목록':'목록에서 다음 문제 찾기'}</Link>}/>}
+    {submission && <SubmissionFeedback dark={dark} id={submission.id} recovered={submission.recovered}
+      onPendingChange={setBusy}
+      nextAction={!gid && <Link className="cw-btn primary" to={nextLink || back} state={trail.state}>
+        {nextLink ? '다음 문제 풀기' : trail.fromChapter ? '챕터 목록' : '목록에서 다음 문제 찾기'}
+      </Link>}/>}
     {!submission&&!error&&<p className="cw-hint cw-test-empty" role={busy?'status':undefined}>
       {busy?'코드를 제출하고 있습니다…':'제출한 코드의 채점 결과가 여기에 표시됩니다.'}
     </p>}
   </>;
-  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap"><header className="cw-head"><div><p className="cw-eyebrow">PROBLEM / {number}</p><h1 className="cw-title">{p?`${number}. ${p.problem_title}`:problem.error?'문제를 불러오지 못했어요':'문제 불러오는 중…'}</h1><ProblemAttribution problem={p} showReward/></div><div className="cw-head-actions"><Link className="cw-btn" to={back}>{gid?'그룹으로':chapterReturn?'챕터 목록':'문제 목록'}</Link>{user&&p&&<Link className="cw-btn" to={`/issues?problem=${number}`}>문제 오류 신고</Link>}{!gid&&p?.canLinkInForum&&<Link className="cw-btn" to={'/forum?'+questions} state={trail.state}>이 문제의 질문{p.questionCount!=null?` (${p.questionCount})`:''}</Link>}{p&&!gid&&nextLink&&<Link className="cw-btn" to={nextLink} state={nextState}>다음 문제</Link>}
-      {neighbor.error&&<button type="button" className="cw-btn" onClick={neighbor.reload}>다음 문제 다시 찾기</button>}</div></header>
+  return <main className={`cw-page pd-page ${dark?'dark':'light'}`}><div className="cw-wrap">
+    <header className="cw-head">
+      <div>
+        <p className="cw-eyebrow">PROBLEM / {number}</p>
+        <h1 className="cw-title">{p ? `${number}. ${p.problem_title}` : problem.error ? '문제를 불러오지 못했어요' : '문제 불러오는 중…'}</h1>
+        <ProblemAttribution problem={p} showReward/>
+      </div>
+      <div className="cw-head-actions">
+        <Link className="cw-btn" to={back}>{backLabel}</Link>
+        {user && p && <Link className="cw-btn" to={`/issues?problem=${number}`}
+          state={{problemReturn, problemState: trail.state}}>문제 오류 신고</Link>}
+        {!gid && p?.canLinkInForum && <Link className="cw-btn" to={problemQuestionsUrl(number, trail.origin)} state={trail.state}>
+          이 문제의 질문{p.questionCount != null && ` (${p.questionCount})`}
+        </Link>}
+        {p && !gid && nextLink && <Link className="cw-btn" to={nextLink} state={trail.state}>다음 문제</Link>}
+        {neighbor.error && <button type="button" className="cw-btn" onClick={neighbor.reload}>다음 문제 다시 찾기</button>}
+      </div>
+    </header>
     {(problem.error||catalog.error)&&<div className="cw-card"><p className="cw-status-message error" role="alert">{problem.error||catalog.error}</p><button type="button" className="cw-btn" onClick={()=>{if(problem.error)problem.reload();if(catalog.error)catalog.reload();}}>다시 시도</button></div>}
     {/* 언어가 정해지기 전에 편집하면 언어 키가 없는 초안이 생길 수 있어 준비 후에만 엽니다. */}
     {p&&language&&<ProblemWorkspace statement={<ProblemStatement problem={p} language={language}/>}><div className="pd-side">

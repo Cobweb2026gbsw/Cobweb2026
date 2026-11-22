@@ -1,5 +1,6 @@
 import {useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useLocation} from 'react-router-dom';
+import {contestViewQuery} from '../lib/groupNavigation';
 import useApiData,{useMutationGuard} from '../lib/useApiData';
 
 export const issueStatus={OPEN:'접수',IN_PROGRESS:'처리 중',RESOLVED:'완료'};
@@ -53,5 +54,14 @@ export function IssueDetails({issue,children}) {
     <small>{dateLabel(issue.updatedAt)}</small>{children}</article>;
 }
 export function BackToContest({scope}){
-  return scope.has('contestId')&&<Link className="cw-btn" to={'/groups/'+encodeURIComponent(scope.get('groupId'))+'/contests/'+encodeURIComponent(scope.get('contestId'))}>시험으로</Link>;
+  const location = useLocation();
+  const origin = location.state?.contestReturn;
+  const {groupList, contestListStatus} = origin || {};
+  const tab = origin ? origin.tab : (location.pathname === '/issues' ? 'problems' : 'staff');
+  const problemNumber = origin?.problemNumber;
+  const gid = scope.get('groupId'), cid = scope.get('contestId');
+  if (![gid, cid].every(id => /^[1-9]\d*$/.test(id))) return null;
+  const search = contestViewQuery(tab, problemNumber);
+  return <Link className="cw-btn" to={{pathname: `/groups/${gid}/contests/${cid}`, search}}
+    state={{groupList, contestListStatus}}>시험으로</Link>;
 }

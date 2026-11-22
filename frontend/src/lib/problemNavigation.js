@@ -20,18 +20,42 @@ export function problemListUrl(value){
   return typeof value==='string' && value.length<=4096 && /^\/problems(?:\?[^#]*)?$/.test(value) && !/[\\\u0000-\u001f\u007f]/.test(value)?value:'/problems';
 }
 
-export function problemUrl(number,from){
-  const path=`/problems/${Number(number)}`;
-  return from==null?path:path+'?'+new URLSearchParams({from:problemListUrl(from)});
+const chapterList = /^\/steps\?chapter=(?:[45]-[1-5]|6-[1-4])$/;
+
+function returnOrigin(value) {
+  if (value == null) return null;
+  return typeof value === 'string' && chapterList.test(value) ? value : problemListUrl(value);
 }
 
-export function problemTrail(location,number){
-  const origin=new URLSearchParams(location.search).get('from');
-  const from=problemListUrl(origin);
-  const trail=location.state?.problemTrail;
-  const items=origin!=null && trail?.from===from && Array.isArray(trail.items)?trail.items.filter(validProblemNumber).slice(0,30).map(Number):[];
-  const index=items.indexOf(Number(number));
-  return {from,listOrigin:origin==null?null:from,next:index>=0?items[index+1]:undefined,state:{problemTrail:{from,items}}};
+export function problemUrl(number, from) {
+  const path = `/problems/${Number(number)}`;
+  const origin = returnOrigin(from);
+  return origin ? path + '?' + new URLSearchParams({from: origin}) : path;
+}
+
+export function problemQuestionsUrl(number, from) {
+  const params = new URLSearchParams({problemNumber: number});
+  const origin = returnOrigin(from);
+  if (origin) params.set('list', origin);
+  return '/forum?' + params;
+}
+
+export function problemTrail(location, number) {
+  // Older history entries kept the chapter in router state only.
+  const savedChapter = '/steps?chapter=' + location.state?.chapterReturn;
+  const origin = returnOrigin(new URLSearchParams(location.search).get('from') ??
+    (chapterList.test(savedChapter) ? savedChapter : null));
+  const from = origin ?? '/problems';
+  const fromChapter = chapterList.test(from);
+  const trail = location.state?.problemTrail;
+  const items = origin && !fromChapter && trail?.from === from && Array.isArray(trail.items)
+    ? trail.items.filter(validProblemNumber).slice(0, 30).map(Number) : [];
+  const index = items.indexOf(Number(number));
+  return {
+    from, origin, fromChapter, byChapter: !origin || fromChapter,
+    next: index >= 0 ? items[index + 1] : undefined,
+    state: {problemTrail: {from, items}},
+  };
 }
 
 export function neighborRequest(number,from,chapter){
@@ -48,7 +72,7 @@ export function neighborRequest(number,from,chapter){
 
 export function neighborDestination(neighbor,from,chapter){
   if(!neighbor||!validProblemNumber(neighbor.number)||!Number.isSafeInteger(neighbor.page)||neighbor.page<0)return null;
-  if(chapter)return '/problems/'+neighbor.number;
+  if(chapter)return problemUrl(neighbor.number, chapterList.test(from) ? from : null);
   const list=new URL(from,'http://localhost');
   if(neighbor.page)list.searchParams.set('page',String(neighbor.page));else list.searchParams.delete('page');
   return problemUrl(neighbor.number,list.pathname+list.search);
@@ -57,7 +81,7 @@ export function neighborDestination(neighbor,from,chapter){
 const recentKey=owner=>'cobweb.recent-problem.v1:'+owner;
 export function rememberProblem(owner,number,from){
   if(!owner||!validProblemNumber(number))return;
-  try{window.localStorage.setItem(recentKey(owner),JSON.stringify({number:Number(number),from:from==null?null:problemListUrl(from)}));}catch{}
+  try{window.localStorage.setItem(recentKey(owner),JSON.stringify({number:Number(number),from:returnOrigin(from)}));}catch{}
 }
 export function recentProblem(owner){
   if(!owner)return null;
