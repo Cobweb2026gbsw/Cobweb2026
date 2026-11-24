@@ -62,6 +62,28 @@ test('initial cookie restore blocks normal login and OAuth, including direct for
   cleanup();
 });
 
+test('a failed social logo shows the provider login text and keeps the same OAuth action', async () => {
+  const calls = [];
+  globalThis.fetch = async path => { calls.push(path); return response(null, 401); };
+  const view = mount();
+  try {
+    const providers = [['google', 'Google'], ['github', 'GitHub'], ['naver', '네이버']];
+    for (const [id, name] of providers) {
+      const label = `${name} 로그인`;
+      const button = view.getByRole('button', {name: label});
+      await waitFor(() => assert.equal(button.disabled, false));
+      assert.equal(button.textContent, '');
+      fireEvent.error(button.querySelector('img'));
+      assert.equal(button.textContent, label);
+      assert.equal(button.querySelector('img'), null);
+      fireEvent.click(button);
+      await waitFor(() => assert.ok(calls.includes(`/api/auth/oauth/${id}/authorize-url`)));
+    }
+  } finally {
+    cleanup();
+  }
+});
+
 test('delayed account A restore finishes before account B login and cannot overwrite its cookie', async () => {
   const restore = deferred(), calls = [];
   // 브라우저는 fetch 응답을 돌려주기 전에 Set-Cookie를 적용합니다. 이 순서를 모사합니다.

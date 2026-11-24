@@ -85,7 +85,7 @@
   text-decoration: underline;
 }
 
-.LoginBox button {
+.LoginBox button[type="submit"] {
   width: 100%;
   height: 45px;
 
@@ -132,7 +132,7 @@
 .LoginPage.light .LoginBox input:not([type="checkbox"]) { background-color: #fff; border-color: #c4c5c8; color: var(--light-text); }
 .LoginPage.light .LoginBox input:not([type="checkbox"]):focus-visible { border-color: #62656b; outline-color: rgba(29, 29, 31, .14); }
 .LoginPage.light .LoginBox input:not([type="checkbox"])::placeholder { color: var(--light-muted); }
-.LoginPage.light .LoginBox button { background-color: var(--light-text); color: #ffffff; }
+.LoginPage.light .LoginBox button[type="submit"] { background-color: var(--light-text); color: #ffffff; }
 
 /* 로그인 오류 메시지 */
 .LoginBox .login-error {
@@ -154,8 +154,45 @@
 .LoginBox .login-transport { line-height: 1.7; overflow-wrap: anywhere; }
 .LoginBox .login-transport a { color: #64e6ca; text-underline-offset: 3px; }
 .LoginPage.light .LoginBox .login-transport a { color: var(--light-accent); }
-.LoginBox .login-social { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; margin-top: 18px; }
-.LoginBox .login-social button { height: auto; min-height: 40px; margin: 0; padding: 8px 5px; font-size: 11px; border: 1px solid #505050; }
+.login-social {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.login-social button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.login-social .login-social-github {
+  box-sizing: border-box;
+  padding: 11px;
+  border: 1px solid #737373;
+  border-radius: 50%;
+  background: #171717;
+}
+
+.login-social .login-social-fallback {
+  padding: 0 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
 .LoginBox .login-help { font-size: 11px; line-height: 1.7; }
 .LoginBox .login-logo a { color: inherit; text-decoration: none; }
 .LoginBox button:disabled { opacity: .45; cursor: wait; }

@@ -10,6 +10,34 @@ import { advanceOnEnter, useProgressiveFields } from '../lib/useProgressiveField
 import "./Login.css";
 import '../components/AuthProgressive.css';
 
+function SocialLoginButton({ provider, name, file, disabled, onLogin }) {
+  const [failedFile, setFailedFile] = useState(null);
+  const label = `${name} 로그인`;
+  const showText = failedFile === file;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={showText ? "login-social-fallback" : undefined}
+      disabled={disabled}
+      onClick={() => onLogin(provider)}
+    >
+      {showText ? label : (
+        <img
+          key={file}
+          className={`login-social-${provider}`}
+          src={`${import.meta.env?.BASE_URL ?? "/"}assets/oauth/${file}`}
+          alt=""
+          width="48"
+          height="48"
+          onError={() => setFailedFile(file)}
+        />
+      )}
+    </button>
+  );
+}
+
 export default function Login({ dark, setDark }) {
   const navigate = useNavigate(), location = useLocation();
   const { login, user, loading: authLoading, sessionNotice } = useAuth();
@@ -90,8 +118,11 @@ export default function Login({ dark, setDark }) {
       <p className="login-links"><Link to="/signup" state={returnState}>회원가입</Link><Link to="/password-reset" state={returnState}>비밀번호 찾기</Link></p>
       {loginNotice && <p className="login-error" role="alert">{loginNotice}</p>}
       <button type="submit" disabled={busy || authLoading}>{busy ? "로그인 중…" : authLoading ? "로그인 상태 확인 중…" : step === 0 ? "다음" : "로그인"}</button>
-      <div className="login-social" aria-label="소셜 로그인">{[["google", "Google"], ["github", "GitHub"], ["naver", "네이버"]].map(([id, label]) =>
-        <button type="button" key={id} disabled={busy || authLoading} onClick={() => oauth(id)}>{label} 로그인</button>)}</div>
+      <div className="login-social" role="group" aria-label="소셜 로그인">
+        <SocialLoginButton provider="google" name="Google" file={dark ? "google-dark.svg" : "google-light.svg"} disabled={busy || authLoading} onLogin={oauth} />
+        <SocialLoginButton provider="github" name="GitHub" file="github.svg" disabled={busy || authLoading} onLogin={oauth} />
+        <SocialLoginButton provider="naver" name="네이버" file={dark ? "naver-dark.png" : "naver-light.png"} disabled={busy || authLoading} onLogin={oauth} />
+      </div>
       <p className="login-help">가입할 때 사용한 방식으로 로그인해 주세요. 네이버는 기존에 연결한 계정만 사용할 수 있어요.</p>
       <p className="login-logo"><Link to="/">CobWeb</Link></p>
     </form>
